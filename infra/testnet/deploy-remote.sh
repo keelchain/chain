@@ -41,6 +41,13 @@ unset ACCT
 echo "validator / genesis account: $ADDR"
 
 FRESH=false
+if [ "$RESET" != true ] && sudo test -f /opt/keelchain/genesis.json; then
+  # The seed must be one of the running chain's validators; otherwise this
+  # deploy would start a node the chain does not know. Reset instead.
+  if ! sudo python3 -c 'import json,sys; g=json.load(open("/opt/keelchain/genesis.json")); sys.exit(0 if any(v["address"]==sys.argv[1] for v in g["validators"]) else 1)' "$ADDR"; then
+    echo "validator $ADDR is not in /opt/keelchain/genesis.json: run the deploy with reset_chain to start a new chain from this seed"; exit 1
+  fi
+fi
 if [ "$RESET" = true ] || ! sudo test -f /opt/keelchain/genesis.json; then
   FRESH=true
   log "bootstrapping a new chain (reset=$RESET)"

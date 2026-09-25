@@ -89,29 +89,34 @@ jobs:
           name: keel-web
           path: release
       - name: Stage release
+        env:
+          KEEL_VALIDATOR_SEED: ${{ secrets.KEEL_VALIDATOR_SEED }}
+          KEEL_SIGNER_SEED: ${{ secrets.KEEL_SIGNER_SEED }}
+          INDEXER_DATABASE_URL: ${{ secrets.INDEXER_DATABASE_URL }}
+          BITCOIN_RPC_PASSWORD: ${{ secrets.BITCOIN_RPC_PASSWORD }}
+          TRONGRID_API_KEY: ${{ secrets.TRONGRID_API_KEY }}
+          KEEL_CHAIN_ID: ${{ vars.KEEL_CHAIN_ID }}
+          KEEL_ADVERTISE: ${{ vars.KEEL_ADVERTISE }}
+          KEEL_EXTERNAL_NETWORK: ${{ vars.KEEL_EXTERNAL_NETWORK }}
+          KEEL_BOOTSTRAP_ARGS: ${{ vars.KEEL_BOOTSTRAP_ARGS }}
+          BITCOIN_RPC_URL: ${{ vars.BITCOIN_RPC_URL }}
+          BITCOIN_RPC_USER: ${{ vars.BITCOIN_RPC_USER }}
+          BITCOIN_WALLET: ${{ vars.BITCOIN_WALLET }}
+          BITCOIN_CLI: ${{ vars.BITCOIN_CLI }}
+          INDEXER_PG_CONTAINER: ${{ vars.INDEXER_PG_CONTAINER }}
+          TRON_API_URL: ${{ vars.TRON_API_URL }}
+          TRON_USDT_CONTRACT: ${{ vars.TRON_USDT_CONTRACT }}
+          RESET_CHAIN: ${{ github.event.inputs.reset_chain || 'false' }}
         run: |
           cp -r infra release/infra
           chmod +x release/bin/*
           umask 077
-          cat > release/deploy.env <<EOT
-          KEEL_VALIDATOR_SEED=${{ secrets.KEEL_VALIDATOR_SEED }}
-          KEEL_SIGNER_SEED=${{ secrets.KEEL_SIGNER_SEED }}
-          INDEXER_DATABASE_URL=${{ secrets.INDEXER_DATABASE_URL }}
-          BITCOIN_RPC_PASSWORD=${{ secrets.BITCOIN_RPC_PASSWORD }}
-          TRONGRID_API_KEY=${{ secrets.TRONGRID_API_KEY }}
-          KEEL_CHAIN_ID=${{ vars.KEEL_CHAIN_ID }}
-          KEEL_ADVERTISE=${{ vars.KEEL_ADVERTISE }}
-          KEEL_EXTERNAL_NETWORK=${{ vars.KEEL_EXTERNAL_NETWORK }}
-          KEEL_BOOTSTRAP_ARGS=${{ vars.KEEL_BOOTSTRAP_ARGS }}
-          BITCOIN_RPC_URL=${{ vars.BITCOIN_RPC_URL }}
-          BITCOIN_RPC_USER=${{ vars.BITCOIN_RPC_USER }}
-          BITCOIN_WALLET=${{ vars.BITCOIN_WALLET }}
-          BITCOIN_CLI=${{ vars.BITCOIN_CLI }}
-          INDEXER_PG_CONTAINER=${{ vars.INDEXER_PG_CONTAINER }}
-          TRON_API_URL=${{ vars.TRON_API_URL }}
-          TRON_USDT_CONTRACT=${{ vars.TRON_USDT_CONTRACT }}
-          RESET_CHAIN=${{ github.event.inputs.reset_chain || 'false' }}
-          EOT
+          # shell-quoted so values with spaces (BITCOIN_CLI) survive `source`
+          for k in KEEL_VALIDATOR_SEED KEEL_SIGNER_SEED INDEXER_DATABASE_URL BITCOIN_RPC_PASSWORD TRONGRID_API_KEY \
+                   KEEL_CHAIN_ID KEEL_ADVERTISE KEEL_EXTERNAL_NETWORK KEEL_BOOTSTRAP_ARGS BITCOIN_RPC_URL BITCOIN_RPC_USER \
+                   BITCOIN_WALLET BITCOIN_CLI INDEXER_PG_CONTAINER TRON_API_URL TRON_USDT_CONTRACT RESET_CHAIN; do
+            printf '%s=%q\n' "$k" "${!k}"
+          done > release/deploy.env
           tar czf release.tgz -C release .
       - name: SSH key
         run: |
