@@ -18,3 +18,23 @@ const receipt = await rpc.waitReceipt(tx);
   every encoding byte for byte: regenerate it whenever `action.rs` changes.
 
 Scripts: `npm test`, `npm run build`, `KEEL_RPC=... npm run example`.
+
+## Releasing
+
+Versions are published by `.github/workflows/publish-sdk.yml` when a tag
+`sdk-v<version>` is pushed that matches `package.json`:
+
+```bash
+# bump "version" in package.json, commit, then
+git tag sdk-v0.1.1 && git push origin sdk-v0.1.1
+```
+
+The workflow uses npm trusted publishing, so no token lives in GitHub. One-time
+setup, after the first version exists on npm (`npm publish` from a laptop, logged
+in to the keelchain org with 2FA): on npmjs.com open the package → Settings →
+Trusted Publisher → GitHub Actions, organisation `keelchain`, repository `chain`,
+workflow `publish-sdk.yml`, no environment. From then on tags publish with a
+provenance attestation linking the package to the commit.
+
+Bump the minor version whenever an action's encoding changes: `test/vectors.json`
+pins the bytes, and clients on an older encoding would sign invalid actions.

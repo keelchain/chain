@@ -1,0 +1,36 @@
+name: Publish SDK
+
+# Publishes @keelchain/sdk to npm when a tag `sdk-v<version>` is pushed and
+# the version matches sdk/ts/package.json. Uses npm trusted publishing (OIDC),
+# so no npm token is stored anywhere; the package's trusted publisher on
+# npmjs.com must name this repository and this workflow file.
+on:
+  push:
+    tags: ["sdk-v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: npm with trusted publishing support
+        run: npm install -g npm@latest && npm --version
+      - name: Tag matches package version
+        working-directory: sdk/ts
+        run: |
+          V=$(node -p "require('./package.json').version")
+          [ "${GITHUB_REF_NAME#sdk-v}" = "$V" ] || { echo "tag $GITHUB_REF_NAME does not match package.json version $V"; exit 1; }
+      - name: Build and test
+        working-directory: sdk/ts
+        run: npm ci && npm run build && npm test
+      - name: Publish
+        working-directory: sdk/ts
+        run: npm publish --provenance
