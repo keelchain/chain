@@ -1,0 +1,47 @@
+[package]
+name = "keel-observer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Observer-signer daemon: watches external chains, submits observations, drives outbound signing and broadcast."
+
+[[bin]]
+name = "keel-observer"
+path = "src/main.rs"
+
+[dependencies]
+keel-types.workspace = true
+keel-crypto.workspace = true
+keel-actions.workspace = true
+keel-chains.workspace = true
+keel-ln.workspace = true
+keel-lc-btc.workspace = true
+keel-lc-eth.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+hex.workspace = true
+borsh.workspace = true
+sha2.workspace = true
+toml = "0.8"
+axum.workspace = true
+async-trait = "0.1"
+base64 = "0.22"
+bitcoin = { version = "0.32", features = ["serde"] }
+secp256k1 = { version = "0.29", features = ["recovery", "global-context", "rand-std"] }
+alloy-trie = "0.9.5"
+alloy-rlp = "0.3.16"
+alloy-primitives = "1"
+
+[dev-dependencies]
+lightning-invoice = { version = "0.33", default-features = false, features = ["std"] }
+sha2.workspace = true
+
+[lints]
+workspace = true

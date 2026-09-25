@@ -1,0 +1,32 @@
+# Rendered by deploy-remote.sh into /etc/keelchain/observer-0.toml (root, 0600).
+keel_rpc_url = "http://127.0.0.1:@RPC_PORT@"
+tss_url = "local:@SIGNER_SEED@"
+state_file = "/var/lib/keelchain/observer-0.json"
+
+[intervals]
+sync_secs = 30
+deposits_secs = 20
+outbound_secs = 15
+fees_secs = 300
+
+[bitcoin]
+rpc_url = "@BITCOIN_RPC_URL@"
+rpc_user = "@BITCOIN_RPC_USER@"
+rpc_password = "@BITCOIN_RPC_PASSWORD@"
+network = "@EXTERNAL_NETWORK@"
+wallet = "@BITCOIN_WALLET@"
+max_proof_headers = 144
+fee_target_blocks = 2
+fallback_sat_per_vb = 2
+
+[tron]
+api_url = "@TRON_API_URL@"
+@TRON_API_KEY_LINE@
+fee_sun = 15000000
+fee_limit_sun = 100000000
+hot_index = 0
+tokens = [{ symbol = "USDT", contract = "@TRON_USDT_CONTRACT@" }]
+
+[outbound]
+enabled = true
+leader_timeout_secs = 900

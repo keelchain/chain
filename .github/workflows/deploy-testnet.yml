@@ -1,0 +1,133 @@
+name: Deploy testnet
+
+# Builds the node binaries, the explorer, the site and the wallet packages,
+# then installs everything on the testnet box over SSH. Secrets and settings
+# come from the `testnet` GitHub environment (infra/testnet/README.md lists
+# them); nothing is edited on the box by hand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      reset_chain:
+        description: Wipe chain state and start a new genesis from KEEL_VALIDATOR_SEED
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-testnet
+  cancel-in-progress: false
+
+jobs:
+  binaries:
+    runs-on: ubuntu-24.04   # glibc matches the Ubuntu 24.04 box
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+      - run: sudo apt-get update && sudo apt-get install -y m4
+      - name: Build
+        working-directory: chain
+        run: cargo build --release --locked -p keel-node -p keel-indexer -p keel-observer -p keel-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keel-bin
+          path: |
+            chain/target/release/keel-node
+            chain/target/release/keel-indexer
+            chain/target/release/keel-observer
+            chain/target/release/keel
+          if-no-files-found: error
+
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: SDK
+        working-directory: sdk/ts
+        run: npm ci && npm run build
+      - name: Explorer
+        working-directory: apps/explorer
+        env:
+          VITE_BASE: /
+          VITE_NETWORKS: ${{ vars.EXPLORER_NETWORKS || '[{"id":"testnet","name":"Keel testnet","api":"https://testnet.keelchain.com/api"}]' }}
+        run: npm ci && npm run build
+      - name: Wallet packages
+        working-directory: apps/wallet-extension
+        run: npm ci && npm run package
+      - name: Assemble site
+        run: |
+          mkdir -p out/site/wallet/downloads
+          cp -r site/. out/site/
+          cp apps/wallet-extension/dist-store/*.zip out/site/wallet/downloads/
+          cp -r apps/explorer/dist out/explorer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keel-web
+          path: out
+          if-no-files-found: error
+
+  deploy:
+    needs: [binaries, web]
+    runs-on: ubuntu-24.04
+    environment: testnet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: keel-bin
+          path: release/bin
+      - uses: actions/download-artifact@v4
+        with:
+          name: keel-web
+          path: release
+      - name: Stage release
+        run: |
+          cp -r infra release/infra
+          chmod +x release/bin/*
+          umask 077
+          cat > release/deploy.env <<EOT
+          KEEL_VALIDATOR_SEED=${{ secrets.KEEL_VALIDATOR_SEED }}
+          KEEL_SIGNER_SEED=${{ secrets.KEEL_SIGNER_SEED }}
+          INDEXER_DATABASE_URL=${{ secrets.INDEXER_DATABASE_URL }}
+          BITCOIN_RPC_PASSWORD=${{ secrets.BITCOIN_RPC_PASSWORD }}
+          TRONGRID_API_KEY=${{ secrets.TRONGRID_API_KEY }}
+          KEEL_CHAIN_ID=${{ vars.KEEL_CHAIN_ID }}
+          KEEL_ADVERTISE=${{ vars.KEEL_ADVERTISE }}
+          KEEL_EXTERNAL_NETWORK=${{ vars.KEEL_EXTERNAL_NETWORK }}
+          KEEL_BOOTSTRAP_ARGS=${{ vars.KEEL_BOOTSTRAP_ARGS }}
+          BITCOIN_RPC_URL=${{ vars.BITCOIN_RPC_URL }}
+          BITCOIN_RPC_USER=${{ vars.BITCOIN_RPC_USER }}
+          BITCOIN_WALLET=${{ vars.BITCOIN_WALLET }}
+          BITCOIN_CLI=${{ vars.BITCOIN_CLI }}
+          INDEXER_PG_CONTAINER=${{ vars.INDEXER_PG_CONTAINER }}
+          TRON_API_URL=${{ vars.TRON_API_URL }}
+          TRON_USDT_CONTRACT=${{ vars.TRON_USDT_CONTRACT }}
+          RESET_CHAIN=${{ github.event.inputs.reset_chain || 'false' }}
+          EOT
+          tar czf release.tgz -C release .
+      - name: SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          if [ -n "${{ vars.DEPLOY_KNOWN_HOSTS }}" ]; then printf '%s\n' "${{ vars.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          else ssh-keyscan -H "${{ vars.DEPLOY_HOST }}" > ~/.ssh/known_hosts 2>/dev/null; fi
+      - name: Upload and run
+        env:
+          TARGET: ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$TARGET" 'rm -rf ~/keel-deploy && mkdir -m 700 ~/keel-deploy'
+          scp -i ~/.ssh/id_deploy release.tgz "$TARGET":~/keel-deploy/release.tgz
+          ssh -i ~/.ssh/id_deploy "$TARGET" 'cd ~/keel-deploy && tar xzf release.tgz && rm release.tgz && bash infra/testnet/deploy-remote.sh'
+      - name: Public checks
+        run: |
+          curl -sf https://testnet.keelchain.com/rpc/v1/status | head -c 300; echo
+          curl -sf https://testnet.keelchain.com/api/v1/health | head -c 300; echo
+          curl -sfo /dev/null -w 'site %{http_code}\n' https://keelchain.com/

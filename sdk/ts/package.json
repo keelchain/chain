@@ -1,0 +1,57 @@
+{
+  "name": "@keelchain/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Keelchain: action encoding (borsh), ed25519 signing, RPC client.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts",
+    "example": "node examples/trade.ts"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0",
+    "@noble/hashes": "^1.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.7.0"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keelchain/keel.git",
+    "directory": "sdk/ts"
+  },
+  "homepage": "https://keelchain.com",
+  "bugs": {
+    "email": "support@keelchain.com"
+  },
+  "keywords": [
+    "keelchain",
+    "keel",
+    "blockchain",
+    "ed25519",
+    "borsh",
+    "p2p",
+    "escrow"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

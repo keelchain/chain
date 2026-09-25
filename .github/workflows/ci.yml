@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+      - name: Install m4 (GMP for the TSS crate)
+        run: sudo apt-get update && sudo apt-get install -y m4
+      - name: Format
+        working-directory: chain
+        run: cargo fmt --all --check
+      - name: Clippy
+        working-directory: chain
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        working-directory: chain
+        run: cargo test --workspace --locked
+
+  sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: SDK
+        working-directory: sdk/ts
+        run: npm ci && npm run build && npm test
+      - name: Explorer
+        working-directory: apps/explorer
+        run: npm ci && npx tsc --noEmit && npm test
+      - name: Wallet extension
+        working-directory: apps/wallet-extension
+        run: npm ci && npm test && npm run build

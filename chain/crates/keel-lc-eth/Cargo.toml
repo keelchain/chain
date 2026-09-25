@@ -1,0 +1,19 @@
+[package]
+name = "keel-lc-eth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ethereum sync-committee light-client verification and receipt proofs for ERC-20 deposits."
+
+[dependencies]
+blst = "0.3.17"
+alloy-trie = "0.9.5"
+alloy-rlp = "0.3.16"
+alloy-primitives = "1"
+sha2.workspace = true
+borsh.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

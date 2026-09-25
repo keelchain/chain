@@ -1,0 +1,14 @@
+[Unit]
+Description=Keelchain indexer / explorer API
+After=network-online.target docker.service keel-validator@0.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/keelchain/indexer.env
+ExecStart=/opt/keelchain/bin/keel-indexer --concurrency 4 --batch 64
+Restart=always
+RestartSec=5
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 128" width="520" height="128" role="img" aria-label="Keelchain">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F2F5B"/><stop offset="1" stop-color="#081C36"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#sea)"/>
+  <path d="M22 40 Q34 92 64 100 Q94 92 106 40 L96 40 Q86 80 64 86 Q42 80 32 40 Z" fill="#2DD4BF"/>
+  <path d="M64 100 L64 112" stroke="#F5C451" stroke-width="8" stroke-linecap="round"/>
+  <path d="M40 112 H88" stroke="#F5C451" stroke-width="8" stroke-linecap="round"/>
+  <text x="156" y="86" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="68" font-weight="700" letter-spacing="-1" fill="#F8FAFC">keel<tspan fill="#2DD4BF">chain</tspan></text>
+</svg>

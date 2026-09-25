@@ -1,0 +1,28 @@
+[package]
+name = "keel-rpc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "HTTP + WebSocket API of an Keel node."
+
+[dependencies]
+keel-chains.workspace = true
+keel-types.workspace = true
+keel-actions.workspace = true
+keel-vm.workspace = true
+keel-ledger.workspace = true
+axum = { version = "0.8", features = ["ws"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+tracing.workspace = true
+futures.workspace = true
+tower-http = { version = "0.6", features = ["cors"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+keel-crypto.workspace = true
+
+[lints]
+workspace = true

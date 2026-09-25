@@ -1,0 +1,7 @@
+[Unit]
+Description=Keelchain: propose the latest Bitcoin checkpoint
+After=keel-validator@0.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/keelchain/btc-checkpoint.sh

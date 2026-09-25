@@ -1,0 +1,14 @@
+[Unit]
+Description=Keelchain observer-signer %i
+After=network-online.target keel-validator@0.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/keelchain/observer-%i.env
+ExecStart=/opt/keelchain/bin/keel-observer run --config /etc/keelchain/observer-%i.toml
+Restart=always
+RestartSec=5
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target

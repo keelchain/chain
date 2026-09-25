@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keel Wallet privacy policy</title>
+<meta name="description" content="What Keel Wallet stores, what leaves your device, and what is never collected.">
+<link rel="icon" href="../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../keel.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../"><img src="../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav><a href="./">Keel Wallet</a><a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a></nav>
+</div></header>
+<section><div class="wrap prose">
+  <div class="eyebrow">Keel Wallet</div>
+  <h1 style="font-size:2.2rem">Privacy policy</h1>
+  <p class="muted">Last updated 24 September 2026. Publisher: Keelchain, <a href="https://keelchain.com/wallet/">keelchain.com/wallet</a>. Keelchain is a public testnet; no real funds are involved.</p>
+  <p>Keel Wallet is a browser extension that creates and stores keys for Keelchain and signs actions with them when you approve.</p>
+  <h2>What the extension stores</h2>
+  <p>Your encrypted key material, your settings and the list of websites you have allowed to connect. All of it stays in the browser's extension storage on your device. The extension has no server of its own.</p>
+  <h2>What leaves your device</h2>
+  <p>Only what you approve: signed actions and read requests (balances, nonces, receipts) sent to the Keelchain node you selected, by default the public testnet. A website you connect to receives your public address and the signatures you approve, never your keys or your recovery phrase.</p>
+  <h2>What is not collected</h2>
+  <p>No analytics, no telemetry, no browsing history, no personal data. The extension does not load remote code and has no accounts.</p>
+  <h2>Permissions</h2>
+  <p><code>storage</code> for the encrypted wallet, and content scripts on keelchain.com and the sites of Keelchain clients so those sites can find the <code>window.keel</code> provider. The extension never reads or changes page content beyond injecting that provider.</p>
+  <h2>Contact</h2>
+  <p>Questions about this policy: <a href="mailto:wallet@keelchain.com">wallet@keelchain.com</a>.</p>
+</div></section>
+<footer><div class="wrap"><div><p>Keelchain · <a href="../">keelchain.com</a></p></div></div></footer>
+</body>
+</html>

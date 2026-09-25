@@ -1,0 +1,95 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/keel-types",
+    "crates/keel-crypto",
+    "crates/keel-ledger",
+    "crates/keel-book",
+    "crates/keel-actions",
+    "crates/keel-vm",
+    "crates/keel-lc-btc",
+    "crates/keel-lc-eth",
+    "crates/keel-attest",
+    "crates/keel-consensus",
+    "crates/keel-chains",
+    "crates/keel-tss",
+    "crates/keel-observer",
+    "crates/keel-rpc",
+    "crates/keel-node",
+    "crates/keel-cli",
+    "crates/keel-indexer",
+    "crates/keel-ln",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+
+[workspace.dependencies]
+keel-types = { path = "crates/keel-types" }
+keel-crypto = { path = "crates/keel-crypto" }
+keel-ledger = { path = "crates/keel-ledger" }
+keel-book = { path = "crates/keel-book" }
+keel-actions = { path = "crates/keel-actions" }
+keel-vm = { path = "crates/keel-vm" }
+keel-lc-btc = { path = "crates/keel-lc-btc" }
+keel-lc-eth = { path = "crates/keel-lc-eth" }
+keel-attest = { path = "crates/keel-attest" }
+keel-consensus = { path = "crates/keel-consensus" }
+keel-chains = { path = "crates/keel-chains" }
+keel-tss = { path = "crates/keel-tss" }
+keel-observer = { path = "crates/keel-observer" }
+keel-rpc = { path = "crates/keel-rpc" }
+keel-indexer = { path = "crates/keel-indexer" }
+keel-ln = { path = "crates/keel-ln" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+primitive-types = { version = "0.13", default-features = false }
+hex = "0.4"
+rayon = "1"
+borsh = { version = "1", features = ["derive"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+sha2 = "0.10"
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+commonware-actor = "2026.9.0"
+commonware-broadcast = "2026.9.0"
+commonware-codec = "2026.9.0"
+commonware-consensus = "2026.9.0"
+commonware-cryptography = "2026.9.0"
+commonware-macros = "2026.9.0"
+commonware-p2p = "2026.9.0"
+commonware-parallel = "2026.9.0"
+commonware-resolver = "2026.9.0"
+commonware-runtime = "2026.9.0"
+commonware-storage = "2026.9.0"
+commonware-utils = "2026.9.0"
+commonware-formatting = "2026.9.0"
+bytes = "1"
+futures = "0.3"
+rand_core = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+clap = { version = "4", features = ["derive"] }
+governor = "0.10"
+
+# Determinism rules for everything at keel-vm and below (see docs/plan.md
+# §1): no floats, no HashMap/HashSet iteration, no wall clock. The clippy
+# deny-list in clippy.toml enforces the types; these lints enforce the rest.
+[workspace.lints.clippy]
+float_arithmetic = "deny"
+disallowed_types = "deny"
+disallowed_methods = "deny"
+unwrap_used = "warn"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

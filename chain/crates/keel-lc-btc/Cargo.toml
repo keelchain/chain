@@ -1,0 +1,15 @@
+[package]
+name = "keel-lc-btc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Bitcoin SPV verification: header chain, proof of work, retargets, merkle inclusion."
+
+[dependencies]
+bitcoin = { version = "0.32.7", default-features = false, features = ["std"] }
+borsh.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

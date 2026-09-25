@@ -1,0 +1,15 @@
+[Unit]
+Description=Keelchain validator %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/keelchain/validator-%i.env
+ExecStart=/opt/keelchain/bin/keel-node --me ${SEED}@${P2P_PORT} --advertise ${ADVERTISE} --genesis /opt/keelchain/genesis.json --storage-dir /var/lib/keelchain/validator-%i --rpc-listen ${RPC_LISTEN} --rpc-port ${RPC_PORT} --external-network ${EXTERNAL_NETWORK} $BOOTSTRAP_ARGS
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+MemoryMax=600M
+
+[Install]
+WantedBy=multi-user.target

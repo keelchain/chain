@@ -1,0 +1,37 @@
+[package]
+name = "keel-indexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Keelchain indexer: node blocks/receipts/actions -> Postgres, explorer API (docs/explorer-api.md)"
+
+[[bin]]
+name = "keel-indexer"
+path = "src/main.rs"
+
+[dependencies]
+keel-actions.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+hex.workspace = true
+tokio.workspace = true
+axum = { workspace = true, features = ["ws"] }
+reqwest.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { workspace = true, features = ["env"] }
+futures.workspace = true
+async-trait = "0.1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "migrate", "json", "macros"] }
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+tower-http = { version = "0.6", features = ["cors"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[lints]
+workspace = true

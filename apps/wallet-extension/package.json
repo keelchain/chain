@@ -1,0 +1,37 @@
+{
+  "name": "@keelchain/wallet-extension",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "description": "Keelchain browser wallet (Manifest V3): non-custodial Ed25519 keys, window.keel provider",
+  "scripts": {
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "dev": "vite",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "package": "npm run build && node scripts/package.mjs",
+    "lint:firefox": "npx --yes web-ext lint --source-dir dist-store/firefox-unpacked --warnings-as-errors=false"
+  },
+  "dependencies": {
+    "@noble/ed25519": "2.3.0",
+    "@noble/hashes": "1.8.0",
+    "@scure/bip39": "1.6.0",
+    "@keelchain/sdk": "file:../../sdk/ts",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.9",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "5.2.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "3.2.7"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

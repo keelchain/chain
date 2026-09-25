@@ -1,0 +1,16 @@
+[package]
+name = "keel-attest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Observer-quorum attestations for external-chain events."
+
+[dependencies]
+keel-types.workspace = true
+keel-crypto.workspace = true
+keel-actions.workspace = true
+borsh.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keel Wallet — keys on your device</title>
+<meta name="description" content="Keel Wallet is the browser extension for Keelchain: a 24-word wallet, passwordless sign-in to Keelchain clients, and an approval prompt for every signature. No server, no telemetry.">
+<link rel="icon" href="../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../keel.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../"><img src="../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="#get">Download</a>
+    <a href="#how" class="hide-sm">How it works</a>
+    <a href="privacy.html">Privacy</a>
+    <a class="pill" href="https://testnet.keelchain.com/"><span class="dot"></span>testnet</a>
+  </nav>
+</div></header>
+
+<section class="hero"><div class="wrap grid">
+  <div>
+    <div class="eyebrow">Keel Wallet · browser extension · v1.1.0</div>
+    <h1>Your keys. Your approval. Nothing else leaves the page.</h1>
+    <p class="lead">Keel Wallet creates a 24-word wallet inside your browser, signs you in to Keelchain clients without a password, and shows you exactly what you are about to sign. It has no server and collects nothing.</p>
+    <div class="cta">
+      <a class="btn gold" href="#get">Download</a>
+      <a class="btn" href="https://testnet.keelchain.com/">Explorer</a>
+    </div>
+    <p class="note" style="margin-top:26px"><strong>Public testnet.</strong> Keelchain has no monetary value yet; the wallet cannot hold or move real funds. It exists so you can try key-based sign-in and action signing before launch.</p>
+  </div>
+  <figure class="shot" style="margin:0;max-width:380px;margin-left:auto"><img src="shots/home.png" alt="Keel Wallet: the account screen with the address, balances and network selector"></figure>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <div class="eyebrow">How it works</div>
+  <h2>Three screens, one rule: you approve every signature.</h2>
+  <div class="shots">
+    <figure class="shot"><img src="shots/welcome.png" alt="Welcome screen: create a new wallet or import a seed phrase"><figcaption>Create a wallet or import your 24 words. Keys are generated locally and encrypted with your password.</figcaption></figure>
+    <figure class="shot"><img src="shots/connect.png" alt="Connect prompt showing the site, the account and the network"><figcaption>A site asks to connect. You see who is asking, which account and which network before you say yes.</figcaption></figure>
+    <figure class="shot"><img src="shots/sign.png" alt="Sign prompt showing the exact message to be signed"><figcaption>Every sign-in challenge and chain action is shown decoded. Reject closes it; nothing is sent.</figcaption></figure>
+  </div>
+  <div class="cards">
+    <div class="card"><div class="ic">🔑</div><h3>Non-custodial</h3><p>The seed and the keys never exist outside the extension's storage on your device. There is no Keelchain account, no email, no recovery service. Your 24 words are the wallet.</p></div>
+    <div class="card"><div class="ic">👁</div><h3>What you see is what you sign</h3><p>Messages are shown in full. Chain actions are decoded: the pair, the side, the amount, the recipient. The approval window is the extension's own page, not the site's.</p></div>
+    <div class="card"><div class="ic">∅</div><h3>Nothing collected</h3><p>No analytics, no telemetry, no remote code. The only network calls are the ones you approve, to the Keelchain node you selected.</p></div>
+  </div>
+</div></section>
+
+<section id="get"><div class="wrap">
+  <div class="eyebrow">Get it</div>
+  <h2>Install from a store, or load the package yourself.</h2>
+  <p class="muted" style="max-width:700px">Store listings are under review. Until they are approved, the packages below are the same build the stores receive. Install only from those stores or from links on keelchain.com. Nobody from Keelchain will ever ask for your 24 words.</p>
+  <div class="dl">
+    <a class="card" href="downloads/keel-wallet-1.1.0-firefox.zip"><span class="tag">Firefox 140+</span><h3>Firefox package</h3><p>Unsigned build for developer testing: <code>about:debugging</code> → This Firefox → Load Temporary Add-on.</p></a>
+    <a class="card" href="downloads/keel-wallet-1.1.0-chromium.zip"><span class="tag">Chrome · Brave · Edge</span><h3>Chromium package</h3><p>Unzip, open <code>chrome://extensions</code>, turn on Developer mode and choose Load unpacked.</p></a>
+    <a class="card" href="downloads/keel-wallet-1.1.0-source.zip"><span class="tag">MIT</span><h3>Source</h3><p>The exact sources of this build. Reproduce it with <code>npm ci && npm run package</code>.</p></a>
+  </div>
+  <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+    <div class="card"><h3>Firefox Add-ons</h3><p>Listing in review.</p></div>
+    <div class="card"><h3>Chrome Web Store</h3><p>Listing in review.</p></div>
+    <div class="card"><h3>Microsoft Edge Add-ons</h3><p>Listing in review.</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap two">
+  <div>
+    <div class="eyebrow">For site builders</div>
+    <h2>One provider object.</h2>
+    <p class="muted">Keel Wallet injects <code>window.keel</code> on Keelchain client sites. Connect, sign a login challenge, or sign a chain action; each call opens the approval window and resolves with the user's answer.</p>
+  </div>
+<pre><code>const account = await window.keel.connect();
+<span style="color:#9DB1CB">// { address, network: "testnet", chainId: 3 }</span>
+
+const { signature } = await window.keel.signMessage(challenge);
+
+const tx = await window.keel.signAction({ Transfer: {
+  to, asset: "KUSD", amount: 25_000_000n, memo: "invoice 42" } });</code></pre>
+</div></section>
+
+<footer><div class="wrap">
+  <div><img src="../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Keel Wallet is published by Keelchain. <a href="privacy.html">Privacy policy</a>.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../#build">Build a client</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:wallet@keelchain.com">wallet@keelchain.com</a> — the wallet</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a> — everything else</li></ul></div>
+</div></footer>
+</body>
+</html>

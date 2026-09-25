@@ -1,0 +1,8 @@
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "nondeterministic iteration order; use BTreeMap" },
+    { path = "std::collections::HashSet", reason = "nondeterministic iteration order; use BTreeSet" },
+]
+disallowed-methods = [
+    { path = "std::time::SystemTime::now", reason = "state machine code must use block time" },
+    { path = "std::time::Instant::now", reason = "state machine code must use block time" },
+]

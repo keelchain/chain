@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keelchain — settlement for peer-to-peer trading</title>
+<meta name="description" content="Keelchain is a settlement chain for peer-to-peer trading: on-chain escrow with arbitration, threshold-signed vaults for Bitcoin, Ethereum and Tron, the KUSD stablecoin, and free signed actions instead of gas. Public testnet, explorer, wallet and API.">
+<meta property="og:title" content="Keelchain"><meta property="og:description" content="A settlement chain for peer-to-peer trading. Public testnet live."><meta property="og:image" content="https://keelchain.com/keel-mark.svg">
+<link rel="icon" href="keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="keel.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="/"><img src="keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="#build">Build</a>
+    <a href="wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="#network" class="hide-sm">Network</a>
+    <a class="pill" href="https://testnet.keelchain.com/rpc/v1/status"><span class="dot"></span>testnet live</a>
+  </nav>
+</div></header>
+
+<section class="hero"><div class="wrap grid">
+  <div>
+    <div class="eyebrow">Keelchain · public testnet</div>
+    <h1>Settlement for peer-to-peer trading.<br>No gas. No custodian.</h1>
+    <p class="lead">A Rust app-chain built for fiat-to-crypto trades: escrow with arbitrated disputes, threshold-signed vaults for Bitcoin, Ethereum and Tron, a one-to-one USD stablecoin, and a free action budget instead of gas fees.</p>
+    <div class="cta">
+      <a class="btn primary" href="#build">Build a client</a>
+      <a class="btn" href="wallet/">Get Keel Wallet</a>
+      <a class="btn" href="https://testnet.keelchain.com/">Open the explorer</a>
+    </div>
+    <div class="stats" id="stats">
+      <div class="stat"><b data-k="height">—</b><span>block height</span></div>
+      <div class="stat"><b data-k="validators">—</b><span>validators</span></div>
+      <div class="stat"><b data-k="accounts">—</b><span>accounts</span></div>
+      <div class="stat"><b data-k="chain_id">—</b><span>chain id</span></div>
+    </div>
+  </div>
+  <div class="hero-art" aria-hidden="true">
+    <div class="orbit"></div>
+    <svg viewBox="0 0 400 400">
+      <defs><linearGradient id="hull" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2DD4BF" stop-opacity=".35"/><stop offset="1" stop-color="#0F2F5B" stop-opacity=".1"/></linearGradient></defs>
+      <g class="wave"><path d="M-40 300 q30 -14 60 0 t60 0 t60 0 t60 0 t60 0 t60 0 t60 0 t60 0"/></g>
+      <g class="wave w2"><path d="M-40 330 q30 -12 60 0 t60 0 t60 0 t60 0 t60 0 t60 0 t60 0 t60 0"/></g>
+      <path class="keel-fill" d="M70 150 L330 150 L300 250 Q200 285 100 250 Z"/>
+      <path class="keel-line" d="M70 150 L330 150 L300 250 Q200 285 100 250 Z"/>
+      <path class="keel-gold" d="M200 150 L200 300 M150 300 L250 300"/>
+      <circle cx="200" cy="150" r="6" fill="#F5C451"/>
+    </svg>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="eyebrow">Why a chain</div>
+  <h2>Escrow that neither trader controls, and nobody has to trust.</h2>
+  <p class="muted" style="max-width:720px">A fiat-for-crypto trade needs a holder for the crypto leg until the fiat leg settles. Today that holder is a company. On Keelchain it is a deterministic state machine, and every front end is just a client of it.</p>
+  <div class="cards">
+    <div class="card"><div class="ic">⚖</div><h3>P2P escrow with arbitration</h3><p>Offers, trades, payment windows and disputes are chain actions. Arbitrators are elected by governance and rule on evidence, on chain.</p></div>
+    <div class="card"><div class="ic">⛓</div><h3>Vaults, not bridges</h3><p>Bitcoin, Ethereum and Tron enter through observer-attested vaults with CGGMP21 threshold-signed keys. Light clients verify deposits against checkpoints.</p></div>
+    <div class="card"><div class="ic">$</div><h3>KUSD, backed one to one</h3><p>A USD stablecoin minted only against vaulted USDT. Trades and fees are quoted in it, so nobody carries an unpriced token risk.</p></div>
+    <div class="card"><div class="ic">∞</div><h3>No gas</h3><p>Every account gets a free action budget that regenerates daily. Lock <code>KEEL</code> for more capacity, get it back in full on unlock.</p></div>
+  </div>
+</div></section>
+
+<section id="build"><div class="wrap">
+  <div class="eyebrow">For builders</div>
+  <h2>One chain, any front end.</h2>
+  <div class="two">
+    <div>
+      <p class="muted">A read API for everything the explorer shows, a node RPC that accepts signed actions, a WebSocket block feed, and a TypeScript SDK that encodes, signs and submits. The first client is a live marketplace; yours can be a mobile app, a bot or a desk.</p>
+      <div class="steps">
+        <div class="step"><div><b>Read</b><p>Blocks, accounts, markets, offers, trades, vaults and governance at <code>testnet.keelchain.com/api/v1</code>.</p></div></div>
+        <div class="step"><div><b>Sign</b><p>Ed25519 keys. Users bring their own through Keel Wallet, or your service holds keys for custodial accounts.</p></div></div>
+        <div class="step"><div><b>Submit</b><p>Post signed actions to <code>testnet.keelchain.com/rpc/v1</code>, get a receipt with events in the next block.</p></div></div>
+        <div class="step"><div><b>Onboard</b><p>Want your service to attest trades or hold a role? Write to <a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> and it goes through governance.</p></div></div>
+      </div>
+    </div>
+    <div style="display:grid;gap:14px">
+<pre><code><span style="color:#9DB1CB"># node status, no key needed</span>
+curl https://testnet.keelchain.com/rpc/v1/status
+
+<span style="color:#9DB1CB"># an account's balances and nonce</span>
+curl https://testnet.keelchain.com/rpc/v1/accounts/&lt;address&gt;
+
+<span style="color:#9DB1CB"># who attests, observes, arbitrates</span>
+curl https://testnet.keelchain.com/rpc/v1/gov/roles</code></pre>
+<pre><code><span style="color:#9DB1CB">// @keelchain/sdk — place a limit order</span>
+import { Keypair, RpcClient } from "@keelchain/sdk";
+
+const rpc = new RpcClient("https://testnet.keelchain.com/rpc");
+const me  = Keypair.fromSecret(process.env.KEEL_SECRET);
+const tx  = await rpc.send(me, { PlaceOrder: {
+  pair: "BTC-KUSD", side: "buy", order_type: "limit",
+  price: 60_000n * 1_000_000n, quantity: 100_000_000n,
+}});
+console.log((await rpc.waitReceipt(tx)).events);</code></pre>
+    </div>
+  </div>
+</div></section>
+
+<section><div class="wrap two">
+  <div>
+    <div class="eyebrow">Keel Wallet</div>
+    <h2>Keys on your device. Every signature approved by you.</h2>
+    <p class="muted">A browser extension that creates a 24-word wallet, signs you in to Keelchain clients without a password, and shows you exactly what you are signing before it leaves the page. No server, no telemetry.</p>
+    <div class="cta"><a class="btn gold" href="wallet/">Get Keel Wallet</a><a class="btn" href="wallet/privacy.html">Privacy policy</a></div>
+  </div>
+  <div class="shots" style="margin-top:0;grid-template-columns:1fr 1fr">
+    <figure class="shot" style="margin:0"><img src="wallet/shots/home.png" alt="Keel Wallet account screen"></figure>
+    <figure class="shot" style="margin:0"><img src="wallet/shots/sign.png" alt="Keel Wallet approval prompt"></figure>
+  </div>
+</div></section>
+
+<section id="network"><div class="wrap">
+  <div class="eyebrow">Where it stands</div>
+  <h2>Testnet now. Mainnet when the vault keys are held by more than one party.</h2>
+  <div class="timeline">
+    <div class="tl"><b>Public testnet</b><p>One validator, one observer, signet Bitcoin and Nile Tron vaults, governance with a 60-block vote and a 10-block timelock. Everything resets between releases; nothing has value.</p></div>
+    <div class="tl"><b>Clients and roles</b><p>Third-party front ends, attesters and observers join through governance. The first marketplace client runs on the testnet today.</p></div>
+    <div class="tl"><b>Mainnet</b><p>After a threshold key ceremony across independent signer hosts, a genesis allocation and a published audit. No date.</p></div>
+  </div>
+  <p class="note" style="margin-top:28px"><strong>Public testnet.</strong> Nothing on Keelchain has monetary value yet.</p>
+</div></section>
+
+<footer><div class="wrap">
+  <div><img src="keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>A settlement chain for peer-to-peer trading. Built in Rust, open to any client.</p></div>
+  <div><h4>Network</h4><ul>
+    <li><a href="https://testnet.keelchain.com/">Explorer</a></li>
+    <li><a href="https://testnet.keelchain.com/api/v1/health">Read API</a></li>
+    <li><a href="https://testnet.keelchain.com/rpc/v1/status">Node RPC</a></li>
+    <li><a href="wallet/">Keel Wallet</a></li>
+  </ul></div>
+  <div><h4>Contact</h4><ul>
+    <li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li>
+    <li><a href="mailto:support@keelchain.com">support@keelchain.com</a> — questions and issues</li>
+    <li><a href="mailto:wallet@keelchain.com">wallet@keelchain.com</a> — Keel Wallet</li>
+  </ul></div>
+</div></footer>
+
+<script>
+(async () => {
+  try {
+    const r = await fetch('https://testnet.keelchain.com/rpc/v1/status'); const s = await r.json();
+    const set = (k, v) => { const el = document.querySelector(`[data-k="${k}"]`); if (el) el.textContent = v; };
+    set('height', s.height.toLocaleString()); set('validators', s.validators.length); set('accounts', s.accounts.toLocaleString()); set('chain_id', s.chain_id);
+  } catch {}
+})();
+</script>
+</body>
+</html>

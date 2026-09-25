@@ -1,0 +1,11 @@
+# Rust
+chain/target/
+chain/target-*/
+# Node
+node_modules/
+sdk/ts/dist/
+apps/*/dist/
+# Local testnet state (pids, logs, generated accounts and secrets)
+.dev-run/
+*.log
+apps/wallet-extension/dist-store/

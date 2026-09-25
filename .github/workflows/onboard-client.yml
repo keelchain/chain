@@ -1,0 +1,47 @@
+name: Onboard client
+
+# Give a client account (for example a marketplace's chain account) its roles
+# and starting balances on the testnet. Roles pass through governance with
+# the genesis validator's vote; the run waits for the timelock and executes.
+on:
+  workflow_dispatch:
+    inputs:
+      address:
+        description: Client account (64 hex)
+        required: true
+      attester:
+        description: Add to the attester set
+        type: boolean
+        default: true
+      param_admin:
+        description: Make it the param admin (revokes the genesis key's SetParam)
+        type: boolean
+        default: false
+      keel:
+        description: KEEL to send (whole units)
+        default: "100000"
+      kusd:
+        description: KUSD to send (whole units)
+        default: "100000"
+
+jobs:
+  onboard:
+    runs-on: ubuntu-24.04
+    environment: testnet
+    steps:
+      - name: SSH key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          if [ -n "${{ vars.DEPLOY_KNOWN_HOSTS }}" ]; then printf '%s\n' "${{ vars.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          else ssh-keyscan -H "${{ vars.DEPLOY_HOST }}" > ~/.ssh/known_hosts 2>/dev/null; fi
+      - name: Run
+        env:
+          TARGET: ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}
+          ADDRESS: ${{ github.event.inputs.address }}
+        run: |
+          ARGS=""
+          [ "${{ github.event.inputs.attester }}" = true ] && ARGS="$ARGS --attester"
+          [ "${{ github.event.inputs.param_admin }}" = true ] && ARGS="$ARGS --param-admin"
+          ARGS="$ARGS --keel ${{ github.event.inputs.keel }} --kusd ${{ github.event.inputs.kusd }}"
+          ssh -i ~/.ssh/id_deploy "$TARGET" "/opt/keelchain/onboard-client.sh $ADDRESS $ARGS"

@@ -1,0 +1,30 @@
+[package]
+name = "keel-consensus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Commonware simplex adapter for the Keelchain: block type, application wiring, marshal and engine construction."
+
+[dependencies]
+keel-types.workspace = true
+commonware-actor.workspace = true
+commonware-broadcast.workspace = true
+commonware-codec.workspace = true
+commonware-consensus.workspace = true
+commonware-cryptography.workspace = true
+commonware-macros.workspace = true
+commonware-p2p.workspace = true
+commonware-parallel.workspace = true
+commonware-resolver.workspace = true
+commonware-runtime.workspace = true
+commonware-storage.workspace = true
+commonware-utils.workspace = true
+bytes.workspace = true
+futures.workspace = true
+rand_core.workspace = true
+tracing.workspace = true
+governor.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

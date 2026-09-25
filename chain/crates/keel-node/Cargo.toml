@@ -1,0 +1,40 @@
+[package]
+name = "keel-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Keelchain node: p2p + consensus + state machine + RPC."
+
+[[bin]]
+name = "keel-node"
+path = "src/main.rs"
+
+[dependencies]
+keel-types.workspace = true
+keel-crypto.workspace = true
+keel-ledger.workspace = true
+keel-book.workspace = true
+keel-actions.workspace = true
+keel-vm.workspace = true
+keel-consensus.workspace = true
+keel-chains.workspace = true
+keel-rpc.workspace = true
+commonware-consensus.workspace = true
+commonware-cryptography.workspace = true
+commonware-p2p.workspace = true
+commonware-parallel.workspace = true
+commonware-runtime.workspace = true
+commonware-utils.workspace = true
+borsh.workspace = true
+bytes.workspace = true
+clap.workspace = true
+futures.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,175 @@
+# Keelchain — Whitepaper (draft v0.1, 2026-09-06)
+
+## Abstract
+
+Keelchain is a Layer-1 blockchain that *is* an exchange. Balances, order
+books, peer-to-peer fiat offers, escrow, disputes, custody of assets on
+other chains, a USD stablecoin and the platform's own fee flow all live in
+one deterministic state machine replicated by a Byzantine-fault-tolerant
+validator set. There is no gas: placing an order, posting an offer or
+stepping a trade forward is a signed action admitted under a per-address
+budget that grows with the volume the address actually fills. Revenue is
+earned only when value moves, and it is split by governance between the
+DAO treasury, the operators who secure the chain, and a burn. No company,
+server, custodian or API provider can stop it, freeze a balance, or change
+a fee outside governance.
+
+## 1. Why a chain, and why this shape
+
+Keel grew out of a custodial P2P marketplace: a double-entry ledger as
+the balance truth, an order book, and a custody gateway that reached
+Bitcoin, Ethereum and Tron through a third-party provider. Every one of
+those pieces is a point at which the service can be stopped. Moving the
+ledger, the book and custody into a chain removes them, but a
+general-purpose smart-contract chain would put an exchange at the mercy of
+gas markets and block space auctions — exactly the cost structure a
+cheapest-possible exchange cannot afford.
+
+The design therefore follows the application-chain pattern proven by
+Hyperliquid: a purpose-built Rust state machine with native modules,
+executed on a single deterministic thread, ordered by a fast BFT engine.
+Throughput for an exchange is bounded by the matching engine, not by a
+virtual machine, and a native matcher settles hundreds of thousands of
+orders per second on one core.
+
+## 2. Consensus
+
+Blocks are ordered by Simplex consensus (Commonware implementation) with
+ed25519 certificates and round-robin leader election over the bonded
+validator set. Views advance at network speed (~200 ms on a wide-area
+network, tens of milliseconds on a LAN) and a block is final after two
+rounds of votes. Validator sets change at epoch boundaries derived from the
+staking module; every validator re-executes every block and the state hash
+is part of what they agree on.
+
+Proof of History is deliberately absent. It is Solana's verifiable clock
+for pipelining leaders, and Solana's own Alpenglow upgrade replaces the
+PoH-anchored vote with a plain two-round BFT vote; for a single-shard
+exchange the same finality is reached with far less machinery.
+
+## 3. Execution model
+
+A block carries an ordered list of signed actions. Verification of a block
+is structural only (well-formed, timestamps monotonic); execution happens
+when the block is finalized, in order, on every node. An action that fails
+(insufficient funds, bad price) still consumes its nonce and one unit of
+budget and yields a failure receipt; the block remains valid. This keeps
+verification stateless and cheap and makes replay attacks impossible.
+
+Determinism rules are enforced by tooling: integer arithmetic only, ordered
+maps only, no wall clock (block time is BFT time), identifiers are
+counters. The state hash is computed after every block and compared across
+nodes in continuous integration.
+
+The ledger at the heart of the state machine is double-entry: every posting
+balances, every user-facing account is restricted and can never go
+negative, escrow is a transfer into a restricted account rather than a lock,
+and every posting is idempotent on a caller-supplied identifier. A block is
+applied atomically per action through ledger savepoints.
+
+## 4. Actions, budgets, and why there is no gas
+
+Every address starts with a free allowance of actions and earns one more
+per USD it fills on the book, plus a fixed bonus for cancels so a capped
+address can always unwind, plus a per-block cap. Heavy users lock KEEL
+for more capacity (`LockBudget`): a locked KEEL grants a daily allowance
+that regenerates linearly over 24 hours and is spent after the free
+budget, and `UnlockBudget` returns the KEEL in full after a delay, the
+Tron energy model. Additional budget can also be bought in KEEL at a
+nominal price; that revenue flows to the treasury. Observer-signers'
+attestations are budget-free but bonded.
+
+Fees are charged only on:
+
+- order-book fills (taker basis points; maker zero at launch),
+- P2P trade release (seller fee, with a surcharge below a small-trade
+  threshold),
+- withdrawals to other chains (the actual network cost, passed through, plus
+  a flat fee),
+- dispute rulings (charged to the losing side).
+
+Each fee is split at collection time into treasury, validator rewards and
+burn according to governance parameters. Rewards are distributed at epoch
+boundaries to observers, validators and delegators pro rata.
+
+## 5. Custody without a provider
+
+Assets from other chains are held by threshold-signature vaults whose key
+shares are distributed among bonded observer-signers. Per-user deposit
+addresses are non-hardened children of the vault key, so the familiar
+deposit-address experience survives with no whole key anywhere.
+
+A deposit is credited when a quorum of observers attests to it **and**, on
+chains that permit it (Bitcoin via SPV headers and merkle proofs, Ethereum
+via sync-committee light-client proofs), every validator has verified the
+proof itself. Chains without practical light clients (Tron) rely
+on the attestation quorum with higher bonds and lower caps. Large deposits
+become spendable after a delay. Withdrawals are batched per chain, signed
+only for finalized withdrawal sets, broadcast by observers, and observed
+back in like deposits.
+
+At every block boundary the chain checks that, per bridged asset, observed
+reserves cover user liabilities; a breach halts payouts of that asset until
+governance intervenes.
+
+Observer-signer sets change per epoch with a fresh key generation and a
+migration of vault balances, avoiding the need for key resharing.
+
+## 6. The USD stablecoin
+
+The chain's unit of account is a USD stablecoin minted 1:1 against a basket
+of vaulted USD tokens (USDT and USDC on Ethereum and Tron at launch) held
+in the chain's own reserve accounts. Every reserve asset has a governance
+cap so a single issuer's failure cannot break the whole reserve; the reserve
+is on chain and auditable at every block; redemption into any basket asset
+with available reserve is permissionless. A crypto-collateralized mint path
+is planned so the coin can outlive its reserve issuers.
+
+## 7. KEEL
+
+KEEL has a hard cap of 21,000,000,000. It is the bond for validators,
+observers and arbitrators; the governance vote; the price of extra action
+budget and of listing an offer; and the asset burned from every fee. Genesis
+honours every reward the platform has already promised.
+
+## 8. Governance
+
+Every parameter is a governance parameter: fee rates and splits, budget
+sizes, pair listings, asset registrations, observer and arbitrator sets,
+stablecoin basket caps, timelocks, upgrade heights. Proposals lock a deposit,
+pass by bonded-KEEL vote with quorum, threshold and veto rules, and execute
+after a timelock. Software upgrades are proposals naming a version and a
+height at which unupgraded nodes halt. Treasury spend is a proposal and is
+refused if it would leave any bridged asset's reserves below liabilities.
+The one administrative key is a governance-revocable parameter admin, held by the platform's super admin at launch so fees and limits can be tuned from the backoffice before the DAO is fully active.
+
+## 9. Peer-to-peer fiat trading
+
+Offers publish terms, margins, bounds, payment-method labels and working
+hours on chain; payment instructions and chat stay off chain, end-to-end
+encrypted between counterparties, with only hashes committed. Trades move
+through funded, paid, released or cancelled states under payment windows
+measured in block time. Disputes are ruled by bonded, governance-elected
+arbitrators on committed evidence and are slashed for absence or provable
+misconduct. Identity stays off chain: attesters registered by governance
+(the KYC'd marketplace among them) assert tiers that offers may require.
+
+## 10. Security model summary
+
+- Safety: 1/3 Byzantine validators tolerated; finality is a quorum
+  certificate.
+- Custody: threshold signatures with a 2/3 signer quorum, light-client
+  verification where available, per-chain caps and delays, bonded
+  observers, slashing for false observations, reserve invariant enforced
+  in state.
+- Economic spam resistance: budgets, per-block caps, open-order caps.
+- Upgrades and parameters: governance with timelocks; nothing unilateral.
+
+## 11. Roadmap
+
+Phase 0 spike and foundation; Phase 1 devnet with the exchange core; Phase
+2 multi-validator testnet with staking and epochs; Phase 3 cross-chain
+vaults and the stablecoin; Phase 4 P2P offers and disputes; Phase 5 DAO;
+Phase 6 integration of the existing marketplace and mainnet; later: a
+programmability layer, cheaper Bitcoin signing, the collateralized
+stablecoin path.

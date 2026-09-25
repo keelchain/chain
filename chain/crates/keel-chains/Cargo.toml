@@ -1,0 +1,23 @@
+[package]
+name = "keel-chains"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Per-chain address derivation and unsigned transaction builders for the KEEL vaults (pure, no I/O)."
+
+[dependencies]
+serde_json.workspace = true
+keel-types.workspace = true
+keel-actions.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+bitcoin = { version = "0.32", features = ["serde", "rand-std"] }
+secp256k1 = { version = "0.29", features = ["global-context", "recovery"] }
+tiny-keccak = { version = "2", features = ["keccak"] }
+bs58 = { version = "0.5", features = ["check"] }
+sha2.workspace = true
+hex.workspace = true
+prost = "0.13"
+
+[lints]
+workspace = true

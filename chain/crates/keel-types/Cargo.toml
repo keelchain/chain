@@ -1,0 +1,15 @@
+[package]
+name = "keel-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ids, assets, addresses and integer money math shared by every Keelchain crate. No I/O."
+
+[dependencies]
+serde.workspace = true
+borsh.workspace = true
+primitive-types.workspace = true
+hex.workspace = true
+
+[lints]
+workspace = true
