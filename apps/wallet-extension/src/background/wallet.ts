@@ -11,11 +11,30 @@ import { accountAddress, generateMnemonic, mnemonicToSeed, normalizeMnemonic, va
 import { sessionAction, validateEnvelope, validateSessionRequest } from '../core/actions';
 import { decodeAction, sessionSentence, type DecodedAction } from '../core/decode';
 import { signAction, signMessage } from '../core/sign';
+import type { Action } from '../inpage/types';
+import { stringifyJson } from '@keelchain/sdk';
 import { fromWire, newId, toWire, WalletError, type ProviderEvent, type ProviderRequest } from '../core/protocol';
 import type { AccountInfo, Envelope, SessionScope } from '../inpage/types';
 import { Approvals, type ApprovalRequest, type NetworkRef } from './approvals';
 import { Session } from './session';
 import { loadState, saveState, type AccountMeta, type WalletState } from './state';
+
+/** External chains a wallet account can receive on: RPC path, action enum name, label. */
+const DEPOSIT_CHAINS: Record<string, { path: string; action: string; label: string }> = {
+  BTC: { path: 'BTC', action: 'Bitcoin', label: 'Bitcoin' },
+  ETH: { path: 'ETH', action: 'Ethereum', label: 'Ethereum' },
+  TRON: { path: 'TRON', action: 'Tron', label: 'Tron' },
+};
+
+export interface DepositAddressInfo {
+  chain: string;
+  label: string;
+  index: number;
+  address: string;
+  /** true when this call assigned the address. */
+  fresh: boolean;
+}
+
 
 export interface WalletDeps {
   store: KeyValueStore;
@@ -290,9 +309,51 @@ export class Wallet {
         return this.revealMnemonic(String(p['password'] ?? ''));
       case 'resetWallet':
         return this.resetWallet(String(p['password'] ?? ''));
+      case 'depositAddress':
+        return this.depositAddress(String(p['chain'] ?? ''));
       default:
         throw new UiError(`Unknown UI method ${method}`);
     }
+  }
+
+  /**
+   * The active account's deposit address on an external chain: the vault
+   * child address the chain assigned to this account. Assigns one with a
+   * signed `RequestDepositAddress` when the account has none yet (a free
+   * action; no site is involved, so no approval prompt).
+   */
+  async depositAddress(chainArg: string): Promise<DepositAddressInfo> {
+    const chain = DEPOSIT_CHAINS[chainArg];
+    if (!chain) throw new UiError(`Unknown chain ${chainArg}`);
+    const s = await this.st();
+    const account = this.activeAccount(s);
+    const network = this.requireSigningNetwork(s);
+    const rpc = network.rpc.replace(/\/$/, '');
+    const find = async (): Promise<DepositAddressInfo | null> => {
+      const res = await fetch(`${rpc}/v1/vaults/${chain.path}/addresses?owner=${account.address}`);
+      if (!res.ok) throw new UiError(`RPC ${res.status} listing ${chain.path} deposit addresses`);
+      const j = (await res.json()) as { addresses?: { index: number; address: string | null }[] };
+      const row = j.addresses?.[0];
+      if (!row) return null;
+      if (!row.address) throw new UiError(`${chain.label}: no vault is registered on this network yet.`);
+      return { chain: chainArg, label: chain.label, index: row.index, address: row.address, fresh: false };
+    };
+    const existing = await find();
+    if (existing) return existing;
+    const key = this.requireKey(account.index);
+    const acct = await fetch(`${rpc}/v1/accounts/${account.address}`);
+    const nonce = acct.status === 404 ? 0 : Number(((await acct.json()) as { nonce?: number }).nonce ?? 0);
+    const signed = signAction(key, nonce, network.chainId, { RequestDepositAddress: { chain: chain.action } } as unknown as Action);
+    const sub = await fetch(`${rpc}/v1/actions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: stringifyJson(signed.signed) });
+    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; error?: unknown };
+    if (!sub.ok || outcome.admitted === false) throw new UiError(`The node refused the request: ${JSON.stringify(outcome.error ?? sub.status)}`);
+    this.deps.session.touch();
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 750));
+      const got = await find();
+      if (got) return { ...got, fresh: true };
+    }
+    throw new UiError('The request was accepted but no address appeared yet; try again in a moment.');
   }
 
   async createVault(mnemonicRaw: string, password: string): Promise<UiState> {

@@ -17,6 +17,12 @@ Live since 2026-09-24 at keelchain.com, deployed only by GitHub Actions
 The node and the indexer send open CORS headers, so browser clients can call the testnet
 directly.
 
+## Funding an account
+
+See `docs/deposits.md`: request a deposit address (wallet *Receive*, CLI or
+SDK), send signet BTC or Nile USDT/TRX to it, and the chain credits the
+vault asset after that chain's confirmations.
+
 ## Clients
 
 A client is any service that signs actions for its users or holds a role.

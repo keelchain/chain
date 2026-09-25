@@ -79,7 +79,7 @@ printf 'SEED=%s\nP2P_PORT=%s\nADVERTISE=%s\nRPC_LISTEN=127.0.0.1\nRPC_PORT=%s\nE
 printf 'KEEL_OBSERVER_SECRET=%s\n' "$SECRET" | root_write 600 "$ETC/observer-0.env"
 printf 'DATABASE_URL=%s\nKEEL_NODE_RPC=%s\nKEEL_INDEXER_LISTEN=127.0.0.1:%s\nKEEL_NETWORK=testnet\nKEEL_EXTERNAL_NETWORK=%s\n' \
   "$INDEXER_DATABASE_URL" "$RPC" "$IDX_PORT" "$EXT" | root_write 600 "$ETC/indexer.env"
-printf 'BITCOIN_CLI=%s\nCHAIN_ID=%s\nRPC_PORT=%s\n' "${BITCOIN_CLI:-bitcoin-cli}" "$CHAIN_ID" "$RPC_PORT" | root_write 644 "$ETC/checkpoint.env"
+printf 'BITCOIN_CLI=%q\nCHAIN_ID=%s\nRPC_PORT=%s\n' "${BITCOIN_CLI:-bitcoin-cli}" "$CHAIN_ID" "$RPC_PORT" | root_write 644 "$ETC/checkpoint.env"
 echo "$ADDR" | root_write 644 "$ETC/pubkey0"
 TRON_KEY_LINE=""; [ -n "${TRONGRID_API_KEY:-}" ] && TRON_KEY_LINE="api_key = \"$TRONGRID_API_KEY\""
 python3 - "$D/infra/testnet/observer.toml.tmpl" <<PY | root_write 600 "$ETC/observer-0.toml"
@@ -113,6 +113,11 @@ if [ "$FRESH" = true ] || ! sudo test -f "$LIB/vaults-registered"; then
 fi
 sudo systemctl restart keel-indexer keel-observer@0
 sudo systemctl start keel-btc-checkpoint.timer
+if [ "$FRESH" = true ]; then
+  # Deposits verify against a Bitcoin checkpoint; propose the first one now
+  # (the oneshot waits for the vote and timelock, so do not block on it).
+  sudo systemctl start --no-block keel-btc-checkpoint.service
+fi
 
 log "web"
 sudo rsync -a --delete "$D/explorer/" "$WWW/explorer/"

@@ -56,7 +56,27 @@ export class RpcClient {
   offer(id: number | bigint) { return this.req("GET", `/v1/offers/${id}`); }
   trade(id: number | bigint) { return this.req("GET", `/v1/trades/${id}`); }
   vault(chain: string) { return this.req("GET", `/v1/vaults/${chain}`); }
-  vaultAddresses(chain: string, from = 0, limit = 100) { return this.req("GET", `/v1/vaults/${chain}/addresses?from=${from}&limit=${limit}`); }
+  vaultAddresses(chain: string, from = 0, limit = 100, owner?: string) {
+    return this.req("GET", `/v1/vaults/${chain}/addresses?from=${from}&limit=${limit}${owner ? `&owner=${owner}` : ""}`);
+  }
+  /** The account's deposit address on `chain` ("BTC" | "ETH" | "TRON"), or null until one is requested. */
+  async depositAddress(chain: string, owner: string): Promise<{ index: number; address: string } | null> {
+    const r = await this.vaultAddresses(chain, 0, 1, owner);
+    const row = r.addresses?.[0];
+    return row ? { index: row.index, address: row.address } : null;
+  }
+  /** Request a deposit address on `chain` for the key's account and wait for it. */
+  async requestDepositAddress(key: Keypair, chain: "BTC" | "ETH" | "TRON", chainId = 1): Promise<{ index: number; address: string }> {
+    const have = await this.depositAddress(chain, key.address);
+    if (have) return have;
+    const name = ({ BTC: "Bitcoin", ETH: "Ethereum", TRON: "Tron" } as const)[chain];
+    const tx = await this.send(key, { RequestDepositAddress: { chain: name } }, chainId);
+    const receipt = await this.waitReceipt(tx);
+    if (!receipt.ok) throw new RpcError(422, receipt.error);
+    const got = await this.depositAddress(chain, key.address);
+    if (!got) throw new Error("deposit address not assigned");
+    return got;
+  }
   outbounds(status?: string) { return this.req("GET", `/v1/vaults/outbounds${status ? `?status=${status}` : ""}`); }
   proposals() { return this.req("GET", "/v1/gov/proposals"); }
   proposal(id: number | bigint) { return this.req("GET", `/v1/gov/proposals/${id}`); }

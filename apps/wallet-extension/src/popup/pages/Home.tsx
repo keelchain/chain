@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { call, fetchAccount, type AccountResponse, type UiState } from '../ui';
+import type { DepositAddressInfo } from '../../background/wallet';
 import { Address } from '../components/Address';
 import { decimalsOf, formatAmount, sentence } from '../../core/format';
 import { explorerAccountUrl } from '../../core/networks';
@@ -9,8 +10,22 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
   const [account, setAccount] = useState<AccountResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [deposit, setDeposit] = useState<DepositAddressInfo | null>(null);
+  const [depositBusy, setDepositBusy] = useState<string | null>(null);
+  const [depositError, setDepositError] = useState<string | null>(null);
+
+  const receive = (chain: string) => {
+    setDepositBusy(chain);
+    setDepositError(null);
+    call<DepositAddressInfo>('depositAddress', { chain }).then(
+      (d) => { setDeposit(d); setDepositBusy(null); },
+      (e: unknown) => { setDepositError(e instanceof Error ? e.message : String(e)); setDepositBusy(null); },
+    );
+  };
 
   useEffect(() => {
+    setDeposit(null);
+    setDepositError(null);
     if (!address || !network.rpc) {
       setAccount(null);
       return;
@@ -76,6 +91,27 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
         )}
         {account && <p className="muted small">nonce {account.nonce}{account.tier !== undefined ? ` · tier ${account.tier}` : ''}</p>}
       </div>
+      {!network.placeholder && address && (
+        <div className="card">
+          <div className="label">Receive</div>
+          <p className="muted small">Fund this account from another chain. The address belongs to the Keelchain vault; the chain credits you after {network.id === 'testnet' ? 'the confirmations for that chain' : 'confirmation'}.</p>
+          <div className="row">
+            {['BTC', 'TRON'].map((c) => (
+              <button key={c} className="mini" disabled={depositBusy !== null} onClick={() => receive(c)}>
+                {depositBusy === c ? 'Requesting…' : c === 'BTC' ? 'Bitcoin' : 'Tron (USDT, TRX)'}
+              </button>
+            ))}
+          </div>
+          {depositError && <p className="error">{depositError}</p>}
+          {deposit && (
+            <div>
+              <div className="label">{deposit.label} deposit address · index {deposit.index}{deposit.fresh ? ' · just assigned' : ''}</div>
+              <Address value={deposit.address} full />
+              <p className="muted small">{network.id === 'testnet' ? (deposit.chain === 'BTC' ? 'Signet coins only (a signet faucet works). Credited as BTC.BTC after 2 confirmations.' : 'Nile testnet only. USDT is credited as TRON.USDT, TRX as TRON.TRX, after 19 confirmations.') : 'Send only the assets of this chain to this address.'}</p>
+            </div>
+          )}
+        </div>
+      )}
       <div className="row">
         <button onClick={() => void act('addAccount')}>Add account</button>
         <span className="muted small">auto-lock in {Math.ceil(state.remainingMs / 60_000)} min</span>

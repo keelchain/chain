@@ -10,6 +10,12 @@ Packages come from `npm run package` (→ `dist-store/`):
 
 Bump `version` in `manifest.json` and `package.json` together before every upload; stores refuse a re-used version.
 
+The Firefox add-on id (`browser_specific_settings.gecko.id`) must never be one
+AMO has disabled before: an upload under a disabled id is disabled again
+automatically, before review. Current id: `keel-wallet@keelchain.com` (1.1.1);
+earlier ids are burned. Upload only from the mohab@keelchain.com developer
+account.
+
 ## Listing
 
 - **Name:** Keel Wallet

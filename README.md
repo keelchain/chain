@@ -47,6 +47,7 @@ the box. Secrets and settings live in the `testnet` GitHub environment;
 
 - `docs/how-it-works.md`: the chain end to end, module by module.
 - `docs/whitepaper.md` and `docs/tokenomics.md`: why, and the KEEL model.
+- `docs/deposits.md`: funding an account with Bitcoin or Tron, and withdrawing.
 - `docs/explorer-api.md`: the read API third parties build on.
 - `docs/wallet.md`: the wallet's provider API and key model.
 - `docs/launch.md`: the brand, hosting and the plan for third-party clients.

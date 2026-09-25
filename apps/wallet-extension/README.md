@@ -203,7 +203,7 @@ src/popup/               React UI (onboarding, unlock, home, settings, approvals
 
 `npm run package` builds `dist/` and writes `dist-store/`: a Chromium zip
 (Chrome Web Store, Edge Add-ons, Brave, Opera), a Firefox zip (AMO, add-on
-id `wallet@keelchain.com`, Firefox ≥ 140) and the source archive AMO asks for.
+id `keel-wallet@keelchain.com`, Firefox ≥ 140) and the source archive AMO asks for.
 Listing texts, permission justifications and the per-store checklist are in
 `STORE.md`; the privacy policy page is `public/wallet-privacy.html`, served
 at https://keelchain.com/wallet/privacy.html. The default

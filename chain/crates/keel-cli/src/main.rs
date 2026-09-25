@@ -42,6 +42,9 @@ enum Cmd {
     Status,
     /// Account nonce, budget and balances.
     Account { address: String },
+    /// An account's deposit address on an external chain (BTC, ETH, TRON),
+    /// if it has requested one (`send deposit-address`).
+    DepositAddress { chain: String, address: String },
     /// Order book levels.
     Book {
         #[arg(default_value = "BTC-KUSD")]
@@ -76,6 +79,10 @@ enum Cmd {
 
 #[derive(Subcommand, Debug, Clone)]
 enum ActionCmd {
+    /// Ask the chain for a deposit address on an external chain (BTC, ETH, TRON).
+    DepositAddress {
+        chain: String,
+    },
     Transfer {
         to: String,
         asset: String,
@@ -362,6 +369,10 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
             trade_id,
             evidence_hash: parse_hash(&evidence_hash)?,
         },
+        ActionCmd::DepositAddress { chain } => Action::RequestDepositAddress {
+            chain: keel_actions::Chain::parse(&chain)
+                .ok_or_else(|| anyhow!("chain must be BTC, ETH or TRON"))?,
+        },
         ActionCmd::Withdraw { asset, to, amount } => Action::Withdraw(Withdraw {
             asset: Asset::new(asset),
             to,
@@ -536,6 +547,18 @@ fn main() -> anyhow::Result<()> {
                 "{}",
                 serde_json::to_string_pretty(&client.get(&format!("/v1/accounts/{address}"))?)?
             )
+        }
+        Cmd::DepositAddress { chain, address } => {
+            let chain = keel_actions::Chain::parse(&chain)
+                .ok_or_else(|| anyhow!("chain must be BTC, ETH or TRON"))?;
+            let v = client.get(&format!(
+                "/v1/vaults/{}/addresses?owner={address}",
+                chain.as_str()
+            ))?;
+            match v["addresses"].as_array().and_then(|a| a.first()) {
+                Some(row) => println!("{}", serde_json::to_string_pretty(row)?),
+                None => bail!("{address} has no {} deposit address yet: run `keel send --secret <secret> deposit-address {}`", chain.as_str(), chain.as_str()),
+            }
         }
         Cmd::Book { pair, depth } => {
             println!(

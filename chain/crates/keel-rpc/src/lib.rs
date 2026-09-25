@@ -551,6 +551,8 @@ async fn vault(
 struct FromQuery {
     from: Option<u64>,
     limit: Option<usize>,
+    /// Only this account's deposit indexes (64 hex).
+    owner: Option<String>,
 }
 
 /// Deposit indexes of a chain from `from`, with their owners.
@@ -565,10 +567,12 @@ async fn vault_addresses(
     let s = state.lock().expect("state lock");
     let from = q.from.unwrap_or(0);
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
+    let owner = q.owner.as_deref().map(parse_address).transpose()?;
     let rows: Vec<Value> = s
         .vaults
         .deposit_owner
         .range((chain, from)..=(chain, u64::MAX))
+        .filter(|(_, a)| owner.is_none_or(|o| **a == o))
         .take(limit)
         .map(|((_, i), a)| json!({ "index": i, "owner": a.to_hex(), "address": derive(&s.vaults, chain, network, *i) }))
         .collect();
