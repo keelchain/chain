@@ -38,7 +38,7 @@ export class Writer {
 
   u16(v: number): void { this.uint(v, 2); }
   u32(v: number): void { this.uint(v, 4); }
-  u64(v: bigint | number): void { this.uint(v, 8); }
+  u64(v: bigint | number | string): void { this.uint(typeof v === "string" ? BigInt(v) : v, 8); }
   u128(v: bigint | number | string): void { this.uint(typeof v === "string" ? BigInt(v) : v, 16); }
 
   i32(v: number): void {
