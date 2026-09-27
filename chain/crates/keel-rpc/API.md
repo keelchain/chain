@@ -27,6 +27,11 @@ action's JSON they are 32-element byte arrays (serde form).
 | GET | `/v1/gov/proposals/{id}` | Proposal |
 | GET | `/v1/staking/validators` | `{consensus:[hex keys], staked:[{consensus_key,power}], staking}` |
 | GET | `/v1/receipts/{tx_id}` | `{index, tx_id, signer, ok, error{code,message}?, events[]}` (404 until applied) |
+| GET | `/v1/clients/{addr}` → `{address, attester, fee, caps, earned, usage_paid, attested_accounts, usage_prices}` | a client's retail schedule and what it earned and paid |
+| GET | `/v1/treasury` → `{height, balances:{treasury,validator_rewards,burn}, last_buyback, params, fee_split_bps}` | system balances per asset and the epoch buyback record |
+| GET | `/v1/ready/{chain}?max_checkpoint_age=` → `{chain, ready, reasons, height, vault, checkpoint, last_deposit_credited, outbound_pending, halted, fee_rate}` | whether a client may turn that network on; what a per-network switch polls |
+| GET | `/v1/sync/meta` → `{height, state_hash, last_hash, schema, boundaries:[{epoch,height,digest}]}` | newest snapshot for state sync (`keel-node --sync-from`) |
+| GET | `/v1/sync/snapshot` → bytes | the snapshot itself (`KEEL` header, schema, borsh state) |
 | GET | `/v1/blocks/{height}/receipts` | `{height, receipts[]}` (last 10,000 blocks) |
 | WS | `/v1/ws` | one JSON message per applied block: `{height, timestamp, state_hash, receipts[], events[], books{pair:{best_bid,best_ask,last_price}}}` |
 
@@ -39,14 +44,27 @@ Error codes on `/v1/actions`: `BAD_SIGNATURE`, `WRONG_CHAIN`, `BAD_NONCE`,
 nonce may run up to 64 ahead of the chain nonce (pipelining); actions are
 selected per signer in nonce order.
 
-## Required by marketplace (not yet served)
+## Custody (client-owned vaults)
 
-The marketplace chain client (`apps/marketplace/src/modules/chain/`) reads
-these in addition to the table above. Until the node serves them the client
-degrades as noted; nothing else in the marketplace depends on them.
+| Route | What |
+|---|---|
+| `GET /v1/custody` | every client-owned vault: `custodian`, `chain`, `vault` (key, chain code, epoch), `signer_url`, `address` (index 0), `next_deposit_index`, `deposit_owners`, `reserves[]` (`asset`, `reserve`, `liabilities`, `halted`) |
+| `GET /v1/custody/{addr}` | one client's vaults and reserves, plus the number of accounts in its custody |
+| `GET /v1/custody/{addr}/{chain}/addresses?from&limit&owner` | deposit addresses of that vault with their owners |
 
-| Method | Path | Used for | Without it |
-|---|---|---|---|
-| GET | `/v1/vaults/{chain}/addresses/{index}` → `{chain, index, owner, address}` | the deposit ADDRESS STRING of an assigned index (`keel_chains::deposit_address` over the active vault's public key + chain code; the TS side has no secp256k1) | `issueAddress` fails with `ADDRESS_DERIVATION_UNAVAILABLE` after the index is assigned; a retry resolves once the route exists. The client also accepts an `address` field on the rows of `/v1/vaults/{chain}/addresses`. |
-| GET | `/v1/vaults/{chain}/addresses/lookup?address=` → same row | reverse lookup of a deposit address | only addresses issued through this marketplace resolve |
-| GET | `/v1/vaults/deposits?status=&owner=` → `{deposits:[{chain, asset, tx_hash, index, deposit_index, owner, address?, amount, confirmations, required_confirmations, status, first_seen_at?, settled_at?, rejection_reason?}]}` | pending / rejected deposit notices and the per-customer deposit history | those lists are empty; credited deposits still arrive over `/v1/ws` (`DepositCredited`) |
+Outbound rows and batches under `/v1/vaults/outbounds` carry `custodian`
+(null for the network vault).
+
+## WebSocket
+
+`/v1/ws` carries filtered, sequenced subscriptions (`blocks`, `account:`,
+`pair:`, `deposits:`, `book:`) with a `gap` frame when a client falls behind
+and replay from a height; the protocol is in `API-WS.md`. A socket that never
+subscribes receives `blocks`, which is the earlier per-block feed.
+
+## Stability
+
+`/v1` is frozen: routes and fields are added, never removed or renamed. A
+deprecation is announced thirty days ahead in the changelog and keeps working
+meanwhile. Action submission may require an API key (`Authorization: Bearer`)
+on the public testnet; reads never do.

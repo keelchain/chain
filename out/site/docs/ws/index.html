@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebSocket subscriptions · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: WebSocket
+subscriptions">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / WebSocket
+subscriptions</div>
+  <nav class="toc"><ul>
+<li><a href="#websocket-subscriptions-v1"
+id="toc-websocket-subscriptions-v1">WebSocket subscriptions (v1)</a>
+<ul>
+<li><a href="#client--server" id="toc-client--server">Client →
+server</a></li>
+<li><a href="#channels" id="toc-channels">Channels</a></li>
+<li><a href="#server--client" id="toc-server--client">Server →
+client</a></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="websocket-subscriptions-v1">WebSocket subscriptions (v1)</h1>
+<p>Both <code>/rpc/v1/ws</code> (the node) and <code>/api/v1/ws</code>
+(the indexer) speak the same envelope. One socket carries any number of
+channels; every server frame has a per-connection <code>seq</code>
+(monotonic from 1) and the block <code>height</code> it belongs to, so a
+client can tell exactly what it received and what it missed.</p>
+<h2 id="client--server">Client → server</h2>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">&quot;op&quot;</span><span class="fu">:</span><span class="st">&quot;subscribe&quot;</span><span class="fu">,</span><span class="dt">&quot;channels&quot;</span><span class="fu">:</span><span class="ot">[</span><span class="st">&quot;blocks&quot;</span><span class="ot">,</span><span class="st">&quot;account:&lt;hex&gt;&quot;</span><span class="ot">,</span><span class="st">&quot;pair:BTC-KUSD&quot;</span><span class="ot">,</span><span class="st">&quot;deposits:BTC:&lt;hex&gt;&quot;</span><span class="ot">,</span><span class="st">&quot;book:BTC-KUSD?depth=20&quot;</span><span class="ot">]</span><span class="fu">,</span><span class="dt">&quot;from_height&quot;</span><span class="fu">:</span><span class="dv">120</span><span class="fu">}</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">&quot;op&quot;</span><span class="fu">:</span><span class="st">&quot;unsubscribe&quot;</span><span class="fu">,</span><span class="dt">&quot;channels&quot;</span><span class="fu">:</span><span class="ot">[</span><span class="st">&quot;pair:BTC-KUSD&quot;</span><span class="ot">]</span><span class="fu">}</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">&quot;op&quot;</span><span class="fu">:</span><span class="st">&quot;ping&quot;</span><span class="fu">}</span></span></code></pre></div>
+<p><code>subscribe</code> replaces the channel set.
+<code>from_height</code> replays the event channels
+(<code>account:</code>, <code>pair:</code>, <code>deposits:</code>) from
+that height up to the tip before live delivery starts (at most the last
+10,000 blocks on the node). A connection that never subscribes receives
+<code>blocks</code> (node) or <code>blocks</code> and <code>txs</code>
+(indexer), which is what the earlier firehose sent.</p>
+<h2 id="channels">Channels</h2>
+<table>
+<thead>
+<tr class="header">
+<th>channel</th>
+<th>where</th>
+<th>what arrives</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>blocks</code></td>
+<td>node, indexer</td>
+<td><code>block</code>: the node sends the whole block
+(<code>timestamp</code>, <code>state_hash</code>, <code>receipts</code>,
+<code>events</code>, <code>books</code> top of book per pair); the
+indexer sends its block summary</td>
+</tr>
+<tr class="even">
+<td><code>txs</code></td>
+<td>indexer</td>
+<td><code>tx</code>: one transaction summary per transaction</td>
+</tr>
+<tr class="odd">
+<td><code>account:&lt;hex&gt;</code></td>
+<td>node, indexer</td>
+<td>node: <code>event</code> with <code>data.kind = receipt</code> for
+every receipt signed by or touching the address (transfers to it, trades
+it is in, deposits credited to it, ...) and
+<code>data.kind = event</code> for end-of-block events about it;
+indexer: <code>tx</code> summaries signed by it</td>
+</tr>
+<tr class="even">
+<td><code>pair:&lt;PAIR&gt;</code></td>
+<td>node</td>
+<td><code>event</code> per order event on that pair
+(<code>OrderAccepted</code>, <code>OrderFilled</code>,
+<code>OrderCancelled</code>, <code>OrderRejected</code>, with
+<code>tx_id</code>) and <code>book_top</code> after each block
+(<code>best_bid</code>, <code>best_ask</code>,
+<code>last_price</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>deposits:&lt;CHAIN&gt;:&lt;hex&gt;</code></td>
+<td>node</td>
+<td><code>event</code> per deposit-side event for that owner on that
+chain: <code>DepositAddressAssigned</code>,
+<code>DepositCredited</code>, <code>WithdrawalQueued</code></td>
+</tr>
+<tr class="even">
+<td><code>book:&lt;PAIR&gt;?depth=N</code></td>
+<td>node</td>
+<td><code>book_snapshot</code> on subscribe (<code>bids</code>,
+<code>asks</code> as <code>[price, size]</code>, best first, at most N
+levels a side), then <code>book_delta</code> per block with only the
+changed levels: <code>changes</code> of
+<code>[side, price, size]</code>, size <code>"0"</code> = level
+gone</td>
+</tr>
+</tbody>
+</table>
+<h2 id="server--client">Server → client</h2>
+<table>
+<thead>
+<tr class="header">
+<th>type</th>
+<th>fields</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>subscribed</code> / <code>unsubscribed</code></td>
+<td><code>channels</code></td>
+<td>the channel set now in force</td>
+</tr>
+<tr class="even">
+<td><code>block</code></td>
+<td>see above</td>
+<td>one finalized (node) or indexed (indexer) block</td>
+</tr>
+<tr class="odd">
+<td><code>event</code></td>
+<td><code>channel</code>, <code>data</code></td>
+<td>one receipt or event on an event channel</td>
+</tr>
+<tr class="even">
+<td><code>book_top</code>, <code>book_snapshot</code>,
+<code>book_delta</code></td>
+<td><code>pair</code>, ...</td>
+<td>order-book streams</td>
+</tr>
+<tr class="odd">
+<td><code>gap</code></td>
+<td><code>missed</code>, <code>from_height</code>,
+<code>to_height</code>, <code>resync</code></td>
+<td>this connection fell behind and frames were dropped; nothing between
+<code>from_height</code> and <code>to_height</code> was delivered.
+<code>resync</code> names the REST routes to read them from; book
+channels get a fresh <code>book_snapshot</code> right after</td>
+</tr>
+<tr class="even">
+<td><code>heartbeat</code></td>
+<td></td>
+<td>every 15 s, with the current <code>height</code></td>
+</tr>
+<tr class="odd">
+<td><code>pong</code></td>
+<td></td>
+<td>answer to <code>ping</code></td>
+</tr>
+<tr class="even">
+<td><code>error</code></td>
+<td><code>message</code></td>
+<td>a bad op or channel; the subscription set is unchanged</td>
+</tr>
+</tbody>
+</table>
+<p>A client that sees <code>seq</code> jump has missed frames too (a
+proxy or its own buffer dropped them) and should treat it as a
+<code>gap</code>. The SDK's <code>KeelSocket</code> does both: it raises
+a synthetic <code>gap</code> on a sequence hole, and on a dropped
+connection it reconnects with backoff and re-subscribes with
+<code>from_height</code> set to the last height it saw.</p>
+<h2 id="example">Example</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { KeelSocket } <span class="im">from</span> <span class="st">&quot;@keelchain/sdk&quot;</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> ws <span class="op">=</span> <span class="kw">new</span> <span class="fu">KeelSocket</span>(<span class="st">&quot;wss://testnet.keelchain.com/rpc/v1/ws&quot;</span>)<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>ws<span class="op">.</span><span class="fu">on</span>(<span class="st">&quot;event&quot;</span><span class="op">,</span> (f) <span class="kw">=&gt;</span> <span class="bu">console</span><span class="op">.</span><span class="fu">log</span>(f<span class="op">.</span><span class="at">channel</span><span class="op">,</span> f<span class="op">.</span><span class="at">data</span>))<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>ws<span class="op">.</span><span class="fu">on</span>(<span class="st">&quot;book_delta&quot;</span><span class="op">,</span> (f) <span class="kw">=&gt;</span> <span class="fu">applyDelta</span>(f<span class="op">.</span><span class="at">pair</span><span class="op">,</span> f<span class="op">.</span><span class="at">changes</span>))<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>ws<span class="op">.</span><span class="fu">on</span>(<span class="st">&quot;gap&quot;</span><span class="op">,</span> <span class="kw">async</span> (f) <span class="kw">=&gt;</span> {</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (<span class="kw">let</span> h <span class="op">=</span> f<span class="op">.</span><span class="at">from_height</span><span class="op">;</span> h <span class="op">&lt;=</span> f<span class="op">.</span><span class="at">to_height</span><span class="op">;</span> h<span class="op">++</span>) <span class="cf">await</span> <span class="fu">reconcile</span>(h)<span class="op">;</span> <span class="co">// GET /v1/blocks/{h}/receipts</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>})<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="cf">await</span> ws<span class="op">.</span><span class="fu">subscribe</span>([<span class="vs">`account:</span><span class="sc">${</span>me<span class="sc">}</span><span class="vs">`</span><span class="op">,</span> <span class="st">&quot;book:BTC-KUSD?depth=10&quot;</span>])<span class="op">;</span></span></code></pre></div>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>chain/crates/keel-rpc/API-WS.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

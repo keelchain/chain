@@ -49,7 +49,7 @@ pub struct UnsignedBtc {
     pub vsize_estimate: u64,
 }
 
-fn p2wpkh_script(pubkey: &[u8; 33]) -> Result<ScriptBuf, Error> {
+pub(crate) fn p2wpkh_script(pubkey: &[u8; 33]) -> Result<ScriptBuf, Error> {
     let pk = CompressedPublicKey::from_slice(pubkey).map_err(|e| Error::Key(e.to_string()))?;
     Ok(ScriptBuf::new_p2wpkh(&pk.wpubkey_hash()))
 }

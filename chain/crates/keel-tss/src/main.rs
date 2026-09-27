@@ -11,20 +11,23 @@
 //! Environment: `KEEL_TSS_PASSPHRASE` (share file), `KEEL_TSS_SECRET` (hex,
 //! HMAC key shared by the signer set for the TCP transport).
 //!
-//! `serve` exposes `POST /sign {"digest": hex32, "path": [u32, ...]}` →
-//! `{"r": hex, "s": hex, "v": 0|1}` for the local observer daemon only
-//! (bind it to loopback). The receiving party coordinates: it picks the
-//! signer subset, sends a `control` announcement to every signer and each
-//! of them joins the session. There is no policy check on the digest here
-//! yet; the observer daemon is trusted to only request signatures for
-//! finalized withdrawal sets (docs/plan.md §4 lists the digest
-//! binding as the production requirement).
+//! `serve` exposes `POST /sign {"digest": hex32, "path": [u32, ...],
+//! "context": {...}}` → `{"r": hex, "s": hex, "v": 0|1}` for the local
+//! observer daemon only (bind it to loopback). The receiving party
+//! coordinates: it picks the signer subset, sends a `control` announcement
+//! (digest, path and context) to every signer and each of them joins the
+//! session. With `--policy-rpc <node>` every party, coordinator and joiner,
+//! first checks the context against the chain's outbound rows
+//! (`keel_chains::policy`): the digest must be the signing hash of a
+//! transaction that pays open outbounds of the named batch, from the
+//! vault's own keys. Without the flag (devnet) any digest is signed.
 #![forbid(unsafe_code)]
 #![allow(clippy::disallowed_types, clippy::disallowed_methods)]
 
 use anyhow::{bail, Context as _};
 use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use clap::{Parser, Subcommand};
+use keel_chains::policy::SignContext;
 use keel_tss::{
     ecdsa::{self, EcdsaSignature, KeyShare, KeygenParams, Primes},
     protocol::Mailbox,
@@ -39,6 +42,8 @@ use std::{
     thread,
     time::Duration,
 };
+
+mod policy;
 
 const SECRET_ENV: &str = "KEEL_TSS_SECRET";
 const CONTROL_SESSION: &str = "control";
@@ -102,6 +107,10 @@ enum Cmd {
         signers: Option<Vec<u16>>,
         #[arg(long, default_value = "120")]
         timeout_secs: u64,
+        /// Node RPC whose outbound rows every signing request must match
+        /// (the signing policy). Unset = sign any digest (devnet only).
+        #[arg(long)]
+        policy_rpc: Option<String>,
     },
 }
 
@@ -170,6 +179,7 @@ fn main() -> anyhow::Result<()> {
             http,
             signers,
             timeout_secs,
+            policy_rpc,
         } => {
             let passphrase = store::passphrase_from_env()?;
             let secret = secret_from_env()?;
@@ -191,12 +201,20 @@ fn main() -> anyhow::Result<()> {
                     header.index
                 );
             }
+            let policy = match policy_rpc {
+                Some(rpc) => Some(Arc::new(policy::Policy::new(&rpc, &share)?)),
+                None => {
+                    tracing::warn!("no --policy-rpc: this signer signs any digest it is asked");
+                    None
+                }
+            };
             serve(
                 share,
                 transport,
                 http,
                 signers,
                 Duration::from_secs(timeout_secs),
+                policy,
             )?;
         }
     }
@@ -223,6 +241,9 @@ fn default_signers(me: u16, n: u16, t: u16) -> Vec<u16> {
 struct SignRequest {
     digest: String,
     path: Vec<u32>,
+    /// What the digest is for; required when a policy is configured.
+    #[serde(default)]
+    context: Option<SignContext>,
 }
 
 /// Control message the coordinator sends to start a signing session.
@@ -232,17 +253,21 @@ struct SignAnnounce {
     digest: String,
     path: Vec<u32>,
     signers: Vec<u16>,
+    #[serde(default)]
+    context: Option<SignContext>,
 }
 
 struct LocalJob {
     digest: [u8; 32],
     path: Vec<u32>,
+    context: Option<SignContext>,
     reply: tokio::sync::oneshot::Sender<Result<EcdsaSignature, String>>,
 }
 
 #[derive(Clone)]
 struct HttpState {
     jobs: mpsc::Sender<LocalJob>,
+    policy: Option<Arc<policy::Policy>>,
 }
 
 fn serve(
@@ -251,6 +276,7 @@ fn serve(
     http: SocketAddr,
     signers: Vec<u16>,
     timeout: Duration,
+    policy: Option<Arc<policy::Policy>>,
 ) -> anyhow::Result<()> {
     let (jobs_tx, jobs_rx) = mpsc::channel::<LocalJob>();
     let share = Arc::new(share);
@@ -258,15 +284,19 @@ fn serve(
     {
         let share = share.clone();
         let transport = transport.clone();
+        let policy = policy.clone();
         thread::Builder::new()
             .name("keel-tss-coordinator".into())
-            .spawn(move || coordinator(&share, &*transport, jobs_rx, signers, timeout))?;
+            .spawn(move || coordinator(&share, &*transport, jobs_rx, signers, timeout, policy))?;
     }
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         let app = Router::new()
             .route("/sign", post(handle_sign))
-            .with_state(HttpState { jobs: jobs_tx });
+            .with_state(HttpState {
+                jobs: jobs_tx,
+                policy,
+            });
         let listener = tokio::net::TcpListener::bind(http).await?;
         tracing::info!(%http, "sign endpoint listening");
         axum::serve(listener, app).await?;
@@ -290,12 +320,22 @@ async fn handle_sign(
             )
         }
     };
+    if let Some(p) = &st.policy {
+        if let Err(e) = p.check(&digest, &req.path, req.context.as_ref()) {
+            tracing::warn!(error = %e, "signing request refused by policy");
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": format!("policy: {e}") })),
+            );
+        }
+    }
     let (tx, rx) = tokio::sync::oneshot::channel();
     if st
         .jobs
         .send(LocalJob {
             digest,
             path: req.path,
+            context: req.context,
             reply: tx,
         })
         .is_err()
@@ -331,6 +371,7 @@ fn coordinator(
     jobs: mpsc::Receiver<LocalJob>,
     signers: Vec<u16>,
     timeout: Duration,
+    policy: Option<Arc<policy::Policy>>,
 ) {
     let mut mailbox = Mailbox::new(transport);
     let me = transport.my_index();
@@ -353,6 +394,7 @@ fn coordinator(
                     digest: hex::encode(job.digest),
                     path: job.path.clone(),
                     signers: signers.clone(),
+                    context: job.context.clone(),
                 };
                 let body = serde_json::to_vec(&announce).unwrap_or_default();
                 let mut announced = true;
@@ -386,6 +428,19 @@ fn coordinator(
                         "announce does not include this party or its sender"
                     );
                     continue;
+                }
+                if let Some(p) = &policy {
+                    let digest = hex::decode(&announce.digest)
+                        .ok()
+                        .and_then(|v| <[u8; 32]>::try_from(v).ok());
+                    let verdict = match digest {
+                        Some(d) => p.check(&d, &announce.path, announce.context.as_ref()),
+                        None => Err("bad digest".into()),
+                    };
+                    if let Err(e) = verdict {
+                        tracing::warn!(from = m.from, session = %announce.session, error = %e, "announced session refused by policy");
+                        continue;
+                    }
                 }
                 match run_sign(share, &mut mailbox, &announce, timeout) {
                     Ok(sig) => {

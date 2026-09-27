@@ -1,14 +1,18 @@
 //! Random access to the node's own history for the RPC (explorers, the
-//! indexer). Three append-only files under the storage dir:
+//! indexer). Append-only files under the storage dir, cut into segments
+//! at every snapshot (`machine.rs` owns the writes):
 //!
-//! - `journal.bin`  (owned by `machine.rs`): `u32 len | borsh JournalEntry`
-//!   per block — height, timestamp, payload.
-//! - `receipts.jsonl` (owned by `machine.rs`): one JSON line per receipt,
-//!   `{height, receipt}`, appended per block in order.
+//! - `journal-<from>.bin`: `u32 len | borsh JournalEntry` per block —
+//!   height, timestamp, payload — for the blocks from height `from` up to
+//!   the next segment's start.
+//! - `receipts-<from>.jsonl`: one JSON line per receipt, `{height, receipt}`,
+//!   appended per block in order, same segmentation.
 //! - `hashes.bin` (owned here): 40 bytes per block, `u64 height | [u8;32]
 //!   state hash`, so the hash after every block survives restarts.
 //!
-//! At startup the two journals are scanned once to build height → byte
+//! A pruning node deletes whole segments below its retention line; the
+//! archive then serves a suffix of the chain and `oldest()` says where it
+//! starts. At startup the journals are scanned once to build height → byte
 //! range indexes in memory (a few MB per million blocks); after that each
 //! read is one seek. Nothing here is on the consensus path.
 #![allow(clippy::disallowed_types, clippy::disallowed_methods)]
@@ -19,7 +23,7 @@ use keel_actions::{decode_payload, SignedAction};
 use keel_vm::receipt::Receipt;
 use std::{
     collections::BTreeMap,
-    fs::{File, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{Read as _, Seek as _, SeekFrom, Write as _},
     path::{Path, PathBuf},
 };
@@ -29,6 +33,46 @@ struct JournalEntry {
     height: u64,
     timestamp: u64,
     payload: Vec<u8>,
+}
+
+pub fn journal_path(dir: &Path, from: u64) -> PathBuf {
+    dir.join(format!("journal-{from}.bin"))
+}
+
+pub fn receipts_path(dir: &Path, from: u64) -> PathBuf {
+    dir.join(format!("receipts-{from}.jsonl"))
+}
+
+/// Segment start heights present on disk, ascending.
+pub fn segments(dir: &Path) -> anyhow::Result<Vec<u64>> {
+    let mut out = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let name = entry?.file_name().to_string_lossy().to_string();
+        if let Some(h) = name
+            .strip_prefix("journal-")
+            .and_then(|s| s.strip_suffix(".bin"))
+        {
+            if let Ok(h) = h.parse::<u64>() {
+                out.push(h);
+            }
+        }
+    }
+    out.sort_unstable();
+    Ok(out)
+}
+
+/// Storage written before segmentation had one `journal.bin` and one
+/// `receipts.jsonl`; they become the segment starting at height 1.
+pub fn migrate_legacy(dir: &Path) -> anyhow::Result<()> {
+    let legacy = dir.join("journal.bin");
+    if legacy.exists() && !journal_path(dir, 1).exists() {
+        fs::rename(&legacy, journal_path(dir, 1)).context("rename journal.bin")?;
+        let receipts = dir.join("receipts.jsonl");
+        if receipts.exists() {
+            fs::rename(&receipts, receipts_path(dir, 1)).context("rename receipts.jsonl")?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -41,61 +85,66 @@ pub struct BlockMeta {
 
 pub struct Archive {
     dir: PathBuf,
-    /// height -> (offset of the entry body, length)
-    journal_index: BTreeMap<u64, (u64, u32)>,
-    /// height -> (start, end) byte range of that block's receipt lines
-    receipts_index: BTreeMap<u64, (u64, u64)>,
+    /// height -> (segment, offset of the entry body, length)
+    journal_index: BTreeMap<u64, (u64, u64, u32)>,
+    /// height -> (segment, start, end) byte range of that block's receipt lines
+    receipts_index: BTreeMap<u64, (u64, u64, u64)>,
     hashes: BTreeMap<u64, [u8; 32]>,
     hashes_file: File,
-    receipts_len: u64,
+    /// Bytes written so far per receipts segment.
+    receipts_len: BTreeMap<u64, u64>,
     /// Cached tx counts from the index scan (payload decode is lazy).
     tx_counts: BTreeMap<u64, u32>,
 }
 
 impl Archive {
     pub fn open(dir: &Path) -> anyhow::Result<Self> {
+        migrate_legacy(dir)?;
         let mut journal_index = BTreeMap::new();
         let mut tx_counts = BTreeMap::new();
-        if let Ok(mut f) = File::open(dir.join("journal.bin")) {
-            let mut buf = Vec::new();
-            f.read_to_end(&mut buf)?;
-            let mut pos = 0usize;
-            while pos + 4 <= buf.len() {
-                let len = u32::from_le_bytes([buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]])
-                    as usize;
-                pos += 4;
-                if pos + len > buf.len() {
-                    break;
-                }
-                if let Ok(e) = JournalEntry::try_from_slice(&buf[pos..pos + len]) {
-                    journal_index.insert(e.height, (pos as u64, len as u32));
-                    tx_counts.insert(
-                        e.height,
-                        decode_payload(&e.payload)
-                            .map(|a| a.len() as u32)
-                            .unwrap_or(0),
-                    );
-                }
-                pos += len;
-            }
-        }
         let mut receipts_index = BTreeMap::new();
-        let mut receipts_len = 0u64;
-        if let Ok(mut f) = File::open(dir.join("receipts.jsonl")) {
-            let mut buf = String::new();
-            f.read_to_string(&mut buf)?;
-            let mut offset = 0u64;
-            for line in buf.split_inclusive('\n') {
-                let len = line.len() as u64;
-                if let Some(h) = height_of_line(line) {
-                    receipts_index
-                        .entry(h)
-                        .and_modify(|(_, end)| *end = offset + len)
-                        .or_insert((offset, offset + len));
+        let mut receipts_len = BTreeMap::new();
+        for seg in segments(dir)? {
+            if let Ok(mut f) = File::open(journal_path(dir, seg)) {
+                let mut buf = Vec::new();
+                f.read_to_end(&mut buf)?;
+                let mut pos = 0usize;
+                while pos + 4 <= buf.len() {
+                    let len =
+                        u32::from_le_bytes([buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]])
+                            as usize;
+                    pos += 4;
+                    if pos + len > buf.len() {
+                        break;
+                    }
+                    if let Ok(e) = JournalEntry::try_from_slice(&buf[pos..pos + len]) {
+                        journal_index.insert(e.height, (seg, pos as u64, len as u32));
+                        tx_counts.insert(
+                            e.height,
+                            decode_payload(&e.payload)
+                                .map(|a| a.len() as u32)
+                                .unwrap_or(0),
+                        );
+                    }
+                    pos += len;
                 }
-                offset += len;
             }
-            receipts_len = offset;
+            let mut offset = 0u64;
+            if let Ok(mut f) = File::open(receipts_path(dir, seg)) {
+                let mut buf = String::new();
+                f.read_to_string(&mut buf)?;
+                for line in buf.split_inclusive('\n') {
+                    let len = line.len() as u64;
+                    if let Some(h) = height_of_line(line) {
+                        receipts_index
+                            .entry(h)
+                            .and_modify(|(_, _, end)| *end = offset + len)
+                            .or_insert((seg, offset, offset + len));
+                    }
+                    offset += len;
+                }
+            }
+            receipts_len.insert(seg, offset);
         }
         let mut hashes = BTreeMap::new();
         let mut hashes_file = OpenOptions::new()
@@ -126,27 +175,30 @@ impl Archive {
         })
     }
 
-    /// Record a block that `machine.rs` just journaled. `receipt_bytes` is
-    /// what was appended to `receipts.jsonl` for it.
+    /// Record a block that `machine.rs` just journaled into segment
+    /// `journal_seg`; `receipt_bytes` is what was appended to the receipts
+    /// file of `receipt_seg` for it.
+    #[allow(clippy::too_many_arguments)]
     pub fn record(
         &mut self,
         height: u64,
         tx_count: u32,
         state_hash: [u8; 32],
+        journal_seg: u64,
         journal_body_offset: u64,
         journal_body_len: u32,
+        receipt_seg: u64,
         receipt_bytes: u64,
     ) -> anyhow::Result<()> {
         self.journal_index
-            .insert(height, (journal_body_offset, journal_body_len));
+            .insert(height, (journal_seg, journal_body_offset, journal_body_len));
         self.tx_counts.insert(height, tx_count);
+        let len = self.receipts_len.entry(receipt_seg).or_insert(0);
         if receipt_bytes > 0 {
-            self.receipts_index.insert(
-                height,
-                (self.receipts_len, self.receipts_len + receipt_bytes),
-            );
+            self.receipts_index
+                .insert(height, (receipt_seg, *len, *len + receipt_bytes));
         }
-        self.receipts_len += receipt_bytes;
+        *len += receipt_bytes;
         let mut rec = [0u8; 40];
         rec[..8].copy_from_slice(&height.to_le_bytes());
         rec[8..].copy_from_slice(&state_hash);
@@ -158,13 +210,33 @@ impl Archive {
         Ok(())
     }
 
+    /// Forget the blocks of segments that `machine.rs` deleted. Hashes are
+    /// kept: they are 40 bytes per block and let the RPC answer
+    /// `/v1/blocks/{h}` state hashes for pruned heights.
+    pub fn prune_segments(&mut self, removed: &[u64]) {
+        self.journal_index
+            .retain(|_, (seg, _, _)| !removed.contains(seg));
+        self.receipts_index
+            .retain(|_, (seg, _, _)| !removed.contains(seg));
+        for seg in removed {
+            self.receipts_len.remove(seg);
+        }
+        let keep: Vec<u64> = self.journal_index.keys().copied().collect();
+        self.tx_counts.retain(|h, _| keep.binary_search(h).is_ok());
+    }
+
     pub fn tip(&self) -> u64 {
         self.journal_index.keys().next_back().copied().unwrap_or(0)
     }
 
+    /// Lowest height still on disk (a pruning node serves a suffix).
+    pub fn oldest(&self) -> Option<u64> {
+        self.journal_index.keys().next().copied()
+    }
+
     pub fn meta(&self, height: u64) -> Option<BlockMeta> {
-        let &(off, len) = self.journal_index.get(&height)?;
-        let entry = self.read_entry(off, len)?;
+        let &(seg, off, len) = self.journal_index.get(&height)?;
+        let entry = self.read_entry(seg, off, len)?;
         Some(BlockMeta {
             height,
             timestamp: entry.timestamp,
@@ -185,8 +257,8 @@ impl Archive {
     }
 
     pub fn actions(&self, height: u64) -> Option<Vec<SignedAction>> {
-        let &(off, len) = self.journal_index.get(&height)?;
-        let entry = self.read_entry(off, len)?;
+        let &(seg, off, len) = self.journal_index.get(&height)?;
+        let entry = self.read_entry(seg, off, len)?;
         decode_payload(&entry.payload)
     }
 
@@ -194,10 +266,10 @@ impl Archive {
         if !self.journal_index.contains_key(&height) {
             return None;
         }
-        let Some(&(start, end)) = self.receipts_index.get(&height) else {
+        let Some(&(seg, start, end)) = self.receipts_index.get(&height) else {
             return Some(Vec::new());
         };
-        let mut f = File::open(self.dir.join("receipts.jsonl")).ok()?;
+        let mut f = File::open(receipts_path(&self.dir, seg)).ok()?;
         f.seek(SeekFrom::Start(start)).ok()?;
         let mut buf = vec![0u8; (end - start) as usize];
         f.read_exact(&mut buf).ok()?;
@@ -211,8 +283,8 @@ impl Archive {
         )
     }
 
-    fn read_entry(&self, off: u64, len: u32) -> Option<JournalEntry> {
-        let mut f = File::open(self.dir.join("journal.bin")).ok()?;
+    fn read_entry(&self, seg: u64, off: u64, len: u32) -> Option<JournalEntry> {
+        let mut f = File::open(journal_path(&self.dir, seg)).ok()?;
         f.seek(SeekFrom::Start(off)).ok()?;
         let mut buf = vec![0u8; len as usize];
         f.read_exact(&mut buf).ok()?;
@@ -285,7 +357,7 @@ mod tests {
         // Record hashes through the API (as the node would), then reopen.
         {
             let mut a = Archive::open(&dir).unwrap();
-            a.record(3, 0, [9; 32], 0, 0, 0).unwrap();
+            a.record(3, 0, [9; 32], 1, 0, 0, 1, 0).unwrap();
         }
         let a = Archive::open(&dir).unwrap();
         // `tip` follows the journal; a hash alone (height 3) is not a block.

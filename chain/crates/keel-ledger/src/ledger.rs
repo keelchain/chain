@@ -417,6 +417,16 @@ impl Ledger {
             .fold(0, Amount::saturating_add)
     }
 
+    /// Sum of the balances in `asset` whose account passes `pred`
+    /// (signed: unrestricted accounts may be negative).
+    pub fn sum_balances(&self, asset: &Asset, pred: impl Fn(&AccountKey) -> bool) -> i128 {
+        self.accounts
+            .iter()
+            .filter(|(k, _)| &k.asset == asset && pred(k))
+            .map(|(_, s)| s.balance)
+            .fold(0i128, i128::saturating_add)
+    }
+
     /// Platform assets in `asset`: sum of debit-normal balances.
     pub fn system_reserves(&self, asset: &Asset) -> i128 {
         self.accounts

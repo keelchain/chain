@@ -8,6 +8,7 @@ pub mod address;
 pub mod btc;
 pub mod eth;
 pub mod hd;
+pub mod policy;
 pub mod tron;
 
 pub use address::{deposit_address, validate_address};

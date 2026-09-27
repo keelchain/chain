@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The public testnet · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: The public
+testnet">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / The public
+testnet</div>
+  <nav class="toc"><ul>
+<li><a href="#the-public-testnet" id="toc-the-public-testnet">The public
+testnet</a>
+<ul>
+<li><a href="#funding-an-account" id="toc-funding-an-account">Funding an
+account</a></li>
+<li><a href="#clients" id="toc-clients">Clients</a></li>
+<li><a href="#running-a-follower" id="toc-running-a-follower">Running a
+follower</a></li>
+<li><a href="#operations" id="toc-operations">Operations</a></li>
+<li><a href="#resetting" id="toc-resetting">Resetting</a></li>
+<li><a href="#local" id="toc-local">Local</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="the-public-testnet">The public testnet</h1>
+<p>Live since 2026-09-24 at keelchain.com, deployed only by GitHub
+Actions (<code>infra/testnet/README.md</code>).</p>
+<table>
+<thead>
+<tr class="header">
+<th>Piece</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>site</td>
+<td><a href="https://keelchain.com">https://keelchain.com</a>
+(<code>site/</code>, wallet pages, wallet packages under
+<code>/wallet/downloads/</code>)</td>
+</tr>
+<tr class="even">
+<td>explorer</td>
+<td><a
+href="https://testnet.keelchain.com">https://testnet.keelchain.com</a>
+(<code>apps/explorer</code>, <code>VITE_BASE=/</code>)</td>
+</tr>
+<tr class="odd">
+<td>read API</td>
+<td><a
+href="https://testnet.keelchain.com/api/v1/…">https://testnet.keelchain.com/api/v1/…</a>
+(<code>keel-indexer</code>, <code>docs/explorer-api.md</code>)</td>
+</tr>
+<tr class="even">
+<td>node RPC</td>
+<td><a
+href="https://testnet.keelchain.com/rpc/v1/…">https://testnet.keelchain.com/rpc/v1/…</a>
+(<code>keel-node</code>; status, accounts, params,
+<code>gov/roles</code>, <code>gov/proposals</code>, receipts, WebSocket
+at <code>/rpc/v1/ws</code>)</td>
+</tr>
+<tr class="odd">
+<td>chain</td>
+<td>id 3, <code>_KEEL_CHAIN</code> namespace, external network signet;
+the validator set is the host set in <code>DEPLOY_HOSTS</code> (one host
+today; consensus is BFT, so four validators tolerate one fault and three
+tolerate none), 600-block epochs; genesis built by the deploy workflow
+from every host's public identity plus
+<code>infra/testnet/genesis-params.json</code> (voting 60 blocks,
+timelock 10, proposal deposit 1000 KEEL)</td>
+</tr>
+<tr class="even">
+<td>vaults</td>
+<td>BTC (signet, pruned bitcoind on host 0, shared with the other hosts
+over WireGuard) and TRON (Nile); one observer per host, quorum two
+thirds, the vault key held as CGGMP21 threshold shares created by the
+<code>TSS ceremony</code> workflow (development signer only in
+single-host <code>local</code> mode). Every signer checks each request
+against the chain's outbound rows before signing. Bitcoin checkpoints go
+through governance: host 0 proposes daily, every host votes on proposals
+whose header matches its Bitcoin view</td>
+</tr>
+<tr class="odd">
+<td>assets</td>
+<td><code>KEEL</code> (6), <code>KUSD</code> (6), <code>BTC.BTC</code>,
+<code>ETH.ETH</code>, <code>ETH.USDT</code>, <code>TRON.TRX</code>,
+<code>TRON.USDT</code></td>
+</tr>
+<tr class="even">
+<td>wallet</td>
+<td>Keel Wallet 1.2.0, <code>window.keel</code></td>
+</tr>
+</tbody>
+</table>
+<p>The node and the indexer send open CORS headers, so browser clients
+can call the testnet directly.</p>
+<h2 id="funding-an-account">Funding an account</h2>
+<p>See <code>docs/deposits.md</code>: request a deposit address (wallet
+<em>Receive</em>, CLI or SDK), send signet BTC or Nile USDT/TRX to it,
+and the chain credits the vault asset after that chain's
+confirmations.</p>
+<h2 id="clients">Clients</h2>
+<p>A client is any service that signs actions for its users or holds a
+role. Run the <code>Onboard client</code> workflow with the client's
+account address: it adds the account to the attester set (and, if asked,
+makes it the param admin) and sends it starting KEEL and KUSD. The first
+client is a marketplace sandbox that signs up users with Keel Wallet and
+settles trades on the chain.</p>
+<h2 id="running-a-follower">Running a follower</h2>
+<p>Anyone can run a node that verifies the chain and serves the RPC
+without voting. Fetch the genesis file (<code>/v1/sync/meta</code> names
+the snapshot height; the genesis is published with each reset),
+then:</p>
+<pre><code>keel-node --me &lt;seed-or-key&gt;@&lt;port&gt; --genesis genesis.json --role follower \
+  --bootstrappers &lt;validator-pubkey&gt;@&lt;ip:port&gt; --advertise &lt;your-ip:port&gt; \
+  --sync-from https://testnet.keelchain.com/rpc \
+  --storage-dir /var/lib/keel --rpc-listen 127.0.0.1</code></pre>
+<p><code>--sync-from</code> installs the newest snapshot (checked
+against the full-state hash and the tip hash the peer reports; add
+<code>--sync-verify &lt;another rpc&gt;</code> to have a second node
+confirm the tip) and the epoch boundaries, then the node fetches the
+blocks above it from its peers. A follower holds no block below its
+snapshot, and <code>--retain-blocks N</code> lets it drop journal
+segments older than N blocks below each new snapshot;
+<code>/v1/status</code> reports <code>oldest_block</code> and
+<code>/v1/blocks</code> serves what it has. Validators keep the full
+history. Validators keep followers connected through
+<code>--extra-peers</code> or, once the follower bonds, through the
+chain state itself.</p>
+<h2 id="operations">Operations</h2>
+<p>Every host backs itself up daily (snapshot, config, and the indexer
+database on host 0; encrypted, copied off the box), writes health
+metrics for node_exporter every minute, and votes on pre-approved
+governance proposals every ten minutes. Host 0 can run Prometheus,
+Alertmanager and Grafana. Binary upgrades go through a
+<code>SoftwareUpgrade</code> proposal: a node stops at an activation
+height it was not voted in for, so the matching release is deployed
+first. <code>infra/testnet/README.md</code> has the details;
+<code>CHANGELOG.md</code> announces resets and upgrades.</p>
+<h2 id="resetting">Resetting</h2>
+<p>Run <code>Deploy testnet</code> with <code>reset_chain</code>
+checked. State, the indexer database and the vault registrations are
+rebuilt from the seeds in the GitHub environment. Balances and roles
+granted by onboarding are gone; run the onboarding again for each
+client.</p>
+<h2 id="local">Local</h2>
+<p><code>infra/dev/devnet.sh</code> starts a four-validator devnet on
+one machine; <code>infra/dev/e2e.sh</code> runs the trading and
+governance flows against it; <code>infra/dev/custody-e2e.sh</code>
+exercises deposits and payouts with regtest Bitcoin and a Tron mock. See
+<code>chain/README.md</code> for the flags.</p>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/testnet.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Try Keel Wallet</title>
+<meta name="description" content="Connect Keel Wallet, read balances, sign a transfer and follow the account live: the shortest complete Keel client.">
+<link rel="icon" href="../../keel-mark.svg">
+<style>
+  :root { --sea-1:#081C36; --sea-2:#0F2F5B; --teal:#2DD4BF; --gold:#F5C451; --ink:#E8EFF8; --muted:#9DB1CB; --line:rgba(157,177,203,.18); --card:rgba(255,255,255,.04); }
+  * { box-sizing:border-box } body { margin:0; color:var(--ink); background:linear-gradient(180deg,var(--sea-2),var(--sea-1) 60%); font:16px/1.55 Inter,system-ui,sans-serif; min-height:100vh }
+  main { max-width:760px; margin:0 auto; padding:40px 16px 80px } h1 { font-size:1.8rem; margin:0 0 .3em } .muted { color:var(--muted) }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin:14px 0 } .label { color:var(--teal); text-transform:uppercase; letter-spacing:.12em; font-size:.75rem; font-weight:700; margin-bottom:8px }
+  button, .keel-connect { background:var(--teal); color:#062; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer } button[disabled] { opacity:.5 }
+  input { width:100%; background:#061426; color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:9px 12px; margin:6px 0 }
+  code, pre { font-family:"JetBrains Mono",ui-monospace,monospace; font-size:.85rem } pre { background:#061426; border:1px solid var(--line); border-radius:10px; padding:12px; overflow:auto; max-height:260px }
+  table { width:100%; border-collapse:collapse } td { padding:4px 0; border-bottom:1px solid var(--line) } .err { color:#ff9b9b } a { color:var(--teal) }
+</style>
+</head>
+<body>
+<main>
+  <h1>Try Keel Wallet</h1>
+  <p class="muted">The shortest complete client: connect, read balances, sign a transfer, follow the account live. Source in <a href="https://github.com/keelchain/chain/tree/main/apps/example-client">apps/example-client</a>; the contract in <a href="../../docs/connect-keel-wallet/">Connect Keel Wallet</a>. Testnet only, no real funds.</p>
+  <div class="card"><div class="label">1. Connect</div><div id="connect"></div><p id="account" class="muted small">Not connected. Install Keel Wallet, then enable it on this site from the wallet's settings (keelchain.com is enabled out of the box).</p></div>
+  <div class="card"><div class="label">2. Balances</div><table id="balances"><tr><td class="muted">Connect first.</td></tr></table></div>
+  <div class="card"><div class="label">3. Sign a transfer</div>
+    <input id="to" placeholder="Recipient (64 hex Keel address)"><input id="amount" placeholder="Amount in KEEL (e.g. 1.5)" value="1">
+    <button id="send" disabled>Sign and submit</button><p id="sendout" class="muted"></p></div>
+  <div class="card"><div class="label">4. Live: your account channel</div><pre id="feed">connect to subscribe…</pre></div>
+</main>
+<script type="module" src="./src/main.ts"></script>
+</body>
+</html>

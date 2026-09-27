@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Keel Wallet",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "The browser wallet for Keelchain (public testnet, no real funds). Keys stay on your device; every action is approved by you.",
   "icons": {
     "16": "icons/16.png",
@@ -30,9 +30,6 @@
       "matches": [
         "https://keelchain.com/*",
         "https://*.keelchain.com/*",
-        "https://*.safethetrade.com/*",
-        "https://safethetrade.com/*",
-        "https://mohabmetwally.com/*",
         "http://127.0.0.1/*",
         "http://localhost/*"
       ],
@@ -46,9 +43,6 @@
       "matches": [
         "https://keelchain.com/*",
         "https://*.keelchain.com/*",
-        "https://*.safethetrade.com/*",
-        "https://safethetrade.com/*",
-        "https://mohabmetwally.com/*",
         "http://127.0.0.1/*",
         "http://localhost/*"
       ],
@@ -61,14 +55,13 @@
     }
   ],
   "permissions": [
+    "activeTab",
+    "scripting",
     "storage"
   ],
   "host_permissions": [
     "https://keelchain.com/*",
     "https://*.keelchain.com/*",
-    "https://*.safethetrade.com/*",
-    "https://safethetrade.com/*",
-    "https://mohabmetwally.com/*",
     "http://127.0.0.1/*",
     "http://localhost/*"
   ],
@@ -83,12 +76,18 @@
         "required": [
           "none"
         ]
-      }
+      },
+      "update_url": "https://keelchain.com/wallet/downloads/updates.json"
     },
     "gecko_android": {
       "strict_min_version": "142.0"
     }
   },
   "homepage_url": "https://keelchain.com/wallet/",
-  "author": "Keelchain"
+  "author": "Keelchain",
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ]
 }

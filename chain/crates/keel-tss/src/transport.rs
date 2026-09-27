@@ -352,7 +352,7 @@ impl TcpTransport {
         let mut conns = self.conns.lock().map_err(|_| TransportError::Closed)?;
         for attempt in 0..2 {
             if let std::collections::hash_map::Entry::Vacant(e) = conns.entry(to) {
-                let s = TcpStream::connect_timeout(&addr, self.dial_timeout)?;
+                let s = dial(addr, self.dial_timeout)?;
                 s.set_nodelay(true)?;
                 e.insert(s);
             }
@@ -372,6 +372,25 @@ impl TcpTransport {
             }
         }
         Err(TransportError::Closed)
+    }
+}
+
+/// How long a party keeps redialling a peer that is not listening yet. The
+/// parties of a ceremony (and the signers after a deploy) start within a
+/// minute of each other, and a refused connection must not fail the run.
+const DIAL_RETRY_WINDOW: Duration = Duration::from_secs(90);
+
+fn dial(addr: SocketAddr, per_attempt: Duration) -> std::io::Result<TcpStream> {
+    let deadline = std::time::Instant::now() + DIAL_RETRY_WINDOW;
+    loop {
+        match TcpStream::connect_timeout(&addr, per_attempt) {
+            Ok(s) => return Ok(s),
+            Err(e) if std::time::Instant::now() < deadline => {
+                tracing::debug!(%addr, error = %e, "peer not reachable yet; retrying");
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 

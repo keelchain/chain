@@ -26,16 +26,19 @@ and permissionless trade expiry so a stuck trade needs no operator key.
   hex. A message can never be mistaken for an envelope because the domain
   tags differ.
 
-## 2. Provider API — `window.stt`
+## 2. Provider API — `window.keel`
 
-Injected by the extension's content script on every page. All methods
+Injected by the extension's content script on Keelchain's own sites and on
+localhost out of the box, and on any site the user enables from the wallet's
+settings (the browser asks for that origin once; no wallet release is needed
+per client). `connect-keel-wallet.md` is the integration guide. All methods
 return promises; rejections use `{ code, message }` with codes
 `USER_REJECTED`, `LOCKED`, `NO_ACCOUNT`, `NOT_CONNECTED`, `INVALID_REQUEST`,
 `WRONG_NETWORK`.
 
 ```ts
-interface SttProvider {
-  readonly isStt: true;
+interface KeelProvider {
+  readonly isKeel: true;
   readonly version: string;                      // "1.0.0"
 
   /** Ask the user to connect this origin. Remembered per origin until disconnect. */
@@ -179,7 +182,7 @@ Implemented and verified on the local testnet:
   account view: `sessions`, `session_of`. SDK: the two actions,
   `SESSION_SCOPE`, `signMessage` / `verifyMessage` / `messageDigest`.
 - Extension `apps/wallet-extension` (MV3): BIP39 vault (PBKDF2 310k +
-  AES-GCM), `window.stt` per §2, approval windows with the decoded action,
+  AES-GCM), `window.keel` per §2, approval windows with the decoded action,
   per-origin-per-network connections, 43 tests; load `dist/` unpacked.
   Derivation: `secret_0 = BIP39 seed[0..32]`, `secret_i = sha256(seed ‖
   u32_le(i))`; vector `abandon×23 art` → `1de352e4…2961`.

@@ -30,18 +30,23 @@ jobs:
     environment: testnet
     steps:
       - name: SSH key
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
-          if [ -n "${{ vars.DEPLOY_KNOWN_HOSTS }}" ]; then printf '%s\n' "${{ vars.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          else ssh-keyscan -H "${{ vars.DEPLOY_HOST }}" > ~/.ssh/known_hosts 2>/dev/null; fi
-      - name: Run
+          IP=$(python3 -c 'import json,os; print(json.loads(os.environ["HOSTS_JSON"])[0]["ip"])')
+          if [ -n "$KNOWN_HOSTS" ]; then printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
+      - name: Run on host 0
         env:
-          TARGET: ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
           ADDRESS: ${{ github.event.inputs.address }}
         run: |
+          H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[0]; print(h.get("user","ubuntu")+"@"+h["ip"])')
           ARGS=""
           [ "${{ github.event.inputs.attester }}" = true ] && ARGS="$ARGS --attester"
           [ "${{ github.event.inputs.param_admin }}" = true ] && ARGS="$ARGS --param-admin"
           ARGS="$ARGS --keel ${{ github.event.inputs.keel }} --kusd ${{ github.event.inputs.kusd }}"
-          ssh -i ~/.ssh/id_deploy "$TARGET" "/opt/keelchain/onboard-client.sh $ADDRESS $ARGS"
+          ssh -i ~/.ssh/id_deploy "$H" "/opt/keelchain/onboard-client.sh $ADDRESS $ARGS"

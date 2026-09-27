@@ -1,0 +1,7 @@
+safethetrade
+mohabmetwally
+window\.stt
+isStt
+stt#initialized
+SttProvider
+ertosns

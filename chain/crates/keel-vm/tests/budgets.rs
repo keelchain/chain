@@ -158,3 +158,51 @@ fn lock_refuses_more_than_the_balance_and_zero() {
         "nothing locked"
     );
 }
+
+#[test]
+fn buying_budget_costs_keel_and_adds_capacity() {
+    let (mut state, mut alice, _bob, _v) = setup(0);
+    state.params.budget.price_per_action = 2 * KEEL;
+    let mut c = Chain::new(state);
+    let before = acct(&c.state, alice.addr(), &keel(), "deposit");
+    let earned_before = c
+        .state
+        .account_ref(&alice.addr())
+        .map(|m| m.budget.earned)
+        .unwrap_or(0);
+
+    let (r, _) = c.block_at_secs(1_000, &[alice.act(Action::BuyBudget { actions: 10 })]);
+    ok(&r[0]);
+    assert!(r[0].events.contains(&Event::BudgetPurchased {
+        owner: alice.addr(),
+        actions: 10,
+        paid: 20 * KEEL,
+    }));
+    assert_eq!(
+        acct(&c.state, alice.addr(), &keel(), "deposit"),
+        before - (20 * KEEL) as i128
+    );
+    let earned = c
+        .state
+        .account_ref(&alice.addr())
+        .expect("alice exists")
+        .budget
+        .earned;
+    assert_eq!(earned, earned_before + 10);
+    assert!(c.state.ledger.audit().mismatches.is_empty());
+
+    // Zero actions is refused; an empty purse cannot pay.
+    let (r, _) = c.block_at_secs(1_001, &[alice.act(Action::BuyBudget { actions: 0 })]);
+    assert!(
+        matches!(r[0].error, Some(VmError::Invalid(_))),
+        "{:?}",
+        r[0].error
+    );
+    let (r, _) = c.block_at_secs(
+        1_002,
+        &[alice.act(Action::BuyBudget {
+            actions: 1_000_000_000_000,
+        })],
+    );
+    assert!(r[0].error.is_some());
+}

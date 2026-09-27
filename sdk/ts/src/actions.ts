@@ -116,7 +116,16 @@ export type Action =
   | { ObserveLightningDeposit: { invoice: string; preimage: Bytes; amount_msat: number } }
   | { ObserveLightningPayout: { outbound_id: Amount; preimage: Bytes | null; fee_paid_msat: number; success: boolean } }
   | { FundLightningPool: { amount: Amount; to: string } }
-  | { AnnounceLightningSweep: { tx_hash: Bytes; amount: Amount } };
+  | { AnnounceLightningSweep: { tx_hash: Bytes; amount: Amount } }
+  | { SetClientFee: { p2p_bps: number; taker_bps: number; withdraw_bps: number } }
+  | { RegisterCustodyVault: CustodyVaultRegistration }
+  | { RequestCustodyAddress: { chain: Chain; custodian: Address } }
+  | { ObserveCustodyDeposit: { custodian: Address; observation: DepositObservation } }
+  | { WithdrawCustody: Withdraw };
+
+export interface CustodyVaultRegistration {
+  chain: Chain; epoch: Amount; public_key: number[] | Uint8Array | string; chain_code?: Hash32 | null; signer_url: string;
+}
 
 /** Session scope bits (`keel_actions::session_scope`). */
 export const SESSION_SCOPE = { MARKETS: 1, P2P_MANAGE: 2 } as const;
@@ -128,6 +137,7 @@ const ACTION_VARIANTS = [
   "RegisterVault", "MintStable", "BurnStable", "Bond", "Unbond", "Delegate", "Undelegate", "ClaimRewards", "Propose",
   "Vote", "ExecuteProposal", "Attest", "SetParam", "LockBudget", "UnlockBudget", "AuthorizeSessionKey", "RevokeSessionKey",
   "RegisterLightningNode", "ObserveLightningDeposit", "ObserveLightningPayout", "FundLightningPool", "AnnounceLightningSweep",
+  "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -286,6 +296,17 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "ObserveLightningPayout": w.u64(b.outbound_id); w.option(b.preimage, (x) => w.fixed(toBytes(x), 32)); w.u64(b.fee_paid_msat); w.bool(b.success); break;
     case "FundLightningPool": w.u128(b.amount); w.string(b.to); break;
     case "AnnounceLightningSweep": w.fixed(toBytes(b.tx_hash), 32); w.u128(b.amount); break;
+    case "SetClientFee": w.u32(b.p2p_bps); w.u32(b.taker_bps); w.u32(b.withdraw_bps); break;
+    case "RegisterCustodyVault":
+      unitEnum(w, CHAINS, b.chain); w.u64(b.epoch); w.vecU8(toBytes(b.public_key)); w.option(b.chain_code, (h) => hash(w, h)); w.string(b.signer_url); break;
+    case "RequestCustodyAddress": unitEnum(w, CHAINS, b.chain); address(w, b.custodian); break;
+    case "ObserveCustodyDeposit": {
+      address(w, b.custodian); const o = b.observation as DepositObservation;
+      unitEnum(w, CHAINS, o.chain); w.string(o.asset); hash(w, o.tx_hash); w.u32(o.index); w.u64(o.deposit_index);
+      w.u128(o.amount); w.u64(o.external_height); w.u64(o.tip_height); proof(w, o.proof);
+      break;
+    }
+    case "WithdrawCustody": w.string(b.asset); w.string(b.to); w.u128(b.amount); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

@@ -1,5 +1,5 @@
 /**
- * The `window.keel` provider (also exposed as `window.stt`). It runs in the page's main world and talks to
+ * The `window.keel` provider. It runs in the page's main world and talks to
  * the content script over a `Transport` (window.postMessage in the browser,
  * an in-memory pair in tests). Nothing here touches keys.
  */
@@ -15,7 +15,7 @@ import {
   type ProviderMethod,
   type ProviderResponse,
 } from '../core/protocol';
-import type { AccountInfo, AuthorizeSessionRequest, ErrorCode, ProviderError, ProviderEventName, SignActionRequest, SignActionResult, SttProvider } from './types';
+import type { AccountInfo, AuthorizeSessionRequest, ErrorCode, ProviderError, ProviderEventName, SignActionRequest, SignActionResult, KeelProvider } from './types';
 
 export interface Transport {
   send(msg: InpageToContent): void;
@@ -24,21 +24,21 @@ export interface Transport {
 }
 
 /** Rejection value: an Error that is also a `{ code, message }`. */
-export class SttProviderError extends Error implements ProviderError {
+export class KeelProviderError extends Error implements ProviderError {
   readonly code: ErrorCode;
   constructor(code: ErrorCode, message: string) {
     super(message);
-    this.name = 'SttProviderError';
+    this.name = 'KeelProviderError';
     this.code = code;
   }
 }
 
 interface PendingCall {
   resolve: (v: unknown) => void;
-  reject: (e: SttProviderError) => void;
+  reject: (e: KeelProviderError) => void;
 }
 
-export function createProvider(transport: Transport): SttProvider {
+export function createProvider(transport: Transport): KeelProvider {
   const pending = new Map<string, PendingCall>();
   const listeners = new Map<ProviderEventName, Set<(payload: unknown) => void>>();
 
@@ -49,7 +49,7 @@ export function createProvider(transport: Transport): SttProvider {
       if (!p) return;
       pending.delete(r.id);
       if (r.ok) p.resolve(fromWire(r.result));
-      else p.reject(new SttProviderError(r.error.code, r.error.message));
+      else p.reject(new KeelProviderError(r.error.code, r.error.message));
     } else if ('event' in msg) {
       const set = listeners.get(msg.event.event);
       if (!set) return;
@@ -70,7 +70,7 @@ export function createProvider(transport: Transport): SttProvider {
       try {
         wire = params === undefined ? null : toWire(params);
       } catch (e) {
-        reject(new SttProviderError('INVALID_REQUEST', e instanceof Error ? e.message : String(e)));
+        reject(new KeelProviderError('INVALID_REQUEST', e instanceof Error ? e.message : String(e)));
         return;
       }
       const id = newId('keel');
@@ -79,9 +79,8 @@ export function createProvider(transport: Transport): SttProvider {
     });
   }
 
-  const provider: SttProvider = {
+  const provider: KeelProvider = {
     isKeel: true,
-    isStt: true,
     version: PROVIDER_VERSION,
     connect: (opts) => call<AccountInfo>('connect', opts ?? {}),
     disconnect: async () => {

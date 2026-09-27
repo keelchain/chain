@@ -25,12 +25,56 @@ fn run(seed: u64, validators: u64, target_height: u64, link: Link) -> String {
     run_with(
         seed,
         validators,
+        0,
         target_height,
         link,
         None,
         |_| HashChain::default(),
         |m: &HashChain, h| m.hash_at(h),
     )
+}
+
+/// A chain where node `validators` (the last key) is not in the genesis set
+/// and becomes a validator from epoch 1: what a bonded node experiences.
+#[derive(Clone)]
+struct JoiningChain {
+    inner: HashChain,
+    keys: Vec<[u8; 32]>,
+    genesis_validators: usize,
+}
+
+impl StateMachine for JoiningChain {
+    fn build(&mut self, parent_height: Height, timestamp: u64) -> Bytes {
+        self.inner.build(parent_height, timestamp)
+    }
+    fn check(&self, payload: &[u8]) -> bool {
+        self.inner.check(payload)
+    }
+    fn apply(&mut self, height: Height, timestamp: u64, payload: &[u8]) -> Digest {
+        self.inner.apply(height, timestamp, payload)
+    }
+    fn tip(&self) -> (Height, Digest) {
+        self.inner.tip()
+    }
+    fn validators(&self, epoch: u64) -> Option<Vec<[u8; 32]>> {
+        if epoch == 0 {
+            Some(self.keys[..self.genesis_validators].to_vec())
+        } else {
+            Some(self.keys.clone())
+        }
+    }
+    /// The joiner is bonded from genesis, so every node keeps it connected
+    /// before it votes.
+    fn peers(&self, _epoch: u64) -> Option<Vec<[u8; 32]>> {
+        Some(self.keys.clone())
+    }
+}
+
+fn key_bytes(p: &PublicKey) -> [u8; 32] {
+    let b: &[u8] = p.as_ref();
+    let mut k = [0u8; 32];
+    k.copy_from_slice(b);
+    k
 }
 
 /// A state machine that rotates the validator set every epoch: epoch `e`
@@ -68,9 +112,14 @@ impl StateMachine for RotatingChain {
     }
 }
 
+/// `validators` nodes form the genesis set; `followers` more nodes run the
+/// same engine without being members. Every node must reach `target_height`
+/// with identical hashes.
+#[allow(clippy::too_many_arguments)]
 fn run_with<M: StateMachine + Clone>(
     seed: u64,
     validators: u64,
+    followers: u64,
     target_height: u64,
     link: Link,
     blocks_per_epoch: Option<u64>,
@@ -83,9 +132,15 @@ fn run_with<M: StateMachine + Clone>(
             .with_timeout(Some(Duration::from_secs(120))),
     );
     runner.start(|context| async move {
-        let signers: Vec<PrivateKey> = (0..validators).map(PrivateKey::from_seed).collect();
+        let signers: Vec<PrivateKey> = (0..validators + followers)
+            .map(PrivateKey::from_seed)
+            .collect();
         let pks: Vec<PublicKey> = signers.iter().map(|s| s.public_key()).collect();
-        let participants: Set<PublicKey> = Set::from_iter_dedup(pks.clone());
+        let participants: Set<PublicKey> =
+            Set::from_iter_dedup(pks[..validators as usize].to_vec());
+        // Followers are tracked through the engine's extra peers, as a real
+        // validator lists its RPC followers.
+        let extra_peers: Set<PublicKey> = Set::from_iter_dedup(pks[validators as usize..].to_vec());
 
         let (network, oracle) = Network::new_with_peers(
             context.child("network"),
@@ -135,6 +190,7 @@ fn run_with<M: StateMachine + Clone>(
             if let Some(n) = blocks_per_epoch {
                 cfg.blocks_per_epoch = NZU64!(n);
             }
+            cfg.extra_peers = extra_peers.clone();
             let engine = Engine::new(ctx.child("engine"), app.clone(), cfg).await;
             let backfill = resolver::init(
                 ctx.child("backfill"),
@@ -252,7 +308,7 @@ fn busy_chain_paces_blocks_to_the_min_interval() {
         pending: true,
         last_ts: 0,
     };
-    run_with(7, 4, 12, fast_link(), None, make, |m: &PacedChain, h| {
+    run_with(7, 4, 0, 12, fast_link(), None, make, |m: &PacedChain, h| {
         m.inner.hash_at(h)
     });
 }
@@ -266,9 +322,287 @@ fn idle_chain_waits_for_the_idle_interval() {
         pending: false,
         last_ts: 0,
     };
-    run_with(8, 4, 8, fast_link(), None, make, |m: &PacedChain, h| {
+    run_with(8, 4, 0, 8, fast_link(), None, make, |m: &PacedChain, h| {
         m.inner.hash_at(h)
     });
+}
+
+/// A node with an empty block store that starts from another node's state
+/// (what `keel-node --sync-from` produces) must catch up and agree.
+#[test]
+fn node_resumes_from_snapshot_with_empty_marshal() {
+    const VALIDATORS: u64 = 4;
+    const EPOCH: u64 = 6;
+    const SNAPSHOT_AT: u64 = 15;
+    const TARGET: u64 = 40;
+    let runner = deterministic::Runner::new(
+        deterministic::Config::new()
+            .with_seed(14)
+            .with_timeout(Some(Duration::from_secs(120))),
+    );
+    runner.start(|context| async move {
+        let signers: Vec<PrivateKey> = (0..=VALIDATORS).map(PrivateKey::from_seed).collect();
+        let pks: Vec<PublicKey> = signers.iter().map(|s| s.public_key()).collect();
+        let participants: Set<PublicKey> =
+            Set::from_iter_dedup(pks[..VALIDATORS as usize].to_vec());
+        let extra_peers: Set<PublicKey> = Set::from_iter_dedup(pks[VALIDATORS as usize..].to_vec());
+
+        let (network, oracle) = Network::new_with_peers(
+            context.child("network"),
+            simulated::Config {
+                max_size: 1024 * 1024,
+                max_peers_per_set: NZUsize!(pks.len()),
+                disconnect_on_block: true,
+                tracked_peer_sets: NZUsize!(4),
+            },
+            pks.clone(),
+        )
+        .await;
+        network.start();
+        for a in &pks {
+            for b in &pks {
+                if a != b {
+                    oracle
+                        .add_link(a.clone(), b.clone(), fast_link())
+                        .await
+                        .unwrap();
+                }
+            }
+        }
+
+        let spawn =
+            |ctx: deterministic::Context, i: usize, signer: PrivateKey, machine: HashChain| {
+                let oracle = oracle.clone();
+                let participants = participants.clone();
+                let extra_peers = extra_peers.clone();
+                async move {
+                    let pk = signer.public_key();
+                    let control = oracle.control(pk.clone());
+                    let votes = control.register(0, QUOTA).await.unwrap();
+                    let certificates = control.register(1, QUOTA).await.unwrap();
+                    let res = control.register(2, QUOTA).await.unwrap();
+                    let broadcast = control.register(3, QUOTA).await.unwrap();
+                    let backfill = control.register(4, QUOTA).await.unwrap();
+                    let app = Application::new(machine);
+                    let mut cfg = engine::devnet_timings(
+                        oracle.control(pk.clone()),
+                        oracle.manager(),
+                        oracle.manager(),
+                        signer,
+                        participants,
+                        format!("v{i}"),
+                        Sequential,
+                    );
+                    cfg.blocks_per_epoch = NZU64!(EPOCH);
+                    cfg.extra_peers = extra_peers;
+                    let engine = Engine::new(ctx.child("engine"), app.clone(), cfg).await;
+                    let backfill = resolver::init(
+                        ctx.child("backfill"),
+                        resolver::Config {
+                            public_key: pk.clone(),
+                            peer_provider: oracle.manager(),
+                            blocker: oracle.control(pk),
+                            mailbox_size: NZUsize!(1024),
+                            timeout: Duration::from_secs(2),
+                            fetch_retry_timeout: Duration::from_millis(100),
+                            priority_requests: false,
+                            priority_responses: false,
+                        },
+                        backfill,
+                    );
+                    engine.start(votes, certificates, res, broadcast, backfill);
+                    app
+                }
+            };
+
+        let mut apps = Vec::new();
+        for (i, signer) in signers[..VALIDATORS as usize].iter().enumerate() {
+            apps.push(
+                spawn(
+                    context.child("node").with_attribute("id", i),
+                    i,
+                    signer.clone(),
+                    HashChain::default(),
+                )
+                .await,
+            );
+        }
+        loop {
+            context.sleep(Duration::from_millis(100)).await;
+            if apps.iter().all(|a| a.tip().0.get() >= SNAPSHOT_AT) {
+                break;
+            }
+        }
+        // The "snapshot": validator 0's machine as it stands (state,
+        // history and recorded epoch boundaries), copied into a node with
+        // no block store of its own.
+        let snapshot = apps[0].with(|m| m.clone());
+        let (synced_height, _) = snapshot.tip();
+        assert!(synced_height.get() >= SNAPSHOT_AT);
+        assert!(
+            snapshot.boundary(0).is_some(),
+            "validator recorded the first epoch boundary"
+        );
+        let late = spawn(
+            context
+                .child("node")
+                .with_attribute("id", VALIDATORS as usize),
+            VALIDATORS as usize,
+            signers[VALIDATORS as usize].clone(),
+            snapshot,
+        )
+        .await;
+        apps.push(late);
+
+        loop {
+            context.sleep(Duration::from_millis(100)).await;
+            if apps.iter().all(|a| a.tip().0.get() >= TARGET) {
+                break;
+            }
+        }
+        for h in 1..=TARGET {
+            let hashes: BTreeSet<_> = apps
+                .iter()
+                .map(|a| a.with(|m| m.hash_at(h).expect("applied")))
+                .collect();
+            assert_eq!(hashes.len(), 1, "state diverged at height {h}: {hashes:?}");
+        }
+    });
+}
+
+/// Chaos: a 2+2 partition stalls finalization, and the chain resumes with
+/// identical hashes once the links come back. Slow (many simulated
+/// seconds), so it runs in the nightly workflow: `cargo test -- --ignored chaos`.
+#[test]
+#[ignore]
+fn chaos_partition_stalls_then_heals() {
+    const VALIDATORS: u64 = 4;
+    const BEFORE: u64 = 8;
+    const TARGET: u64 = 30;
+    let runner = deterministic::Runner::new(
+        deterministic::Config::new()
+            .with_seed(21)
+            .with_timeout(Some(Duration::from_secs(600))),
+    );
+    runner.start(|context| async move {
+        let signers: Vec<PrivateKey> = (0..VALIDATORS).map(PrivateKey::from_seed).collect();
+        let pks: Vec<PublicKey> = signers.iter().map(|s| s.public_key()).collect();
+        let participants: Set<PublicKey> = Set::from_iter_dedup(pks.clone());
+        let (network, oracle) = Network::new_with_peers(
+            context.child("network"),
+            simulated::Config {
+                max_size: 1024 * 1024,
+                max_peers_per_set: NZUsize!(pks.len()),
+                disconnect_on_block: true,
+                tracked_peer_sets: NZUsize!(4),
+            },
+            pks.clone(),
+        )
+        .await;
+        network.start();
+        let link_all = |oracle: simulated::Oracle<PublicKey, deterministic::Context>,
+                        pks: Vec<PublicKey>,
+                        only_same_side: bool| async move {
+            for (i, a) in pks.iter().enumerate() {
+                for (j, b) in pks.iter().enumerate() {
+                    if a == b {
+                        continue;
+                    }
+                    let same_side = (i < 2) == (j < 2);
+                    if only_same_side && !same_side {
+                        let _ = oracle.remove_link(a.clone(), b.clone()).await;
+                    } else {
+                        let _ = oracle.add_link(a.clone(), b.clone(), fast_link()).await;
+                    }
+                }
+            }
+        };
+        link_all(oracle.clone(), pks.clone(), false).await;
+
+        let mut apps = Vec::new();
+        for (i, signer) in signers.into_iter().enumerate() {
+            let pk = signer.public_key();
+            let control = oracle.control(pk.clone());
+            let votes = control.register(0, QUOTA).await.unwrap();
+            let certificates = control.register(1, QUOTA).await.unwrap();
+            let res = control.register(2, QUOTA).await.unwrap();
+            let broadcast = control.register(3, QUOTA).await.unwrap();
+            let backfill = control.register(4, QUOTA).await.unwrap();
+            let ctx = context.child("validator").with_attribute("id", i);
+            let app = Application::new(HashChain::default());
+            let cfg = engine::devnet_timings(
+                oracle.control(pk.clone()),
+                oracle.manager(),
+                oracle.manager(),
+                signer,
+                participants.clone(),
+                format!("v{i}"),
+                Sequential,
+            );
+            let engine = Engine::new(ctx.child("engine"), app.clone(), cfg).await;
+            let backfill = resolver::init(
+                ctx.child("backfill"),
+                resolver::Config {
+                    public_key: pk.clone(),
+                    peer_provider: oracle.manager(),
+                    blocker: oracle.control(pk),
+                    mailbox_size: NZUsize!(1024),
+                    timeout: Duration::from_secs(2),
+                    fetch_retry_timeout: Duration::from_millis(100),
+                    priority_requests: false,
+                    priority_responses: false,
+                },
+                backfill,
+            );
+            engine.start(votes, certificates, res, broadcast, backfill);
+            apps.push(app);
+        }
+        loop {
+            context.sleep(Duration::from_millis(100)).await;
+            if apps.iter().all(|a| a.tip().0.get() >= BEFORE) {
+                break;
+            }
+        }
+
+        // Partition {0,1} | {2,3}: no side has a quorum of 3, so the tip
+        // must not move more than one block (a block already in flight).
+        link_all(oracle.clone(), pks.clone(), true).await;
+        context.sleep(Duration::from_secs(5)).await;
+        let frozen: Vec<u64> = apps.iter().map(|a| a.tip().0.get()).collect();
+        context.sleep(Duration::from_secs(30)).await;
+        let later: Vec<u64> = apps.iter().map(|a| a.tip().0.get()).collect();
+        for (f, l) in frozen.iter().zip(&later) {
+            assert!(l - f <= 1, "a partitioned side finalized {f} -> {l}");
+        }
+
+        // Heal and reach the target with identical hashes.
+        link_all(oracle.clone(), pks.clone(), false).await;
+        loop {
+            context.sleep(Duration::from_millis(100)).await;
+            if apps.iter().all(|a| a.tip().0.get() >= TARGET) {
+                break;
+            }
+        }
+        for h in 1..=TARGET {
+            let hashes: BTreeSet<_> = apps
+                .iter()
+                .map(|a| a.with(|m| m.hash_at(h).expect("applied")))
+                .collect();
+            assert_eq!(hashes.len(), 1, "state diverged at height {h}: {hashes:?}");
+        }
+    });
+}
+
+/// Chaos: heavy loss and jitter on every link still finalize and agree.
+#[test]
+#[ignore]
+fn chaos_heavy_loss_still_agrees() {
+    let harsh = Link {
+        latency: Duration::from_millis(120),
+        jitter: Duration::from_millis(80),
+        success_rate: probability!(0.7),
+    };
+    run(22, 4, 12, harsh);
 }
 
 fn fast_link() -> Link {
@@ -308,20 +642,50 @@ fn validator_set_rotates_every_epoch() {
     run_with(
         11,
         5,
+        0,
         30,
         fast_link(),
         Some(6),
         |pks| RotatingChain {
             inner: HashChain::default(),
-            keys: pks
-                .iter()
-                .map(|p| {
-                    let b: &[u8] = p.as_ref();
-                    let mut k = [0u8; 32];
-                    k.copy_from_slice(b);
-                    k
-                })
-                .collect(),
+            keys: pks.iter().map(key_bytes).collect(),
+        },
+        |m, h| m.inner.hash_at(h),
+    );
+}
+
+#[test]
+fn follower_tracks_chain() {
+    // Four validators and one non-member: the follower never votes but
+    // reaches the same height with the same hashes.
+    run_with(
+        12,
+        4,
+        1,
+        20,
+        fast_link(),
+        None,
+        |_| HashChain::default(),
+        |m: &HashChain, h| m.hash_at(h),
+    );
+}
+
+#[test]
+fn validator_joins_at_epoch_boundary() {
+    // Node 4 is outside the genesis set, tracked as a peer from the start,
+    // and enters the validator set at epoch 1 (6-block epochs). By height 24
+    // it has proposed and voted through three epochs.
+    run_with(
+        13,
+        4,
+        1,
+        24,
+        fast_link(),
+        Some(6),
+        |pks| JoiningChain {
+            inner: HashChain::default(),
+            keys: pks.iter().map(key_bytes).collect(),
+            genesis_validators: 4,
         },
         |m, h| m.inner.hash_at(h),
     );

@@ -12,7 +12,7 @@ import { Approvals } from './approvals';
 import { Session, type Timer } from './session';
 import { Wallet } from './wallet';
 import { VECTOR } from '../core/keys.test';
-import type { SttProvider, ProviderError } from '../inpage/types';
+import type { KeelProvider, ProviderError } from '../inpage/types';
 
 const ORIGIN = 'https://app.example';
 const PASSWORD = 'correct horse battery';
@@ -34,7 +34,7 @@ class FakeTimer implements Timer {
 }
 
 interface Harness {
-  provider: SttProvider;
+  provider: KeelProvider;
   wallet: Wallet;
   approvals: Approvals;
   session: Session;
@@ -123,7 +123,6 @@ describe('provider protocol', () => {
   });
 
   it('exposes the documented surface', () => {
-    expect(h.provider.isStt).toBe(true);
     expect(h.provider.version).toBe('1.0.0');
     expect(Object.isFrozen(h.provider)).toBe(true);
   });

@@ -38,3 +38,27 @@ provenance attestation linking the package to the commit.
 
 Bump the minor version whenever an action's encoding changes: `test/vectors.json`
 pins the bytes, and clients on an older encoding would sign invalid actions.
+
+## Streams, history and readiness
+
+```ts
+import { RpcClient, IndexerClient, KeelSocket } from "@keelchain/sdk";
+
+const rpc = new RpcClient("https://testnet.keelchain.com/rpc");
+const idx = new IndexerClient("https://testnet.keelchain.com/api");
+
+// Turn a network on only when the chain says it is ready.
+const r = await rpc.ready("BTC");
+if (!r.ready) console.log("not yet:", r.reasons);
+
+// Live receipts for one account, order-book deltas for one pair; the socket
+// reconnects and replays from the last height it saw.
+const ws = new KeelSocket(rpc.wsUrl());
+ws.on("event", (f) => console.log(f.channel, f.data));
+ws.on("gap", (f) => console.log("missed", f.from_height, "to", f.to_height));
+await ws.subscribe([`account:${me}`, "book:BTC-KUSD?depth=10"]);
+
+// History from the indexer; the node keeps only recent receipts.
+const page = await idx.accountTxs(me, { limit: 50 });
+const receipt = await rpc.waitReceipt(txId, 20_000, 250, idx.base);
+```

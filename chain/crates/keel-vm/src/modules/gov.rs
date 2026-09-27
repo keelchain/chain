@@ -101,6 +101,9 @@ pub fn set_param(
     if state.gov.param_admin != Some(signer) {
         return Err(VmError::Unauthorized);
     }
+    if key.starts_with("clients.") {
+        return super::clients::set_param(state, key, value);
+    }
     let mut next = state.params.clone();
     if !next.set(key, value) {
         return Err(VmError::Invalid(format!("cannot set {key}")));

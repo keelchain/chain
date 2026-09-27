@@ -45,8 +45,10 @@ Three properties shape everything else:
 - **One ledger for everything.** Order fills, escrow, fees, withdrawals and
   rewards are balanced ledger postings. Nothing can go negative, nothing is
   created outside genesis except the stablecoin against its reserve.
-- **The company is a client, not the system.** The SafeTheTrade marketplace
-  talks to the chain through the same RPC as any wallet. It keeps operator
+- **The company is a client, not the system.** A marketplace client
+  talks to the chain through the same RPC as any wallet. Clients that keep
+  their own wallets are covered in `models.md`; this paper describes the
+  network-vault model. It keeps operator
   keys for the roles the chain gave it (attester, parameter admin, treasury)
   and otherwise signs on behalf of users only while they still choose to
   leave a key with it.
@@ -90,6 +92,10 @@ started with the **top 100 addresses by power**, where power is a
 validator's own bond plus the KEEL delegated to it; a jailed validator has
 zero power. Ties break by address.
 
+Fault tolerance follows the BFT rule `n = 3f + 1`: four validators tolerate
+one faulty or offline validator, seven tolerate two; three tolerate none, so
+a three-validator network halts when any one of them is down.
+
 ### 2.3 How someone becomes a validator
 
 1. Hold KEEL in a chain account (the address is your Ed25519 public key).
@@ -98,8 +104,13 @@ zero power. Ties break by address.
    from your spendable balance into a restricted `stake_bond` account; it
    is still yours, just not spendable.
 3. Run `keel-node` with the consensus key, the genesis file, the storage
-   directory and a bootstrapper address. Commonware's authenticated
-   discovery connects you to the set.
+   directory and a bootstrapper address, plus `--sync-from <rpc>` so the
+   node starts from a peer's newest snapshot instead of replaying from
+   genesis (`--sync-verify <rpc2>` makes a second peer confirm the tip
+   hash). Commonware's authenticated discovery connects you to the set:
+   a bonded key is tracked by every validator before it votes, and a node
+   whose key is in no set runs as a follower (verifies and serves RPC,
+   never votes) until governance's epoch includes it.
 4. At the next epoch boundary, if you are in the top 100 by power, you
    propose and vote.
 
@@ -335,7 +346,7 @@ key lives in the KEEL browser extension (`apps/wallet-extension`): a BIP39
 24-word seed, keys derived as `secret_0 = seed[0..32]` and
 `secret_i = sha256(seed ‖ u32_le(i))`, encrypted at rest with PBKDF2
 (310k) + AES-GCM under the wallet password. The extension injects
-`window.stt` (connect, signMessage, signAction, authorizeSession); every
+`window.keel` (connect, signMessage, signAction, authorizeSession); every
 signature is shown decoded and approved by the user. It talks to the node
 RPC the user configured and never to the marketplace. The marketplace, when
 it needs a user signature, creates a *signing request* (in memory, 180 s),
@@ -368,6 +379,11 @@ prefix or checksum, so `bc0c…` is not a Bitcoin address, just an address
 that happens to start with those characters.
 
 ## 9. Funds and custody: vaults, observers, Lightning
+
+This section describes the network vaults: the model for clients whose users
+hold Keel Wallet. A client that keeps its own wallets registers its own vault
+and signs its own withdrawals; where the funds sit in each model, who signs,
+and what the explorer shows is in `models.md`.
 
 ### 9.1 Vaults and threshold keys
 
@@ -546,7 +562,7 @@ disputes and rulings, vault deposits and withdrawals, the stablecoin,
 Lightning pools, staking, governance, attestations, budgets, session keys,
 the explorer data model (anyone can run `keel-indexer` against a node).
 
-**The SafeTheTrade marketplace** is one client. It runs the KYC'd
+**A marketplace client** is one kind of client. It runs the KYC'd
 storefront, fiat payment instructions, chat, notifications, email, support,
 moderation (including an off-chain address blacklist that refuses
 *withdrawals* to listed addresses and freezes the account for review; it
@@ -570,7 +586,7 @@ registration from governance if it wants its KYC tiers recognised.
 
 ### 14.1 A jurisdiction forces one front end offline
 
-Suppose an order shuts down the SafeTheTrade web app and its API in one
+Suppose an order shuts down a client's web app and its API in one
 country, or entirely.
 
 *Who is affected.* Users of that front end lose the storefront, chat,
@@ -690,11 +706,11 @@ value; and a marketplace that is a client, not a gatekeeper.
 | Observer chain key (`KEEL_OBSERVER_SECRET`) | each observer | theft allows false observations until the quorum and proofs stop them; bond at stake |
 | Vault key share (CGGMP21) | each observer's signer daemon, passphrase-encrypted | one share is useless alone; threshold shares move the vault |
 | LND wallet and macaroon | observers running Lightning | exposure bounded by the pool cap |
-| `CHAIN_ADMIN_SECRET` (parameter admin) | marketplace | can change fees and limits within validation; revocable by governance |
-| `CHAIN_ATTESTER_SECRET` | marketplace | can issue tiers; governance can replace the attester |
-| `CHAIN_TREASURY_SECRET` | marketplace | controls platform revenue accounts |
-| `CHAIN_KEY_ENC_SECRET` + database | marketplace | decrypts remaining custodial user keys; the reason for the wallet migration |
-| Session keys (server-generated) | marketplace | scope-limited; cannot move funds; expire in ≤ 30 days |
+| `CHAIN_ADMIN_SECRET` (parameter admin) | a marketplace client | can change fees and limits within validation; revocable by governance |
+| `CHAIN_ATTESTER_SECRET` | a marketplace client | can issue tiers; governance can replace the attester |
+| `CHAIN_TREASURY_SECRET` | a marketplace client | controls platform revenue accounts |
+| `CHAIN_KEY_ENC_SECRET` + database | a marketplace client | decrypts remaining custodial user keys; the reason for the wallet migration |
+| Session keys (server-generated) | a marketplace client | scope-limited; cannot move funds; expire in ≤ 30 days |
 | Genesis file | public | none; it is the chain's public starting state |
 
 Chat content and payment instructions are end-to-end encrypted between

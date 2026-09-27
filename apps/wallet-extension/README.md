@@ -2,7 +2,7 @@
 
 Non-custodial Manifest V3 wallet for the Keelchain. Keys are generated and
 kept inside the extension; web apps ask for signatures through the injected
-`window.keel (alias window.stt)` provider and every signature goes through an approval screen.
+`window.keel` provider and every signature goes through an approval screen.
 Contract: `docs/wallet.md`. Built on `sdk/ts` (`@keelchain/sdk`).
 
 ## Build, test, load
@@ -17,7 +17,7 @@ npm run build     # tsc --noEmit + scripts/build.mjs → dist/
 
 `dist/` is a complete unpacked extension: `manifest.json`, `background.js`
 (service worker), `content.js` (isolated world bridge), `inpage.js` (main
-world, defines `window.keel (alias window.stt)`), `popup.html` + `assets/`, `icons/`.
+world, defines `window.keel`), `popup.html` + `assets/`, `icons/`.
 
 Load it unpacked:
 
@@ -71,15 +71,15 @@ public data).
   the digest, hex — via `@keelchain/sdk` `signMessage` / `verifyMessage`. The
   domain tag makes a message signature unusable as a chain action.
 
-## Provider API (`window.keel (alias window.stt)`)
+## Provider API (`window.keel`)
 
 Types: `src/inpage/types.ts` (self-contained; copy it into the web app).
-The script is injected into every `http(s)` page at `document_start` and
-fires `stt#initialized` on `window`.
+The script is injected on Keelchain's own sites and localhost at `document_start` and
+fires `keel#initialized` on `window`.
 
 ```ts
-interface SttProvider {
-  readonly isStt: true;
+interface KeelProvider {
+  readonly isKeel: true;
   readonly version: '1.0.0';
   connect(opts?: { network?: string }): Promise<{ address: string; network: string; chainId: number }>;
   disconnect(): Promise<void>;
@@ -133,10 +133,10 @@ Behaviour:
 ### Message protocol (for reference)
 
 `inpage → content`: `window.postMessage({ channel: 'keel-wallet-v1', dir: 'to-wallet', request: { id, method, params } })`.
-`content → background`: `chrome.runtime.sendMessage({ kind: 'stt:provider', request })`; the background takes the
+`content → background`: `chrome.runtime.sendMessage({ kind: 'keel:provider', request })`; the background takes the
 origin from `sender`, never from the payload.
 `background → content → inpage`: `{ id, ok: true, result } | { id, ok: false, error: { code, message } }`, and
-`{ kind: 'stt:event', event: { event, payload } }` for events.
+`{ kind: 'keel:event', event: { event, payload } }` for events.
 
 ## Networks
 
@@ -180,7 +180,7 @@ manifest.json            MV3 manifest (Chrome/Brave/Edge/Firefox)
 popup.html               popup entry (Vite)
 scripts/build.mjs        4 Vite builds → dist/ (+ manifest, generated icons)
 src/inpage/types.ts      public provider types (copy into web apps)
-src/inpage/provider.ts   window.keel (alias window.stt) implementation over a Transport
+src/inpage/provider.ts   window.keel implementation over a Transport
 src/inpage/index.ts      main-world entry
 src/content/index.ts     isolated-world bridge page ↔ background
 src/background/index.ts  service worker: chrome.* wiring, approval window
@@ -209,4 +209,25 @@ Listing texts, permission justifications and the per-store checklist are in
 at https://keelchain.com/wallet/privacy.html. The default
 network is the public Keel testnet (chain id 3).
 
-`scripts/e2e-signup.mjs` drives the real signup-with-wallet flow against the sandbox in Playwright's Chromium and produces the store screenshots (see STORE.md).
+`scripts/e2e-signup.mjs` drives a real signup-with-wallet flow against a client site (`E2E_SITE`) in Playwright's Chromium and produces the store screenshots (see STORE.md).
+
+## Sites, sending and networks (1.2.0)
+
+- **Any site.** The manifest injects the provider on keelchain.com and
+  localhost only. For any other site the user opens the wallet's settings
+  and clicks *Enable on this site* (or types the site's URL): the browser
+  asks for that origin once (`optional_host_permissions`), and the
+  background registers the content scripts for it with
+  `chrome.scripting.registerContentScripts` (persisted, re-registered on
+  update). Removing a site drops the permission. No release per client.
+- **Send.** The home page sends a `Transfer` (to a Keel address) or a
+  `Withdraw` (to an external address) from the active account, with a
+  review step; the wallet signs and submits to the network's RPC and waits
+  for the receipt. No site is involved, so the form is the approval.
+- **Custom networks.** Settings lets the user add a network by name and RPC
+  URL; the chain id is read from `/v1/status`. Custom networks are stored
+  with the wallet state and offered in the network switcher.
+- **Updates.** The Firefox build is signed as an unlisted add-on by
+  `.github/workflows/publish-wallet.yml` and served from
+  keelchain.com/wallet/downloads with an `updates.json`; the manifest's
+  `update_url` points there.

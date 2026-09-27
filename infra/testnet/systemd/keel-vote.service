@@ -1,0 +1,6 @@
+[Unit]
+Description=Keelchain: vote on pre-approved proposals (checkpoints, listed clients, approved upgrades)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/keelchain/keel-vote.sh

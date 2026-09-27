@@ -4,6 +4,7 @@
 
 use async_trait::async_trait;
 use bitcoin::bip32::{ChildNumber, Xpriv};
+use keel_chains::policy::SignContext;
 use secp256k1::{Message, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 
@@ -25,14 +26,23 @@ impl TssSignature {
 
 #[async_trait]
 pub trait TssClient: Send + Sync {
-    /// Sign `digest` with the non-hardened child at `path`.
-    async fn sign(&self, digest: [u8; 32], path: &[u32]) -> anyhow::Result<TssSignature>;
+    /// Sign `digest` with the non-hardened child at `path`. `context`
+    /// describes the transaction the digest belongs to; a policy-enforcing
+    /// signer refuses requests without it.
+    async fn sign(
+        &self,
+        digest: [u8; 32],
+        path: &[u32],
+        context: Option<&SignContext>,
+    ) -> anyhow::Result<TssSignature>;
 }
 
 #[derive(Serialize)]
 struct SignRequest<'a> {
     digest: String,
     path: &'a [u32],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context: Option<&'a SignContext>,
 }
 
 #[derive(Deserialize)]
@@ -58,13 +68,19 @@ impl HttpTss {
 
 #[async_trait]
 impl TssClient for HttpTss {
-    async fn sign(&self, digest: [u8; 32], path: &[u32]) -> anyhow::Result<TssSignature> {
+    async fn sign(
+        &self,
+        digest: [u8; 32],
+        path: &[u32],
+        context: Option<&SignContext>,
+    ) -> anyhow::Result<TssSignature> {
         let resp = self
             .client
             .post(&self.url)
             .json(&SignRequest {
                 digest: hex::encode(digest),
                 path,
+                context,
             })
             .send()
             .await?;
@@ -140,9 +156,64 @@ impl LocalSigner {
     }
 }
 
+/// Development stand-in for a client's signing service: answers
+/// `POST /sign` like `keel-tss serve` does, from one seed and without the
+/// signing policy. For local end-to-end runs only.
+pub async fn serve_local(seed: &[u8], listen: std::net::SocketAddr) -> anyhow::Result<()> {
+    use axum::{routing::post, Json, Router};
+    use std::sync::Arc;
+
+    #[derive(serde::Deserialize)]
+    struct Req {
+        digest: String,
+        path: Vec<u32>,
+    }
+    #[derive(serde::Serialize)]
+    struct Resp {
+        r: String,
+        s: String,
+        v: u8,
+    }
+    let signer = Arc::new(LocalSigner::from_seed(seed)?);
+    tracing::info!(
+        %listen,
+        public_key = hex::encode(signer.public_key()),
+        chain_code = hex::encode(signer.chain_code()),
+        "development signer serving /sign"
+    );
+    let app = Router::new().route(
+        "/sign",
+        post(move |Json(req): Json<Req>| {
+            let signer = signer.clone();
+            async move {
+                let digest: [u8; 32] = hex::decode(&req.digest)
+                    .ok()
+                    .and_then(|d| d.try_into().ok())
+                    .ok_or((axum::http::StatusCode::BAD_REQUEST, "digest".to_string()))?;
+                let sig = signer
+                    .sign_sync(digest, &req.path)
+                    .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
+                Ok::<_, (axum::http::StatusCode, String)>(Json(Resp {
+                    r: hex::encode(sig.r),
+                    s: hex::encode(sig.s),
+                    v: sig.v,
+                }))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind(listen).await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
 #[async_trait]
 impl TssClient for LocalSigner {
-    async fn sign(&self, digest: [u8; 32], path: &[u32]) -> anyhow::Result<TssSignature> {
+    async fn sign(
+        &self,
+        digest: [u8; 32],
+        path: &[u32],
+        _context: Option<&SignContext>,
+    ) -> anyhow::Result<TssSignature> {
         self.sign_sync(digest, path)
     }
 }

@@ -77,3 +77,46 @@ legs, auditable per fee.
 At each epoch boundary the accumulated `validator_rewards` balance per asset
 is paid out in kind (KUSD, BTC.BTC, …), so operators earn the exchange's
 revenue directly rather than a native inflation subsidy.
+
+## Wholesale and retail: how clients and Keel are paid
+
+Every payment to Keel is a purchase of KEEL; nothing is invoiced in fiat.
+
+**Protocol fees** (governance parameters) are collected in the asset of the
+flow: `p2p_seller_fee_bps` on an escrow release, `taker_fee_bps` on a fill,
+`withdraw_flat_fee_usd_micro` plus the network fee on a withdrawal,
+`dispute_fee_bps` on a ruling, and the budget purchases. Each fee is split
+at collection into the `treasury`, `validator_rewards` and `burn` system
+accounts (`fee_split_*_bps`).
+
+**Retail fees** belong to the client. A client is an attester: the account
+that vouched for a user's tier. It publishes its own schedule with
+`SetClientFee` (`p2p_bps`, `taker_bps`, `withdraw_bps`, each capped by the
+`clients.fee_cap_*` parameters), and whenever one of its attested accounts
+pays a protocol fee, the retail fee is charged to that account in the same
+block and credited to the client's deposit account, up to what the payer
+holds. `GET /rpc/v1/clients/{address}` shows a client's schedule and what it
+has earned per asset. A user with no attester pays no retail fee.
+
+**Usage** is what a custodial client pays for the custody rails its
+accounts use: `clients.usage_address_keel` per deposit address issued and
+`clients.usage_outbound_keel` per withdrawal queued, charged in KEEL to the
+client through the protocol fee split. A client without KEEL cannot have
+addresses or withdrawals issued for its users, which is its bill falling
+due. Both prices are zero until governance sets them.
+
+**The buyback.** At every epoch boundary the chain sweeps the non-KEEL
+balances of the three system accounts: for each asset with a `KEEL-<asset>`
+pair (`KEEL-KUSD` at launch) it places a market buy for KEEL with that
+balance against the order book, moves the KEEL bought back into the same
+system account and returns any budget the book could not fill. The burn
+account's KEEL is the burn. Balances below `clients.buyback_dust_usd_micro`
+are left alone, and an asset whose best ask sits more than
+`clients.buyback_max_slippage_bps` above the last price is skipped that
+epoch. Validators are therefore paid in KEEL, the treasury holds KEEL, and
+fee income is demand for KEEL on the chain's own market. `GET
+/rpc/v1/treasury` shows the balances and the last buyback per asset.
+
+**Service tiers** are read from the KEEL a client's operator account has
+locked (`LockBudget`), and a dedicated node is paid by a KEEL transfer to
+the treasury (`clients.service_dedicated_keel_per_period` per 30 days).

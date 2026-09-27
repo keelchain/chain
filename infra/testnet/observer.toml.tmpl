@@ -1,7 +1,7 @@
-# Rendered by deploy-remote.sh into /etc/keelchain/observer-0.toml (root, 0600).
+# Rendered by deploy-remote.sh into /etc/keelchain/observer-N.toml (root, 0600).
 keel_rpc_url = "http://127.0.0.1:@RPC_PORT@"
-tss_url = "local:@SIGNER_SEED@"
-state_file = "/var/lib/keelchain/observer-0.json"
+tss_url = "@TSS_URL@"
+state_file = "/var/lib/keelchain/observer-@N@.json"
 
 [intervals]
 sync_secs = 30

@@ -386,6 +386,32 @@ pub async fn tx_fee_sats(rpc: &dyn BitcoinRpc, txid_hex: &str) -> anyhow::Result
     Ok(json_amount(&json!(text.trim_start_matches('-')), 8).map(|v| v as u64))
 }
 
+/// Whether `txid` spends any of the book's own addresses: the vault's own
+/// transaction (a payout's change, a consolidation), not a deposit. Uses
+/// `getrawtransaction … 2`, which carries each input's prevout for blocks
+/// the node still has.
+pub async fn spends_from_book(
+    rpc: &dyn BitcoinRpc,
+    txid_hex: &str,
+    book: &AddressBook,
+) -> anyhow::Result<bool> {
+    let tx = rpc.call("getrawtransaction", json!([txid_hex, 2])).await?;
+    let Some(vins) = tx.get("vin").and_then(Value::as_array) else {
+        return Ok(false);
+    };
+    for vin in vins {
+        let addr = vin
+            .pointer("/prevout/scriptPubKey/address")
+            .and_then(Value::as_str);
+        if let Some(a) = addr {
+            if book.index_of(a).is_some() {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// Whether the node's mempool holds `txid`.
 pub async fn in_mempool(rpc: &dyn BitcoinRpc, txid_hex: &str) -> bool {
     rpc.call("getmempoolentry", json!([txid_hex])).await.is_ok()

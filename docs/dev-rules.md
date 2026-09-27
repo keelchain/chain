@@ -24,6 +24,37 @@ Read `plan.md` first. These rules keep parallel work from colliding.
 - Atomicity: validate, then post to the ledger, then mutate module state.
   On any error return early; `apply.rs` rolls the ledger back.
 
+## Snapshots and upgrades
+- A snapshot is `b"KEEL" | u32 schema | borsh(State)` (`keel-vm/src/migrate.rs`).
+  History: schema 1 added the header, 2 appended `State.clients`, 3 appended
+  `State.custody`; every older layout is a frozen `StateVn` in `migrate.rs`.
+  Changing the layout of `State` or anything inside it means: bump `SCHEMA`,
+  keep a frozen copy of the old struct in `migrate.rs`, add the upgrade step,
+  and add a fixture of the old schema under `keel-vm/tests/fixtures/` with a
+  case in `tests/migrate.rs`. `cargo test -p keel-vm --test migrate` must keep
+  loading every fixture.
+- A change that alters what a block does (fees, matching, limits, new actions
+  with new effects) is gated on an activation height: read it from
+  `state.gov.upgrades` (the `SoftwareUpgrade` proposal kind) and keep the old
+  behaviour below it, so replaying the journal from genesis stays
+  byte-identical on every node.
+
+## End to end
+- `infra/dev/*-e2e.sh` are the integration checks; `NO_BUILD=1` reuses the
+  release binaries, `DEVNET_IDLE_MS=1000` makes idle blocks fast. They share
+  `devnet.sh stop` (which kills every local `keel-node`), so run one at a
+  time. A change to the node, the observer or the signer is not done until
+  `e2e.sh`, `custody-e2e.sh`, `sync-e2e.sh` and `failover-e2e.sh` pass
+  locally; a change to signing or custody also needs `tss-e2e.sh` and
+  `client-vault-e2e.sh` (a client-owned vault with its own HTTP signer).
+
+## Parameters and module state
+- `Params` keeps its layout: a new knob for a module goes into that module's
+  own state (`state.clients.params` is the pattern) and is reached through
+  `SetParam` / `ParamChange` with a dotted key (`clients.usage_address_keel`),
+  routed in `gov::set_param`. New module states are appended at the end of
+  `State`, which is a schema bump (see above).
+
 ## Build and test
 - Use your own target dir: `CARGO_TARGET_DIR=$PWD/target-<name> cargo test -p <crate>`.
 - Run `cargo clippy -p <crate> --all-targets` before finishing; the

@@ -1,0 +1,14 @@
+global:
+  smtp_smarthost: "@SMTP_HOST@"
+  smtp_from: "@SMTP_FROM@"
+  smtp_auth_username: "@SMTP_USER@"
+  smtp_auth_password: "@SMTP_PASSWORD@"
+route:
+  receiver: mail
+  group_by: [alertname, host]
+  repeat_interval: 4h
+receivers:
+  - name: mail
+    email_configs:
+      - to: "@ALERT_TO@"
+        send_resolved: true

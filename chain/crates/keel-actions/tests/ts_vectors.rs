@@ -256,6 +256,56 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 amount: 400_000,
             },
         ),
+        (
+            "set_client_fee",
+            Action::SetClientFee(keel_actions::ClientFee {
+                p2p_bps: 85,
+                taker_bps: 20,
+                withdraw_bps: 10,
+            }),
+        ),
+        (
+            "register_custody_vault",
+            Action::RegisterCustodyVault(keel_actions::CustodyVaultRegistration {
+                chain: Chain::Bitcoin,
+                epoch: 1,
+                public_key: vec![2u8; 33],
+                chain_code: Some([7u8; 32]),
+                signer_url: "https://signer.example.com".into(),
+            }),
+        ),
+        (
+            "request_custody_address",
+            Action::RequestCustodyAddress {
+                chain: Chain::Tron,
+                custodian: Keypair::from_seed(9).address(),
+            },
+        ),
+        (
+            "observe_custody_deposit",
+            Action::ObserveCustodyDeposit {
+                custodian: Keypair::from_seed(9).address(),
+                observation: DepositObservation {
+                    chain: Chain::Tron,
+                    asset: Asset::vault("TRON", "USDT"),
+                    tx_hash: [0x33; 32],
+                    index: 0,
+                    deposit_index: 2,
+                    amount: 5_000_000,
+                    external_height: 100,
+                    tip_height: 130,
+                    proof: Proof::None,
+                },
+            },
+        ),
+        (
+            "withdraw_custody",
+            Action::WithdrawCustody(Withdraw {
+                asset: Asset::vault("TRON", "USDT"),
+                to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+                amount: 1_000_000,
+            }),
+        ),
     ]
 }
 

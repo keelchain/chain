@@ -1,9 +1,8 @@
-# Importing a client ledger onto the chain (SafeTheTrade as the worked example)
+# Importing a client ledger onto the chain
 
-The migration and integration playbook is maintained in the marketplace
-repository as `docs/ledger-import.md`, next to the code it describes
-(`apps/marketplace/src/modules/chain`, migrations 0144–0146, the backoffice
-Chain page). The chain-side pieces it relies on are `keel genesis-from-export`
+A client that moves an existing ledger onto the chain keeps its migration
+playbook in its own repository, next to the code it describes. The chain-side
+pieces such a playbook relies on are `keel genesis-from-export`
 (`chain/crates/keel-cli/src/genesis_export.rs`), the vault module
 (`chain/crates/keel-vm/src/modules/vaults.rs`) and the stable coin module
 (`chain/crates/keel-vm/src/modules/stable.rs`).

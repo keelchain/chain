@@ -3550,6 +3550,7 @@ dependencies = [
  "commonware-runtime",
  "commonware-utils",
  "futures",
+ "futures-util",
  "hex",
  "keel-actions",
  "keel-book",
@@ -3560,9 +3561,11 @@ dependencies = [
  "keel-rpc",
  "keel-types",
  "keel-vm",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
 ]
 
@@ -3651,6 +3654,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "ureq",
 ]
 
 [[package]]

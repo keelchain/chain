@@ -1,5 +1,5 @@
 /**
- * Public types of the `window.keel` provider (`window.stt` is an alias) (docs/wallet.md §2).
+ * Public types of the `window.keel` provider (docs/wallet.md §2).
  * This file is self-contained on purpose: a web app can copy it verbatim.
  */
 
@@ -125,10 +125,8 @@ export interface AuthorizeSessionRequest {
 
 export type ProviderEventName = 'accountChanged' | 'disconnect' | 'networkChanged';
 
-export interface SttProvider {
+export interface KeelProvider {
   readonly isKeel: true;
-  /** Alias kept for clients written against the earlier name. */
-  readonly isStt: true;
   readonly version: string;
 
   /** Ask the user to connect this origin. Remembered per origin (per network) until disconnect. */
@@ -151,8 +149,6 @@ export interface SttProvider {
 
 declare global {
   interface Window {
-    keel?: SttProvider;
-    /** Alias for clients written against the earlier name. */
-    stt?: SttProvider;
+    keel?: KeelProvider;
   }
 }

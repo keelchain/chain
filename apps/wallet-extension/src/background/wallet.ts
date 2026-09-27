@@ -99,8 +99,12 @@ export class Wallet {
     if (this.state) await saveState(this.deps.store, this.state);
   }
 
+  private allNetworks(s: WalletState): Network[] {
+    return [...NETWORKS, ...s.customNetworks];
+  }
+
   private network(s: WalletState): Network {
-    return findNetwork(s.networkId) ?? NETWORKS[0]!;
+    return this.allNetworks(s).find((n) => n.id === s.networkId) ?? findNetwork(s.networkId) ?? NETWORKS[0]!;
   }
 
   private networkRef(n: Network): NetworkRef {
@@ -259,7 +263,7 @@ export class Wallet {
       locked: !this.deps.session.unlocked,
       remainingMs: this.deps.session.remainingMs,
       network: n,
-      networks: NETWORKS,
+      networks: this.allNetworks(s),
       accounts: s.accounts,
       activeIndex: active?.index ?? 0,
       address: active?.address ?? null,
@@ -311,9 +315,89 @@ export class Wallet {
         return this.resetWallet(String(p['password'] ?? ''));
       case 'depositAddress':
         return this.depositAddress(String(p['chain'] ?? ''));
+      case 'send':
+        return this.send(String(p['kind'] ?? 'transfer'), String(p['asset'] ?? ''), String(p['to'] ?? ''), String(p['amount'] ?? ''), typeof p['memo'] === 'string' ? p['memo'] : undefined);
+      case 'addNetwork':
+        return this.addNetwork(String(p['name'] ?? ''), String(p['rpc'] ?? ''), typeof p['explorer'] === 'string' ? p['explorer'] : '');
+      case 'removeNetwork':
+        return this.removeNetwork(String(p['id'] ?? ''));
       default:
         throw new UiError(`Unknown UI method ${method}`);
     }
+  }
+
+  /**
+   * Send from the popup: a `Transfer` (kind `transfer`, to a Keel address)
+   * or a `Withdraw` (kind `withdraw`, to an external address on the asset's
+   * chain), signed with the active key and posted to the network's RPC.
+   * `amount` is in the asset's smallest units. No site is involved, so the
+   * form is the approval; the popup shows the decoded summary first.
+   */
+  async send(kind: string, asset: string, to: string, amountRaw: string, memo?: string): Promise<{ txId: string; ok: boolean; error: string | null }> {
+    const s = await this.st();
+    const account = this.activeAccount(s);
+    const network = this.requireSigningNetwork(s);
+    const rpc = network.rpc.replace(/\/$/, '');
+    if (!/^\d+$/.test(amountRaw) || BigInt(amountRaw) === 0n) throw new UiError('Enter an amount.');
+    const amount = BigInt(amountRaw);
+    if (!asset) throw new UiError('Choose an asset.');
+    let action: Action;
+    if (kind === 'transfer') {
+      if (!/^[0-9a-f]{64}$/i.test(to)) throw new UiError('A Keel address is 64 hex characters.');
+      action = { Transfer: { to: to.toLowerCase(), asset, amount, memo: memo && memo.length > 0 ? memo : null } } as unknown as Action;
+    } else if (kind === 'withdraw') {
+      if (!asset.includes('.')) throw new UiError(`${asset} is a Keel asset; withdrawals go to an external chain (BTC.BTC, TRON.USDT, …).`);
+      if (to.trim().length < 20) throw new UiError('Enter the destination address on the external chain.');
+      action = { Withdraw: { asset, to: to.trim(), amount } } as unknown as Action;
+    } else {
+      throw new UiError(`Unknown send kind ${kind}`);
+    }
+    const key = this.requireKey(account.index);
+    const acct = await fetch(`${rpc}/v1/accounts/${account.address}`);
+    const nonce = acct.status === 404 ? 0 : Number(((await acct.json()) as { nonce?: number }).nonce ?? 0);
+    const signed = signAction(key, nonce, network.chainId, action);
+    const sub = await fetch(`${rpc}/v1/actions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: stringifyJson(signed.signed) });
+    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; error?: unknown; tx_id?: string };
+    if (!sub.ok || outcome.admitted === false) throw new UiError(`The node refused the action: ${JSON.stringify(outcome.error ?? sub.status)}`);
+    this.deps.session.touch();
+    const txId = String(outcome.tx_id ?? signed.tx_id);
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 750));
+      const rr = await fetch(`${rpc}/v1/receipts/${txId}`);
+      if (rr.ok) {
+        const receipt = (await rr.json()) as { ok?: boolean; error?: { message?: string } | null };
+        return { txId, ok: Boolean(receipt.ok), error: receipt.ok ? null : (receipt.error?.message ?? 'rejected') };
+      }
+    }
+    return { txId, ok: true, error: 'submitted; the receipt did not arrive in time' };
+  }
+
+  /** Add a network the user runs or was given: the chain id comes from its `/v1/status`. */
+  async addNetwork(name: string, rpcRaw: string, explorer: string): Promise<UiState> {
+    const rpc = rpcRaw.trim().replace(/\/$/, '');
+    if (!/^https?:\/\//.test(rpc)) throw new UiError('The RPC URL must start with http:// or https://.');
+    if (name.trim().length === 0) throw new UiError('Give the network a name.');
+    const res = await fetch(`${rpc}/v1/status`).catch(() => null);
+    if (!res || !res.ok) throw new UiError(`Cannot reach ${rpc}/v1/status.`);
+    const st = (await res.json()) as { chain_id?: number };
+    if (typeof st.chain_id !== 'number') throw new UiError('That RPC did not report a chain id.');
+    const s = await this.st();
+    const id = `custom-${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    if (this.allNetworks(s).some((n) => n.id === id)) throw new UiError('A network with that name exists.');
+    s.customNetworks.push({ id, name: name.trim(), rpc, chainId: st.chain_id, explorer: explorer.trim().replace(/\/$/, '') });
+    await this.save();
+    return this.uiState();
+  }
+
+  async removeNetwork(id: string): Promise<UiState> {
+    const s = await this.st();
+    const n = s.customNetworks.find((x) => x.id === id);
+    if (!n) throw new UiError('Not a custom network.');
+    s.customNetworks = s.customNetworks.filter((x) => x.id !== id);
+    if (s.networkId === id) s.networkId = NETWORKS[0]!.id;
+    delete s.connections[id];
+    await this.save();
+    return this.uiState();
   }
 
   /**
@@ -422,7 +506,7 @@ export class Wallet {
 
   async switchNetwork(id: string): Promise<UiState> {
     const s = await this.st();
-    const n = findNetwork(id);
+    const n = this.allNetworks(s).find((x) => x.id === id);
     if (!n) throw new UiError('Unknown network.');
     if (s.networkId !== n.id) {
       s.networkId = n.id;

@@ -1,11 +1,12 @@
-// Drives the real signup-with-wallet flow on the sandbox with the built
-// extension loaded into Chrome, and captures screenshots for the stores.
+// Drives a real signup-with-wallet flow on a client site (E2E_SITE) with the
+// built extension loaded into Chrome, and captures screenshots for the stores.
 import { chromium } from 'playwright';
 import { writeFileSync, mkdirSync } from 'node:fs';
 mkdirSync(process.env['SHOTS_DIR'] ?? '/tmp/keel-wallet-e2e', { recursive: true });
 
 const EXT = new URL('../dist', import.meta.url).pathname;
-const SITE = process.env.E2E_SITE ?? 'https://mohabmetwally.com/stt'; // a client sandbox that offers wallet sign-up
+const SITE = process.env.E2E_SITE; // a client site that offers wallet sign-up
+if (!SITE) throw new Error('set E2E_SITE to a client site that offers wallet sign-up');
 const OUT = process.env['SHOTS_DIR'] ?? '/tmp/keel-wallet-e2e';
 const email = `wallet-e2e-${Date.now()}@example.invalid`;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -41,8 +42,8 @@ log('popup after create:', homeText.replace(/\s+/g, ' ').slice(0, 160));
 const page = await ctx.newPage();
 await page.goto(`${SITE}/register`, { waitUntil: 'networkidle' });
 await page.screenshot({ path: `${OUT}/site-register.png` });
-const hasProvider = await page.evaluate(() => typeof window.stt);
-log('window.stt on the site:', hasProvider);
+const hasProvider = await page.evaluate(() => typeof window.keel);
+log('window.keel on the site:', hasProvider);
 await page.getByPlaceholder('e.g. satoshi@protonmail.com').fill(email);
 await page.locator('.auth-country-trigger').click();
 await page.getByRole('combobox', { name: 'Search countries' }).fill('Egypt');

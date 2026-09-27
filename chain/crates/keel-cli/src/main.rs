@@ -24,6 +24,7 @@ struct Cli {
     cmd: Cmd,
 }
 
+mod genesis_build;
 mod genesis_export;
 mod load;
 
@@ -31,6 +32,9 @@ mod load;
 enum Cmd {
     /// Build a genesis file from a ledger export (Phase 6 migration).
     GenesisFromExport(genesis_export::Args),
+    /// Build a real-network genesis from public keys with the roles split
+    /// (validators, observers, arbitrators, attesters, param admin, funds).
+    GenesisBuild(genesis_build::Args),
     /// Load test: fund N accounts from devnet seeds, fire orders, measure.
     Load(load::Args),
     /// Generate a keypair (random, or deterministic from --seed as the devnet does).
@@ -105,6 +109,9 @@ enum ActionCmd {
     Stake(StakeCmd),
     #[command(subcommand)]
     Gov(GovCmd),
+    /// Client-owned custody vaults (docs/models.md, Model A).
+    #[command(subcommand)]
+    Custody(CustodyCmd),
     HouseQuote {
         pair: String,
         #[arg(long)]
@@ -224,6 +231,32 @@ enum StakeCmd {
         amount: Amount,
     },
     Claim,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum CustodyCmd {
+    /// Register (or rotate, with a higher epoch) this client's vault on a
+    /// chain: the vault's compressed public key, its chain code and the
+    /// URL of the client's signer.
+    Register {
+        chain: String,
+        #[arg(long, default_value = "1")]
+        epoch: u64,
+        #[arg(long)]
+        public_key: String,
+        #[arg(long)]
+        chain_code: String,
+        #[arg(long)]
+        signer_url: String,
+    },
+    /// Ask for a deposit address inside a client's vault.
+    Address { chain: String, custodian: String },
+    /// Withdraw a custody balance through the custodian's vault.
+    Withdraw {
+        asset: String,
+        to: String,
+        amount: Amount,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -414,6 +447,38 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 .map_err(|_| anyhow::anyhow!("tx_hash must be 32 bytes of hex"))?;
             Action::AnnounceLightningSweep { tx_hash, amount }
         }
+        ActionCmd::Custody(CustodyCmd::Register {
+            chain,
+            epoch,
+            public_key,
+            chain_code,
+            signer_url,
+        }) => Action::RegisterCustodyVault(keel_actions::CustodyVaultRegistration {
+            chain: keel_actions::Chain::parse(&chain)
+                .ok_or_else(|| anyhow!("chain must be BTC, ETH or TRON"))?,
+            epoch,
+            public_key: hex::decode(public_key.trim())?,
+            chain_code: Some(
+                hex::decode(chain_code.trim())?
+                    .try_into()
+                    .map_err(|_| anyhow!("chain code must be 32 bytes of hex"))?,
+            ),
+            signer_url,
+        }),
+        ActionCmd::Custody(CustodyCmd::Address { chain, custodian }) => {
+            Action::RequestCustodyAddress {
+                chain: keel_actions::Chain::parse(&chain)
+                    .ok_or_else(|| anyhow!("chain must be BTC, ETH or TRON"))?,
+                custodian: parse_addr(&custodian)?,
+            }
+        }
+        ActionCmd::Custody(CustodyCmd::Withdraw { asset, to, amount }) => {
+            Action::WithdrawCustody(Withdraw {
+                asset: Asset::new(asset),
+                to,
+                amount,
+            })
+        }
         ActionCmd::Gov(GovCmd::Propose {
             title,
             kind,
@@ -519,11 +584,16 @@ fn main() -> anyhow::Result<()> {
     if let Cmd::GenesisFromExport(args) = &cli.cmd {
         return genesis_export::run(args, cli.chain_id);
     }
+    if let Cmd::GenesisBuild(args) = &cli.cmd {
+        return genesis_build::run(args, cli.chain_id);
+    }
     if let Cmd::Load(args) = &cli.cmd {
         return load::run(args, &cli.rpc, cli.chain_id);
     }
     match cli.cmd {
-        Cmd::GenesisFromExport(_) | Cmd::Load(_) => unreachable!("handled above"),
+        Cmd::GenesisFromExport(_) | Cmd::GenesisBuild(_) | Cmd::Load(_) => {
+            unreachable!("handled above")
+        }
         Cmd::Keygen { seed } => {
             let kp = match seed {
                 Some(s) => Keypair::from_seed(s),

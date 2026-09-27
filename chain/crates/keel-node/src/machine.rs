@@ -265,112 +265,284 @@ struct JournalEntry {
     payload: Vec<u8>,
 }
 
+/// The last block of an epoch: what a node resuming from a snapshot needs
+/// as the floor of the following epoch when its block store is empty.
+#[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Boundary {
+    pub epoch: u64,
+    pub height: u64,
+    pub digest: [u8; 32],
+}
+
+/// Sidecar written next to every snapshot so a sync peer can serve the
+/// hashes without decoding the snapshot.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SnapshotMeta {
+    pub height: u64,
+    pub state_hash: String,
+    pub last_hash: String,
+    pub schema: u32,
+}
+
+const BOUNDARIES_FILE: &str = "boundaries.bin";
+
+/// Journal and receipt files are cut into segments at every snapshot:
+/// `journal-<from>.bin` and `receipts-<from>.jsonl` hold the blocks from
+/// height `from` up to the next segment's start. Restarting needs the newest
+/// snapshot and the segments above it, so a node that keeps only the last
+/// `retain_blocks` blocks deletes whole segments below that line; an archive
+/// node keeps everything.
 pub struct Storage {
     dir: PathBuf,
+    active: Option<Segment>,
+    /// A snapshot was written at this height: the next higher block opens
+    /// a new segment.
+    rotate_after: Option<u64>,
+}
+
+struct Segment {
+    from: u64,
     journal: File,
     receipts: File,
+}
+
+impl Segment {
+    fn open(dir: &Path, from: u64) -> anyhow::Result<Self> {
+        let journal = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .read(true)
+            .open(crate::archive::journal_path(dir, from))?;
+        let receipts = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(crate::archive::receipts_path(dir, from))?;
+        Ok(Self {
+            from,
+            journal,
+            receipts,
+        })
+    }
 }
 
 impl Storage {
     pub fn open(dir: &Path) -> anyhow::Result<Self> {
         fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
-        let journal = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(dir.join("journal.bin"))?;
-        let receipts = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("receipts.jsonl"))?;
+        crate::archive::migrate_legacy(dir)?;
         Ok(Self {
             dir: dir.to_path_buf(),
-            journal,
-            receipts,
+            active: None,
+            rotate_after: None,
         })
     }
 
-    /// Appends and returns (offset of the entry body, body length) for the
-    /// archive index.
-    fn append(&mut self, entry: &JournalEntry) -> anyhow::Result<(u64, u32)> {
-        let bytes = borsh::to_vec(entry)?;
-        let start = self.journal.seek(SeekFrom::End(0))?;
-        self.journal
-            .write_all(&(bytes.len() as u32).to_le_bytes())?;
-        self.journal.write_all(&bytes)?;
-        self.journal.flush()?;
-        let body = (start + 4, bytes.len() as u32);
-        self.journal.sync_data()?;
-        Ok(body)
+    /// The segment the next block of `height` goes into: a new one after a
+    /// snapshot, otherwise the newest existing one (or a fresh one when the
+    /// directory is empty).
+    fn active_for(&mut self, height: u64) -> anyhow::Result<&mut Segment> {
+        if self.rotate_after.is_some_and(|h| height > h) {
+            self.active = None;
+            self.rotate_after = None;
+            self.active = Some(Segment::open(&self.dir, height)?);
+        }
+        if self.active.is_none() {
+            let from = crate::archive::segments(&self.dir)?
+                .last()
+                .copied()
+                .unwrap_or(height);
+            self.active = Some(Segment::open(&self.dir, from)?);
+        }
+        Ok(self.active.as_mut().expect("active segment"))
     }
 
-    /// Appends one JSON line per receipt; returns the bytes written.
-    fn append_receipts(&mut self, height: u64, receipts: &[Receipt]) -> anyhow::Result<u64> {
+    /// Appends and returns (segment, offset of the entry body, body length)
+    /// for the archive index.
+    fn append(&mut self, entry: &JournalEntry) -> anyhow::Result<(u64, u64, u32)> {
+        let bytes = borsh::to_vec(entry)?;
+        let seg = self.active_for(entry.height)?;
+        let start = seg.journal.seek(SeekFrom::End(0))?;
+        seg.journal.write_all(&(bytes.len() as u32).to_le_bytes())?;
+        seg.journal.write_all(&bytes)?;
+        seg.journal.flush()?;
+        seg.journal.sync_data()?;
+        Ok((seg.from, start + 4, bytes.len() as u32))
+    }
+
+    /// Appends one JSON line per receipt to the active segment; returns
+    /// (segment, bytes written). Always called after `append` of the same
+    /// height, so the receipts land next to their block.
+    fn append_receipts(&mut self, height: u64, receipts: &[Receipt]) -> anyhow::Result<(u64, u64)> {
+        let seg = self
+            .active
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("receipts before journal at height {height}"))?;
         let mut written = 0u64;
         for r in receipts {
             let line = serde_json::json!({ "height": height, "receipt": r }).to_string();
-            self.receipts.write_all(line.as_bytes())?;
-            self.receipts.write_all(b"\n")?;
+            seg.receipts.write_all(line.as_bytes())?;
+            seg.receipts.write_all(b"\n")?;
             written += line.len() as u64 + 1;
         }
-        self.receipts.flush()?;
-        Ok(written)
+        seg.receipts.flush()?;
+        Ok((seg.from, written))
     }
 
-    /// Every journal entry with height > `above`, in order. Truncated or
-    /// corrupt tails are ignored (a crash mid-write).
+    /// Every journal entry with height > `above`, in order, across all
+    /// segments. Truncated or corrupt tails are ignored (a crash mid-write).
     fn replay_above(&mut self, above: u64) -> anyhow::Result<Vec<JournalEntry>> {
         let mut out = Vec::new();
-        let mut buf = Vec::new();
-        self.journal.seek(SeekFrom::Start(0))?;
-        self.journal.read_to_end(&mut buf)?;
-        let mut pos = 0usize;
-        while pos + 4 <= buf.len() {
-            let len =
-                u32::from_le_bytes([buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]]) as usize;
-            pos += 4;
-            if pos + len > buf.len() {
-                warn!("journal tail truncated; ignoring");
-                break;
-            }
-            match JournalEntry::try_from_slice(&buf[pos..pos + len]) {
-                Ok(e) => {
-                    if e.height > above {
-                        out.push(e);
-                    }
-                }
-                Err(_) => {
-                    warn!("journal entry corrupt; stopping replay");
+        for from in crate::archive::segments(&self.dir)? {
+            let mut buf = Vec::new();
+            File::open(crate::archive::journal_path(&self.dir, from))?.read_to_end(&mut buf)?;
+            let mut pos = 0usize;
+            while pos + 4 <= buf.len() {
+                let len = u32::from_le_bytes([buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]])
+                    as usize;
+                pos += 4;
+                if pos + len > buf.len() {
+                    warn!(from, "journal tail truncated; ignoring");
                     break;
                 }
+                match JournalEntry::try_from_slice(&buf[pos..pos + len]) {
+                    Ok(e) => {
+                        if e.height > above {
+                            out.push(e);
+                        }
+                    }
+                    Err(_) => {
+                        warn!(from, "journal entry corrupt; stopping replay");
+                        break;
+                    }
+                }
+                pos += len;
             }
-            pos += len;
         }
+        out.sort_by_key(|e| e.height);
         Ok(out)
     }
 
-    fn write_snapshot(&self, height: u64, state: &State) -> anyhow::Result<()> {
-        let tmp = self.dir.join(format!("snapshot-{height}.tmp"));
-        let path = self.dir.join(format!("snapshot-{height}.bin"));
-        fs::write(&tmp, state.snapshot())?;
-        fs::rename(&tmp, &path)?;
+    fn write_snapshot(&mut self, height: u64, state: &State) -> anyhow::Result<()> {
+        let meta = SnapshotMeta {
+            height,
+            state_hash: hex::encode(state.compute_hash()),
+            last_hash: hex::encode(state.last_hash),
+            schema: keel_vm::migrate::SCHEMA,
+        };
+        Self::write_snapshot_files(&self.dir, height, &state.snapshot(), &meta)?;
+        self.rotate_after = Some(height);
         // Keep the two newest snapshots.
-        let mut olds: Vec<(u64, PathBuf)> = self
-            .snapshots()?
+        let mut olds: Vec<(u64, PathBuf)> = Self::snapshots_in(&self.dir)?
             .into_iter()
             .filter(|(h, _)| *h < height)
             .collect();
         olds.sort();
         while olds.len() > 1 {
-            let (_, p) = olds.remove(0);
+            let (h, p) = olds.remove(0);
             let _ = fs::remove_file(p);
+            let _ = fs::remove_file(self.dir.join(format!("snapshot-{h}.json")));
         }
         Ok(())
     }
 
-    fn snapshots(&self) -> anyhow::Result<Vec<(u64, PathBuf)>> {
+    /// Deletes every closed segment whose blocks are all below `below`.
+    /// The newest segment is never touched. Returns the segments removed.
+    fn prune(&mut self, below: u64) -> anyhow::Result<Vec<u64>> {
+        let froms = crate::archive::segments(&self.dir)?;
+        let mut removed = Vec::new();
+        for w in froms.windows(2) {
+            let (from, next) = (w[0], w[1]);
+            if next.saturating_sub(1) < below {
+                let _ = fs::remove_file(crate::archive::journal_path(&self.dir, from));
+                let _ = fs::remove_file(crate::archive::receipts_path(&self.dir, from));
+                removed.push(from);
+            }
+        }
+        if !removed.is_empty() {
+            info!(segments = removed.len(), below, "pruned journal segments");
+        }
+        Ok(removed)
+    }
+
+    fn write_snapshot_files(
+        dir: &Path,
+        height: u64,
+        bytes: &[u8],
+        meta: &SnapshotMeta,
+    ) -> anyhow::Result<()> {
+        let tmp = dir.join(format!("snapshot-{height}.tmp"));
+        let path = dir.join(format!("snapshot-{height}.bin"));
+        fs::write(&tmp, bytes)?;
+        fs::rename(&tmp, &path)?;
+        fs::write(
+            dir.join(format!("snapshot-{height}.json")),
+            serde_json::to_vec(meta)?,
+        )?;
+        Ok(())
+    }
+
+    /// Newest snapshot on disk with its sidecar: what `/v1/sync/*` serves.
+    pub fn newest_snapshot_file(dir: &Path) -> Option<(u64, PathBuf, SnapshotMeta)> {
+        let mut snaps = Self::snapshots_in(dir).ok()?;
+        snaps.sort();
+        while let Some((h, p)) = snaps.pop() {
+            let meta = fs::read(dir.join(format!("snapshot-{h}.json")))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<SnapshotMeta>(&b).ok())
+                .or_else(|| {
+                    // No sidecar (older snapshot): derive it once.
+                    let state = State::restore(&fs::read(&p).ok()?)?;
+                    Some(SnapshotMeta {
+                        height: h,
+                        state_hash: hex::encode(state.compute_hash()),
+                        last_hash: hex::encode(state.last_hash),
+                        schema: keel_vm::migrate::SCHEMA,
+                    })
+                });
+            if let Some(meta) = meta {
+                return Some((h, p, meta));
+            }
+        }
+        None
+    }
+
+    /// Installs a verified snapshot fetched from a peer, plus the epoch
+    /// boundaries it came with, into an otherwise empty storage directory.
+    pub fn install_snapshot(
+        dir: &Path,
+        height: u64,
+        bytes: &[u8],
+        meta: &SnapshotMeta,
+        boundaries: &[Boundary],
+    ) -> anyhow::Result<()> {
+        fs::create_dir_all(dir)?;
+        Self::write_snapshot_files(dir, height, bytes, meta)?;
+        let mut map = Self::read_boundaries(dir);
+        for b in boundaries {
+            map.insert(b.epoch, *b);
+        }
+        Self::write_boundaries(dir, &map)
+    }
+
+    pub fn read_boundaries(dir: &Path) -> BTreeMap<u64, Boundary> {
+        let Ok(bytes) = fs::read(dir.join(BOUNDARIES_FILE)) else {
+            return BTreeMap::new();
+        };
+        Vec::<Boundary>::try_from_slice(&bytes)
+            .map(|v| v.into_iter().map(|b| (b.epoch, b)).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn write_boundaries(dir: &Path, map: &BTreeMap<u64, Boundary>) -> anyhow::Result<()> {
+        let list: Vec<Boundary> = map.values().copied().collect();
+        let tmp = dir.join(format!("{BOUNDARIES_FILE}.tmp"));
+        fs::write(&tmp, borsh::to_vec(&list)?)?;
+        fs::rename(tmp, dir.join(BOUNDARIES_FILE))?;
+        Ok(())
+    }
+
+    fn snapshots_in(dir: &Path) -> anyhow::Result<Vec<(u64, PathBuf)>> {
         let mut out = Vec::new();
-        for entry in fs::read_dir(&self.dir)? {
+        for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().to_string();
             if let Some(h) = name
@@ -386,7 +558,7 @@ impl Storage {
     }
 
     fn newest_snapshot(&self) -> anyhow::Result<Option<(u64, State)>> {
-        let mut snaps = self.snapshots()?;
+        let mut snaps = Self::snapshots_in(&self.dir)?;
         snaps.sort();
         while let Some((h, p)) = snaps.pop() {
             match fs::read(&p).ok().and_then(|b| State::restore(&b)) {
@@ -408,7 +580,34 @@ pub struct VmMachine {
     archive: Arc<Mutex<crate::archive::Archive>>,
     tip: (Height, Digest),
     snapshot_interval: u64,
+    /// Blocks of journal kept below the newest snapshot (0 = archive all).
+    retain_blocks: u64,
     updates: broadcast::Sender<BlockUpdate>,
+    boundaries: Arc<Mutex<BTreeMap<u64, Boundary>>>,
+    dir: PathBuf,
+    last_credit: Arc<Mutex<BTreeMap<String, (u64, u64)>>>,
+}
+
+/// This binary's version, compared against executed `SoftwareUpgrade`
+/// proposals (`state.gov.upgrades`).
+pub const NODE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Governance has executed `SoftwareUpgrade { version, height }` proposals;
+/// from `height` on, only a node running exactly `version` may apply
+/// blocks. The newest activation at or below `height` decides.
+pub fn upgrade_gate(state: &State, height: u64, own_version: &str) -> Result<(), String> {
+    let required = state
+        .gov
+        .upgrades
+        .iter()
+        .filter(|(_, at)| *at <= height)
+        .max_by_key(|(_, at)| *at);
+    match required {
+        Some((v, at)) if v != own_version => Err(format!(
+            "governance activated version {v} at height {at}; this node runs {own_version}"
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Handles the RPC and gossip share with the machine.
@@ -420,6 +619,13 @@ pub struct Shared {
     pub updates: broadcast::Sender<BlockUpdate>,
     /// Full history from the journals (any height).
     pub archive: Arc<Mutex<crate::archive::Archive>>,
+    /// Epoch boundaries this node has seen or was handed at sync.
+    pub boundaries: Arc<Mutex<BTreeMap<u64, Boundary>>>,
+    /// The VM storage directory (snapshots live here).
+    pub dir: PathBuf,
+    /// Chain -> (height, block time ms) of the last deposit credited, for
+    /// `/v1/ready`. Node-local; rebuilt as blocks are applied.
+    pub last_credit: Arc<Mutex<BTreeMap<String, (u64, u64)>>>,
 }
 
 fn digest_of(hash: [u8; 32]) -> Digest {
@@ -433,6 +639,7 @@ impl VmMachine {
         dir: &Path,
         genesis: State,
         snapshot_interval: u64,
+        retain_blocks: u64,
     ) -> anyhow::Result<(Self, Shared)> {
         let mut storage = Storage::open(dir)?;
         let (mut state, mut height) = match storage.newest_snapshot()? {
@@ -469,12 +676,19 @@ impl VmMachine {
         let (updates, _) = broadcast::channel(256);
         let archive = crate::archive::Archive::open(dir)?;
         info!(archived = archive.tip(), "opened block archive");
+        let boundaries = Storage::read_boundaries(dir);
+        if !boundaries.is_empty() {
+            info!(epochs = boundaries.len(), "loaded epoch boundaries");
+        }
         let shared = Shared {
             state: Arc::new(Mutex::new(state)),
             mempool: Arc::new(Mutex::new(Mempool::default())),
             receipts: Arc::new(Mutex::new(ReceiptIndex::default())),
             updates: updates.clone(),
             archive: Arc::new(Mutex::new(archive)),
+            boundaries: Arc::new(Mutex::new(boundaries)),
+            dir: dir.to_path_buf(),
+            last_credit: Arc::new(Mutex::new(BTreeMap::new())),
         };
         let machine = Self {
             state: shared.state.clone(),
@@ -484,7 +698,11 @@ impl VmMachine {
             storage,
             tip,
             snapshot_interval: snapshot_interval.max(1),
+            retain_blocks,
             updates,
+            boundaries: shared.boundaries.clone(),
+            dir: dir.to_path_buf(),
+            last_credit: shared.last_credit.clone(),
         };
         Ok((machine, shared))
     }
@@ -522,6 +740,16 @@ impl StateMachine for VmMachine {
         if height <= self.tip.0 {
             return self.tip.1;
         }
+        {
+            let state = self.state.lock().expect("state lock");
+            if let Err(e) = upgrade_gate(&state, height.get(), NODE_VERSION) {
+                // Applying a block this binary was not voted in for would fork
+                // this node from the rest. Stop here; the deploy brings the
+                // right binary and the node resumes from its journal.
+                tracing::error!(height = height.get(), version = NODE_VERSION, "{e}");
+                std::process::exit(78);
+            }
+        }
         let actions = decode_payload(payload).unwrap_or_default();
         let ctx = BlockContext {
             height: height.get(),
@@ -544,8 +772,21 @@ impl StateMachine for VmMachine {
                 Err(e) => panic!("journal append failed: {e}"),
             };
             if height.get().is_multiple_of(self.snapshot_interval) {
-                if let Err(e) = self.storage.write_snapshot(height.get(), &state) {
-                    warn!(?e, "snapshot failed");
+                match self.storage.write_snapshot(height.get(), &state) {
+                    Ok(()) if self.retain_blocks > 0 => {
+                        let below = height.get().saturating_sub(self.retain_blocks);
+                        match self.storage.prune(below) {
+                            Ok(removed) if !removed.is_empty() => self
+                                .archive
+                                .lock()
+                                .expect("archive lock")
+                                .prune_segments(&removed),
+                            Ok(_) => {}
+                            Err(e) => warn!(?e, "prune failed"),
+                        }
+                    }
+                    Ok(()) => {}
+                    Err(e) => warn!(?e, "snapshot failed"),
                 }
             }
             let included: Vec<[u8; 32]> = receipts.iter().map(|r| r.tx_id).collect();
@@ -555,19 +796,22 @@ impl StateMachine for VmMachine {
                 .prune(&state, &included);
             (receipts, events, hash, journal_pos)
         };
-        let receipt_bytes = match self.storage.append_receipts(height.get(), &receipts) {
-            Ok(n) => n,
-            Err(e) => {
-                warn!(?e, "receipt journal append failed");
-                0
-            }
-        };
+        let (receipt_seg, receipt_bytes) =
+            match self.storage.append_receipts(height.get(), &receipts) {
+                Ok(n) => n,
+                Err(e) => {
+                    warn!(?e, "receipt journal append failed");
+                    (journal_pos.0, 0)
+                }
+            };
         if let Err(e) = self.archive.lock().expect("archive lock").record(
             height.get(),
             actions.len() as u32,
             hash,
             journal_pos.0,
             journal_pos.1,
+            journal_pos.2,
+            receipt_seg,
             receipt_bytes,
         ) {
             warn!(?e, "archive record failed");
@@ -576,6 +820,22 @@ impl StateMachine for VmMachine {
             let mut idx = self.receipts.lock().expect("receipts lock");
             idx.insert(height.get(), &receipts);
             idx.insert_events(height.get(), &events);
+        }
+        {
+            let credited = receipts
+                .iter()
+                .flat_map(|r| r.events.iter())
+                .chain(events.iter())
+                .filter_map(|e| match e {
+                    keel_vm::Event::DepositCredited { asset, .. } => {
+                        asset.chain().map(str::to_string)
+                    }
+                    _ => None,
+                });
+            let mut last = self.last_credit.lock().expect("last credit lock");
+            for chain in credited {
+                last.insert(chain, (height.get(), timestamp));
+            }
         }
         let _ = self.updates.send(BlockUpdate {
             height: height.get(),
@@ -605,6 +865,49 @@ impl StateMachine for VmMachine {
             None
         } else {
             Some(set)
+        }
+    }
+
+    fn record_boundary(&mut self, epoch: u64, height: u64, digest: [u8; 32]) {
+        let mut map = self.boundaries.lock().expect("boundaries lock");
+        map.insert(
+            epoch,
+            Boundary {
+                epoch,
+                height,
+                digest,
+            },
+        );
+        if let Err(e) = Storage::write_boundaries(&self.dir, &map) {
+            warn!(?e, "boundaries write failed");
+        }
+    }
+
+    fn boundary(&self, epoch: u64) -> Option<(u64, [u8; 32])> {
+        self.boundaries
+            .lock()
+            .expect("boundaries lock")
+            .get(&epoch)
+            .map(|b| (b.height, b.digest))
+    }
+
+    /// Every bonded validator's consensus key, active or not, so a node
+    /// that bonded after genesis is reachable before its first epoch.
+    /// Observers talk to the chain over RPC, not p2p; a follower node that
+    /// is not bonded is listed through `--extra-peers`.
+    fn peers(&self, _epoch: u64) -> Option<Vec<[u8; 32]>> {
+        let state = self.state.lock().expect("state lock");
+        let keys: Vec<[u8; 32]> = state
+            .staking
+            .validators
+            .values()
+            .map(|v| v.consensus_key)
+            .filter(|k| *k != [0u8; 32])
+            .collect();
+        if keys.is_empty() {
+            None
+        } else {
+            Some(keys)
         }
     }
 }
@@ -674,12 +977,94 @@ mod tests {
     }
 
     #[test]
+    fn segments_rotate_at_snapshots_and_prune() {
+        let alice = Keypair::from_seed(1);
+        let dir = std::env::temp_dir().join(format!("keel-prune-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let genesis = Genesis::devnet(CHAIN_ID_DEVNET, &[alice.address()], vec![]);
+        // Snapshot every 2 blocks, keep 2 blocks of journal below it.
+        let (mut m, shared) = VmMachine::open(&dir, genesis.build(), 2, 2).unwrap();
+        for h in 1..=7u64 {
+            shared
+                .mempool
+                .lock()
+                .unwrap()
+                .insert(&shared.state.lock().unwrap(), transfer(&alice, h - 1))
+                .unwrap();
+            let payload = m.build(Height::new(h - 1), h);
+            m.apply(Height::new(h), 1_000 + h, &payload);
+        }
+        // Segments start after every snapshot: 1, 3, 5, 7. The snapshot at 6
+        // pruned everything whose blocks are all below 6 - 2 = 4: segment 1.
+        assert_eq!(crate::archive::segments(&dir).unwrap(), vec![3, 5, 7]);
+        {
+            let a = shared.archive.lock().unwrap();
+            assert_eq!(a.oldest(), Some(3));
+            assert!(a.meta(2).is_none());
+            assert_eq!(a.meta(3).unwrap().timestamp, 1_003);
+            assert_eq!(a.receipts(7).unwrap().len(), 1);
+            assert_eq!(a.tip(), 7);
+        }
+        let (tip, hash) = m.tip();
+        drop(m);
+        // Restart from snapshot 6 + segment 7, with segment 1 gone.
+        let (m2, shared2) = VmMachine::open(&dir, genesis.build(), 2, 2).unwrap();
+        assert_eq!(m2.tip(), (tip, hash));
+        assert_eq!(shared2.archive.lock().unwrap().oldest(), Some(3));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A snapshot written before the schema header existed (plain borsh of
+    /// the schema-0 layout, the checked-in VM fixture) still opens: the
+    /// node upgrades it through `keel_vm::migrate`.
+    #[test]
+    fn legacy_headerless_snapshot_opens() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../keel-vm/tests/fixtures/snapshot-schema0-devnet.bin");
+        let bytes = fs::read(&fixture).expect("schema-0 fixture");
+        let expected = State::restore(&bytes).expect("fixture decodes").last_hash;
+        let dir = std::env::temp_dir().join(format!("keel-legacy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("snapshot-3.bin"), &bytes).unwrap();
+        let alice = Keypair::from_seed(1);
+        let genesis = Genesis::devnet(CHAIN_ID_DEVNET, &[alice.address()], vec![]);
+        let (m, shared) = VmMachine::open(&dir, genesis.build(), 2, 0).unwrap();
+        // The durable snapshot wins over the genesis it was opened with.
+        assert_eq!(m.tip(), (Height::new(3), digest_of(expected)));
+        assert!(shared
+            .state
+            .lock()
+            .unwrap()
+            .ledger
+            .audit()
+            .mismatches
+            .is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn upgrade_gate_follows_the_newest_activation() {
+        let alice = Keypair::from_seed(1);
+        let mut state = Genesis::devnet(CHAIN_ID_DEVNET, &[alice.address()], vec![]).build();
+        assert!(upgrade_gate(&state, 10, "0.1.0").is_ok());
+        state.gov.upgrades.push(("0.2.0".into(), 100));
+        assert!(upgrade_gate(&state, 99, "0.1.0").is_ok());
+        assert!(upgrade_gate(&state, 100, "0.1.0").is_err());
+        assert!(upgrade_gate(&state, 100, "0.2.0").is_ok());
+        state.gov.upgrades.push(("0.3.0".into(), 200));
+        assert!(upgrade_gate(&state, 150, "0.2.0").is_ok());
+        assert!(upgrade_gate(&state, 200, "0.2.0").is_err());
+        assert!(upgrade_gate(&state, 250, "0.3.0").is_ok());
+    }
+
+    #[test]
     fn journal_replay_restores_state_after_restart() {
         let alice = Keypair::from_seed(1);
         let dir = std::env::temp_dir().join(format!("keel-machine-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let genesis = Genesis::devnet(CHAIN_ID_DEVNET, &[alice.address()], vec![]);
-        let (mut m, shared) = VmMachine::open(&dir, genesis.build(), 2).unwrap();
+        let (mut m, shared) = VmMachine::open(&dir, genesis.build(), 2, 0).unwrap();
         for h in 1..=5u64 {
             shared
                 .mempool
@@ -695,7 +1080,7 @@ mod tests {
         assert!(shared.receipts.lock().unwrap().at(5).is_some());
         drop(m);
         // Reopen: snapshot at 4 + journal 5.
-        let (m2, shared2) = VmMachine::open(&dir, genesis.build(), 2).unwrap();
+        let (m2, shared2) = VmMachine::open(&dir, genesis.build(), 2, 0).unwrap();
         assert_eq!(m2.tip(), (tip, hash));
         assert_eq!(
             shared2

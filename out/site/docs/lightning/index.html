@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lightning · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Lightning">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Lightning</div>
+  <nav class="toc"><ul>
+<li><a href="#bitcoin-lightning-decided-2026-09-10"
+id="toc-bitcoin-lightning-decided-2026-09-10">Bitcoin Lightning (decided
+2026-09-10)</a>
+<ul>
+<li><a href="#1-model-observer-run-lightning-pools"
+id="toc-1-model-observer-run-lightning-pools">1. Model: observer-run
+Lightning pools</a></li>
+<li><a href="#2-parameters-backoffice--chain--lightning"
+id="toc-2-parameters-backoffice--chain--lightning">2. Parameters
+(Backoffice → Chain → Lightning)</a></li>
+<li><a href="#3-operator-setup-observer"
+id="toc-3-operator-setup-observer">3. Operator setup (observer)</a></li>
+<li><a href="#4-marketplace-and-apps" id="toc-4-marketplace-and-apps">4.
+Marketplace and apps</a></li>
+<li><a href="#5-verified-2026-09-10-local-testnet"
+id="toc-5-verified-2026-09-10-local-testnet">5. Verified (2026-09-10,
+local testnet)</a></li>
+<li><a href="#6-limits-and-next-steps"
+id="toc-6-limits-and-next-steps">6. Limits and next steps</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="bitcoin-lightning-decided-2026-09-10">Bitcoin Lightning (decided
+2026-09-10)</h1>
+<p>"Lightning is cheap for BTC and fast, need to support it … make any
+parameters customizable from backoffice." This document describes the
+design, the parameters, the operator setup, and what is verified.</p>
+<h2 id="1-model-observer-run-lightning-pools">1. Model: observer-run
+Lightning pools</h2>
+<p>Lightning payments need a hot node with channels. The chain cannot
+run one, so each <strong>observer</strong> may run an LND node on behalf
+of the chain and register it
+(<code>RegisterLightningNode { node_id }</code>). The chain keeps one
+<strong>pool</strong> per observer: BTC the chain has lent that node
+(funded from the BTC vault by a normal outbound owned by SYSTEM,
+<code>FundLightningPool</code>), the amount pending in outgoing
+payments, and what it credited today. The sum of all pools is a reserve
+account <code>lightning_pool</code> (debit-normal, under the BTC vault's
+liabilities) so reserves-vs-liabilities still balance.</p>
+<ul>
+<li><strong>Deposit</strong>: the marketplace asks the observer's
+invoice API for an invoice whose description is
+<code>keel:&lt;owner address&gt;</code>
+(<code>crates/keel-ln::deposit_description</code>). When it settles, the
+observer submits
+<code>ObserveLightningDeposit { invoice, preimage, amount_msat }</code>.
+The VM parses the BOLT11 invoice, checks the signature, the payee (must
+be that observer's node), the preimage against the payment hash, the
+amount, the caps, and credits the owner's <code>BTC.BTC</code> deposit
+balance; the pool balance grows by the same amount. Replay is
+impossible: one credit per payment hash.</li>
+<li><strong>Withdrawal</strong>: a normal
+<code>Withdraw { asset: BTC.BTC, to: &lt;bolt11&gt;, amount }</code>.
+The vault hook sees a BOLT11 destination and hands it to
+<code>lightning::queue_payout</code>: the invoice must carry an amount
+equal to the withdrawal, be unexpired, within
+<code>lightning_max_withdraw_sats</code>; the user's escrow holds
+<code>amount + allowance</code>; the payout is <strong>assigned</strong>
+to the registered observer with the most free pool balance, with a
+deadline of <code>lightning_payout_timeout_blocks</code>. That observer
+pays with its LND node and reports
+<code>ObserveLightningPayout { outbound_id, preimage, fee_paid_msat, success }</code>.
+Success: the pool is debited <code>amount + fee_paid</code>, the unused
+allowance is refunded to the user, the outbound is
+<code>Confirmed</code> with the payment hash as its
+<code>tx_hash</code>. Failure or deadline: full refund
+(<code>LightningPayoutFailed</code>), the outbound is
+<code>Failed</code>.</li>
+<li><strong>Fee allowance</strong> (what the chain lets the observer
+spend on routing):
+<code>max(amount × lightning_max_fee_bps / 10000, lightning_min_fee_sats)</code>.
+The marketplace charges exactly this as the "network fee" of a Lightning
+withdrawal; whatever is not spent comes back to the user on chain.</li>
+<li><strong>Sweep</strong>: an observer whose node holds more than the
+chain thinks it should (or above <code>lightning_pool_cap_sats</code>)
+closes channels and sends the BTC to the vault's index-0 address,
+announcing the tx hash first (<code>AnnounceLightningSweep</code>); the
+vault's deposit hook recognises the announced hash, reduces the pool and
+books it back as reserves. An unannounced deposit to the vault's own
+address is refused.</li>
+</ul>
+<p>Everything above is in
+<code>chain/crates/keel-vm/src/modules/lightning.rs</code>
+(<code>crates/keel-vm/tests/lightning.rs</code> covers each rule) and
+the vault hooks in <code>modules/vaults.rs</code>. The node serves
+<code>GET /v1/lightning</code> (params, pools, open assignments with
+invoice/amount/owner, pending sweeps, <code>pool_total</code>).</p>
+<h2 id="2-parameters-backoffice--chain--lightning">2. Parameters
+(Backoffice → Chain → Lightning)</h2>
+<p>All are chain params, changed with <code>SetParam</code> by the param
+admin, i.e. from the backoffice Chain page like every other
+parameter:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Key</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>lightning_enabled</code></td>
+<td>1</td>
+<td>Off: invoices refused (deposits and payouts); on-chain BTC still
+works</td>
+</tr>
+<tr class="even">
+<td><code>lightning_pool_cap_sats</code></td>
+<td>50,000,000 (0.5 BTC)</td>
+<td>Most BTC one observer's node may hold for the chain; funding above
+it is refused</td>
+</tr>
+<tr class="odd">
+<td><code>lightning_max_deposit_sats</code></td>
+<td>10,000,000</td>
+<td>Largest single Lightning deposit</td>
+</tr>
+<tr class="even">
+<td><code>lightning_max_withdraw_sats</code></td>
+<td>10,000,000</td>
+<td>Largest single Lightning payout</td>
+</tr>
+<tr class="odd">
+<td><code>lightning_max_fee_bps</code></td>
+<td>50 (0.5%)</td>
+<td>Routing fee allowance in bps of the amount</td>
+</tr>
+<tr class="even">
+<td><code>lightning_min_fee_sats</code></td>
+<td>10</td>
+<td>Allowance floor for tiny payouts</td>
+</tr>
+<tr class="odd">
+<td><code>lightning_payout_timeout_blocks</code></td>
+<td>600</td>
+<td>Blocks an observer has to pay before the chain refunds</td>
+</tr>
+<tr class="even">
+<td><code>lightning_daily_cap_sats</code></td>
+<td>0 (none)</td>
+<td>Total deposits one observer may credit per day</td>
+</tr>
+</tbody>
+</table>
+<p>The marketplace's own fee schedule (flat platform fee per withdrawal,
+Fees page) applies on top exactly as for on-chain withdrawals. Note:
+that flat fee is USD-pegged and dominates small Lightning withdrawals;
+if the goal is "cheap", give Lightning its own tier on the Fees
+page.</p>
+<h2 id="3-operator-setup-observer">3. Operator setup (observer)</h2>
+<ol type="1">
+<li><p>Run <code>lnd</code> (0.19.x) with a funded wallet and channels
+to well-connected peers. Keep <code>admin.macaroon</code> readable by
+the observer.</p></li>
+<li><p>Add to the observer TOML:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode toml"><code class="sourceCode toml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[lightning]</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">rest_url</span> <span class="op">=</span> <span class="st">&quot;https://127.0.0.1:8080&quot;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">macaroon_path</span> <span class="op">=</span> <span class="st">&quot;/path/to/admin.macaroon&quot;</span>   <span class="co"># or macaroon_hex</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="dt">tls_cert_path</span> <span class="op">=</span> <span class="st">&quot;/path/to/tls.cert&quot;</span>         <span class="co"># or tls_insecure = true on regtest</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">api_listen</span> <span class="op">=</span> <span class="st">&quot;127.0.0.1:7201&quot;</span>               <span class="co"># invoice API for the marketplace</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">invoice_expiry_secs</span> <span class="op">=</span> <span class="dv">3600</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">poll_secs</span> <span class="op">=</span> <span class="dv">2</span></span></code></pre></div>
+<p>On start the observer registers its node id on chain once, then
+loops: settled invoices bound to an owner →
+<code>ObserveLightningDeposit</code>; payouts assigned to it → pays and
+reports. <code>GET /v1/lightning/info</code> on the API answers node id,
+observer address, channel balance, invoice expiry.</p></li>
+<li><p>Fund the pool from the vault (needs the observer key):
+<code>keel send --secret &lt;observer secret&gt; lightning fund &lt;sats&gt; &lt;node on-chain address&gt;</code>.
+The vault pays a normal batched outbound to the node's wallet; when the
+observer sees that deposit it credits the pool
+(<code>LightningPoolFunded</code>).</p></li>
+<li><p>Sweep excess:
+<code>keel send … lightning sweep &lt;tx_hash&gt; &lt;sats&gt;</code>
+<strong>before</strong> broadcasting the on-chain transaction to the
+vault's index-0 address.</p></li>
+</ol>
+<p><code>infra/dev/lightning-e2e.sh</code> stands up two regtest LND
+nodes with a channel, registers observer 0, funds its pool with 0.03
+BTC, deposits 25,000 sats by invoice and withdraws 12,000 sats to an
+external invoice.</p>
+<h2 id="4-marketplace-and-apps">4. Marketplace and apps</h2>
+<ul>
+<li><code>apps/marketplace/src/modules/chain/lightning.ts</code>: a
+small BOLT11 decoder (bech32 checksum, network, amount, payment hash,
+expiry, description) and <code>ChainLightning</code> (node status,
+invoice from the least-loaded registered observer in
+<code>CHAIN_LIGHTNING_OBSERVERS</code>, withdrawal pricing, admin
+view).</li>
+<li>Routes: <code>GET /v1/wallet/lightning</code> (availability, limits,
+fee schedule, liquidity, invoice expiry),
+<code>POST /v1/wallet/lightning/invoice {amount}</code> (sats),
+<code>POST /v1/wallet/lightning/decode {invoice}</code>,
+<code>GET /v1/wallet/withdrawals/quote?…&amp;invoice=</code> (lightning
+pricing), <code>POST /v1/wallet/withdrawals</code> with a BOLT11
+<code>toAddress</code> (amount must equal the invoice,
+<code>speed</code> forced to express, allowance as the network fee),
+<code>GET /v1/admin/chain/lightning</code> (super admin: pools,
+assignments, sweeps, observer reachability). Invoices are never offered
+as "recent addresses".</li>
+<li>Wallet history: the indexer materialises
+<code>LightningDepositCredited</code> and
+<code>LightningPayoutSettled</code> as transfers of kind
+<code>lightning_deposit</code> / <code>lightning_payout</code>; the
+marketplace shows them as deposit/sendout rows on network
+<code>lightning</code> with the chain tx id. Deposit notifications fire
+from the deposit watcher as for on-chain credits.</li>
+<li>Web: Wallet → Deposit → BTC on Bitcoin gets an "On-chain | ⚡
+Lightning" switch: amount, "Create invoice", QR + copy + countdown.
+Wallet → Send: paste an invoice as the destination; the amount locks to
+the invoice, the speed picker disappears, the fee shows the
+allowance.</li>
+<li>Backoffice: Chain page → Lightning group (all params, with help) and
+a Lightning card (pools, open payouts, sweeps, observer nodes).</li>
+<li>Explorer: Vaults page → "Lightning (BTC)" card (indexer
+<code>GET /v1/lightning</code>).</li>
+</ul>
+<h2 id="5-verified-2026-09-10-local-testnet">5. Verified (2026-09-10,
+local testnet)</h2>
+<p><code>lightning-e2e.sh</code> PASS; through the marketplace API as
+alice: a 30,000 sat invoice paid from the second LND node was credited
+in about 8 s and shows as a Lightning deposit with its chain tx id; a
+15,000 sat withdrawal to an LND invoice was paid by observer 0 and
+marked settled 4 s after the request. Test counts: Rust 178 (indexer
+20), marketplace 2368, web 699, backoffice 158, explorer 16.</p>
+<h2 id="6-limits-and-next-steps">6. Limits and next steps</h2>
+<ul>
+<li>One LND per observer, keys on the observer host: the pool is the
+observer's hot exposure, capped by <code>lightning_pool_cap_sats</code>.
+Observer bonds must exceed the cap on mainnet.</li>
+<li>Payout assignment is by free balance only; no channel-liquidity
+awareness. An observer that cannot route reports failure and the chain
+refunds; a stuck observer is refunded at the deadline.</li>
+<li>No LNURL / Lightning Address yet; invoices are pasted or
+scanned.</li>
+<li>Mainnet: the deposit invoice API of each observer must be reachable
+by the marketplace over TLS with an allow-list; today it is plain HTTP
+on localhost.</li>
+</ul>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/lightning.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

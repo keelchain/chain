@@ -22,7 +22,7 @@ use crate::{
     tss::TssClient,
 };
 use keel_actions::{Action, Chain, OutboundObservation};
-use keel_chains::{btc::Utxo, eth::Eip1559Tx, tron::TronTxBuilder, Network};
+use keel_chains::{btc::Utxo, eth::Eip1559Tx, policy::SignContext, tron::TronTxBuilder, Network};
 use keel_types::Address;
 use std::collections::BTreeMap;
 
@@ -132,7 +132,19 @@ impl OutboundContext<'_> {
     }
 }
 
-fn batches(rows: &[OutboundRow], chain: Chain) -> BTreeMap<u64, Vec<OutboundRow>> {
+/// The batches of `chain` drawn from one vault: the network's (`None`)
+/// or a client's.
+fn batches_of(
+    rows: &[OutboundRow],
+    chain: Chain,
+    custodian: Option<Address>,
+) -> BTreeMap<u64, Vec<OutboundRow>> {
+    let rows: Vec<OutboundRow> = rows
+        .iter()
+        .filter(|r| r.custodian == custodian)
+        .cloned()
+        .collect();
+    let rows = &rows[..];
     let mut out: BTreeMap<u64, Vec<OutboundRow>> = BTreeMap::new();
     for r in rows
         .iter()
@@ -163,14 +175,27 @@ pub async fn assemble_btc(
     fee_rate: u64,
     tss: &dyn TssClient,
     network: Network,
+    batch_id: u64,
 ) -> anyhow::Result<(Vec<u8>, [u8; 32], u64)> {
     let change = book
         .address(0)
         .ok_or_else(|| anyhow::anyhow!("no hot address"))?;
     let unsigned = keel_chains::btc::build_batch(utxos, outputs, change, fee_rate, network)?;
+    // Every signer checks this description against the chain before signing.
+    let raw_unsigned = hex::encode(bitcoin::consensus::encode::serialize(&unsigned.tx));
     let mut sigs = Vec::with_capacity(unsigned.sighashes.len());
     for s in &unsigned.sighashes {
-        let sig = tss.sign(s.digest, &book.path(s.key_index)).await?;
+        let context = SignContext::Btc {
+            batch_id,
+            raw_tx: raw_unsigned.clone(),
+            input: s.input as u32,
+            prevout_value: unsigned.selected[s.input].value,
+            prevout_pubkey: hex::encode(s.pubkey),
+            network,
+        };
+        let sig = tss
+            .sign(s.digest, &book.path(s.key_index), Some(&context))
+            .await?;
         sigs.push(sig.compact());
     }
     let (raw, txid) = keel_chains::btc::finalize(&unsigned, &sigs)?;
@@ -185,7 +210,7 @@ pub async fn process_bitcoin(
     rows: &[OutboundRow],
 ) -> anyhow::Result<()> {
     let required = ctx.params.confirmations(Chain::Bitcoin) as u64;
-    for (batch_id, outbounds) in batches(rows, Chain::Bitcoin) {
+    for (batch_id, outbounds) in batches_of(rows, Chain::Bitcoin, book.vault.custodian) {
         // Already broadcast (by us or found on chain): watch confirmations.
         if let Some(tx) = ctx.known_tx(outbounds[0].id) {
             match btc::tx_confirmations(rpc, &tx.txid).await? {
@@ -263,14 +288,23 @@ pub async fn process_bitcoin(
             .map(|o| (o.to.clone(), o.amount as u64))
             .collect();
         let fee_rate = btc::fee_rate(rpc, cfg.fee_target_blocks, cfg.fallback_sat_per_vb).await?;
-        let (raw, txid, fee) =
-            match assemble_btc(book, &utxos, &outputs, fee_rate, ctx.tss, cfg.network).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!(batch_id, error = %e, "cannot build bitcoin batch");
-                    continue;
-                }
-            };
+        let (raw, txid, fee) = match assemble_btc(
+            book,
+            &utxos,
+            &outputs,
+            fee_rate,
+            ctx.tss,
+            cfg.network,
+            batch_id,
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(batch_id, error = %e, "cannot build bitcoin batch");
+                continue;
+            }
+        };
         let txid_hex = bitcoin::Txid::from_slice_hex_free(&txid);
         let ids: Vec<u64> = outbounds.iter().map(|o| o.id).collect();
         ctx.remember(
@@ -317,13 +351,27 @@ pub async fn assemble_eth(
     priority: u128,
     tss: &dyn TssClient,
     hot_index: u64,
+    batch_id: u64,
 ) -> anyhow::Result<(Vec<u8>, [u8; 32], Eip1559Tx)> {
     let tx = match token {
         Some(t) => Eip1559Tx::erc20_transfer(chain_id, nonce, t, to, amount, max_fee, priority),
         None => Eip1559Tx::native_transfer(chain_id, nonce, to, amount, max_fee, priority),
     };
     let digest = tx.signing_hash();
-    let sig = tss.sign(digest, &book.path(hot_index)).await?;
+    let context = SignContext::Eth {
+        batch_id,
+        chain_id: tx.chain_id,
+        nonce: tx.nonce,
+        max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
+        max_fee_per_gas: tx.max_fee_per_gas,
+        gas_limit: tx.gas_limit,
+        to: format!("0x{}", hex::encode(tx.to)),
+        value: tx.value,
+        data: hex::encode(&tx.data),
+    };
+    let sig = tss
+        .sign(digest, &book.path(hot_index), Some(&context))
+        .await?;
     let hot_pubkey = book.pubkey(hot_index)?;
     let v = keel_chains::eth::recovery_id(&digest, &sig.compact(), &hot_pubkey)?;
     let raw = tx.raw_signed(&sig.compact(), v);
@@ -344,7 +392,7 @@ pub async fn process_ethereum(
         .to_string();
     let hot_account = keel_chains::address::eth_decode(&hot)?;
     let tip = eth::block_number(rpc).await?;
-    for (batch_id, outbounds) in batches(rows, Chain::Ethereum) {
+    for (batch_id, outbounds) in batches_of(rows, Chain::Ethereum, book.vault.custodian) {
         for o in &outbounds {
             if let Some(tx) = ctx.known_tx(o.id) {
                 if let Some(r) = eth::receipt_status(rpc, &tx.txid).await? {
@@ -394,6 +442,7 @@ pub async fn process_ethereum(
                 priority,
                 ctx.tss,
                 cfg.hot_index,
+                o.batch_id.unwrap_or(0),
             )
             .await?;
             let _ = hot_account;
@@ -426,6 +475,7 @@ pub async fn assemble_tron(
     fee_limit_sun: u64,
     tss: &dyn TssClient,
     hot_index: u64,
+    batch_id: u64,
 ) -> anyhow::Result<(serde_json::Value, [u8; 32])> {
     let owner = keel_chains::address::tron_decode(
         book.address(hot_index)
@@ -451,7 +501,13 @@ pub async fn assemble_tron(
         None => builder.transfer(&owner, &dest, amount as u64),
     };
     let digest = raw.txid();
-    let sig = tss.sign(digest, &book.path(hot_index)).await?;
+    let context = SignContext::Tron {
+        batch_id,
+        raw_data: hex::encode(raw.to_bytes()),
+    };
+    let sig = tss
+        .sign(digest, &book.path(hot_index), Some(&context))
+        .await?;
     let v = keel_chains::eth::recovery_id(&digest, &sig.compact(), &book.pubkey(hot_index)?)?;
     let sig65 = keel_chains::tron::Raw::signature(&sig.compact(), v);
     Ok((raw.broadcast_json(&sig65), digest))
@@ -470,7 +526,7 @@ pub async fn process_tron(
         .address(cfg.hot_index)
         .ok_or_else(|| anyhow::anyhow!("hot address not derived"))?
         .to_string();
-    for (batch_id, outbounds) in batches(rows, Chain::Tron) {
+    for (batch_id, outbounds) in batches_of(rows, Chain::Tron, book.vault.custodian) {
         for o in &outbounds {
             if let Some(tx) = ctx.known_tx(o.id) {
                 if let Some(info) = tron::tx_info(api, &tx.txid).await? {
@@ -517,6 +573,7 @@ pub async fn process_tron(
                 cfg.fee_limit_sun,
                 ctx.tss,
                 cfg.hot_index,
+                o.batch_id.unwrap_or(0),
             )
             .await?;
             ctx.remember(
@@ -557,6 +614,8 @@ mod tests {
             threshold: 2,
             next_deposit_index: 4,
             owners: BTreeMap::new(),
+            custodian: None,
+            signer_url: None,
         };
         let network = if chain == Chain::Bitcoin {
             Network::Regtest
@@ -607,6 +666,7 @@ mod tests {
             5,
             &signer,
             Network::Regtest,
+            1,
         )
         .await
         .unwrap();
@@ -661,6 +721,7 @@ mod tests {
             1_000_000_000,
             &signer,
             0,
+            1,
         )
         .await
         .unwrap();
@@ -693,6 +754,7 @@ mod tests {
             100_000_000,
             &signer,
             0,
+            1,
         )
         .await
         .unwrap();
@@ -719,6 +781,7 @@ mod tests {
             100_000_000,
             &signer,
             0,
+            1,
         )
         .await
         .unwrap();

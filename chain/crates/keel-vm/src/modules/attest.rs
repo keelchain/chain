@@ -33,6 +33,9 @@ pub fn apply_attest(
     let meta = state.account(subject);
     meta.tier = tier;
     meta.tier_expires_at = expires_at;
+    // The client that vouches for the account collects its retail fees
+    // from it and pays the usage its account incurs.
+    state.clients.attested_by.insert(subject, signer);
     Ok(vec![Event::Attested { subject, tier }])
 }
 

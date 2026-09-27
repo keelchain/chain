@@ -1,5 +1,5 @@
 /**
- * Content script (isolated world). Bridges the page's `window.stt` provider
+ * Content script (isolated world). Bridges the page's `window.keel` provider
  * (main world) to the background service worker. The origin the background
  * trusts comes from `sender`, never from the page.
  */

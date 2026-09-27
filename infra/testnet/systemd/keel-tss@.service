@@ -1,0 +1,16 @@
+[Unit]
+Description=Keelchain threshold signer %i
+After=network-online.target wg-quick@keel.service
+Wants=network-online.target
+# Written by the ceremony (tss-ceremony.sh); the unit waits for it.
+ConditionPathExists=/var/lib/keelchain/tss/share.enc
+
+[Service]
+EnvironmentFile=/etc/keelchain/tss-%i.env
+ExecStart=/opt/keelchain/bin/keel-tss serve --share /var/lib/keelchain/tss/share.enc --peers ${TSS_PEERS} --http ${TSS_HTTP} --policy-rpc http://127.0.0.1:5100
+Restart=always
+RestartSec=5
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

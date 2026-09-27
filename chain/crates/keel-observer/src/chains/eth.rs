@@ -1001,6 +1001,8 @@ mod tests {
             threshold: 1,
             next_deposit_index: 2,
             owners: BTreeMap::new(),
+            custodian: None,
+            signer_url: None,
         };
         let book = AddressBook::build(vault, keel_chains::Network::Regtest).unwrap();
         let expect_topic =

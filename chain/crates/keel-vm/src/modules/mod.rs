@@ -8,6 +8,8 @@
 
 pub mod attest;
 pub mod budgets;
+pub mod clients;
+pub mod custody;
 pub mod disputes;
 pub mod fees;
 pub mod gov;
@@ -18,4 +20,5 @@ pub mod sessions;
 pub mod stable;
 pub mod staking;
 pub mod tokens;
+pub mod treasury;
 pub mod vaults;

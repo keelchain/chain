@@ -1,0 +1,93 @@
+name: TSS ceremony
+
+# Creates a new threshold vault key across every host (distributed key
+# generation, no host ever holds the whole key) and registers it on the
+# chain as the vault of the given epoch. Run after a chain reset in tss
+# mode, or to rotate the vault key (new epoch). Every host must be deployed
+# and reachable over the mesh; the keygen processes are started in
+# parallel and wait for each other.
+on:
+  workflow_dispatch:
+    inputs:
+      epoch:
+        description: Vault epoch to register (1 on a fresh chain; higher to rotate)
+        required: true
+        default: "1"
+      chains:
+        description: Chains to register the key for (comma separated)
+        default: "BTC,TRON"
+
+jobs:
+  keygen:
+    runs-on: ubuntu-24.04
+    environment: testnet
+    strategy:
+      max-parallel: 3
+      fail-fast: true
+      matrix:
+        host: ${{ fromJSON(vars.DEPLOY_HOST_INDEXES || '[0]') }}
+    steps:
+      - name: SSH key
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOST_INDEX: ${{ matrix.host }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          IP=$(python3 -c 'import json,os; print(json.loads(os.environ["HOSTS_JSON"])[int(os.environ["HOST_INDEX"])]["ip"])')
+          if [ -n "$KNOWN_HOSTS" ]; then printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
+      - name: Keygen on host ${{ matrix.host }}
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOST_INDEX: ${{ matrix.host }}
+        run: |
+          H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[int(os.environ["HOST_INDEX"])]; print(h.get("user","ubuntu")+"@"+h["ip"])')
+          ssh -i ~/.ssh/id_deploy "$H" "/opt/keelchain/tss-ceremony.sh keygen ${{ github.event.inputs.epoch }}" | tee keygen-${{ matrix.host }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keygen-${{ matrix.host }}
+          path: keygen-${{ matrix.host }}.json
+
+  register:
+    needs: [keygen]
+    runs-on: ubuntu-24.04
+    environment: testnet
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: keygen-*
+          merge-multiple: true
+          path: keys
+      - name: Every host derived the same key
+        run: |
+          python3 - <<'PY'
+          import glob, json, sys
+          keys = {f: json.load(open(f)) for f in sorted(glob.glob("keys/keygen-*.json"))}
+          pks = {v["public_key"] for v in keys.values()}
+          ccs = {v["chain_code"] for v in keys.values()}
+          print(json.dumps(keys, indent=1))
+          if len(pks) != 1 or len(ccs) != 1:
+              sys.exit("hosts disagree on the vault key; the ceremony failed")
+          print("vault key", pks.pop())
+          PY
+      - name: SSH key
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          IP=$(python3 -c 'import json,os; print(json.loads(os.environ["HOSTS_JSON"])[0]["ip"])')
+          if [ -n "$KNOWN_HOSTS" ]; then printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
+      - name: Register the vaults from host 0
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+        run: |
+          H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[0]; print(h.get("user","ubuntu")+"@"+h["ip"])')
+          # The signers are the hosts' validator/observer accounts, in host order.
+          SIGNERS=$(ssh -i ~/.ssh/id_deploy "$H" 'curl -s http://127.0.0.1:5100/v1/gov/roles' | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["observers"]))')
+          ssh -i ~/.ssh/id_deploy "$H" "/opt/keelchain/tss-ceremony.sh register ${{ github.event.inputs.epoch }} ${{ github.event.inputs.chains }} $SIGNERS"
+          ssh -i ~/.ssh/id_deploy "$H" 'sudo systemctl start --no-block keel-btc-checkpoint.service; sleep 5; curl -s http://127.0.0.1:5100/v1/vaults/BTC | head -c 400'

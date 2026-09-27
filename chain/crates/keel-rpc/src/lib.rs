@@ -8,10 +8,7 @@
 #![allow(clippy::disallowed_types, clippy::disallowed_methods)]
 
 use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, Query, State as AxumState,
-    },
+    extract::{Path, Query, State as AxumState},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -23,13 +20,14 @@ use keel_vm::{receipt::Receipt, Event, State, VmError};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
 use tokio::sync::broadcast;
 
 /// One applied block, streamed to WebSocket subscribers.
+pub mod ws;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockUpdate {
     pub height: u64,
@@ -46,6 +44,29 @@ pub struct BlockMeta {
     pub timestamp: u64,
     pub state_hash: Option<String>,
     pub tx_count: u32,
+}
+
+/// The last block of an epoch, as recorded by the node that finalized it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SyncBoundary {
+    pub epoch: u64,
+    pub height: u64,
+    /// Block digest, hex.
+    pub digest: String,
+}
+
+/// What a new node needs to start from this node's newest snapshot.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SyncMeta {
+    pub height: u64,
+    /// Full-state hash of the snapshot (`State::compute_hash`), hex.
+    pub state_hash: String,
+    /// Per-block chained hash after `height` (the tip digest), hex.
+    pub last_hash: String,
+    /// Snapshot schema (`keel_vm::migrate::SCHEMA` of the writer).
+    pub schema: u32,
+    /// Every recorded epoch boundary at or below `height`.
+    pub boundaries: Vec<SyncBoundary>,
 }
 
 /// What the RPC needs from the node.
@@ -88,6 +109,29 @@ pub trait NodeApi: Send + Sync + 'static {
     }
     fn subscribe(&self) -> broadcast::Receiver<BlockUpdate>;
     fn validators(&self) -> Vec<String>;
+    /// Height and block time (ms) of the last `DepositCredited` this node
+    /// applied on `chain` ("BTC", "ETH", "TRON"); node-local bookkeeping.
+    fn last_credit(&self, chain: &str) -> Option<(u64, u64)> {
+        let _ = chain;
+        None
+    }
+    /// The node binary's version (`SoftwareUpgrade` proposals name it).
+    fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+    /// Lowest block height this node still serves (`None` = no blocks yet).
+    /// Equals 1 on an archive node; higher on a pruning follower.
+    fn oldest_block(&self) -> Option<u64> {
+        None
+    }
+    /// Metadata of the newest snapshot for state sync; `None` = no snapshot yet.
+    fn sync_meta(&self) -> Option<SyncMeta> {
+        None
+    }
+    /// The newest snapshot's bytes (framed, see `keel_vm::migrate`).
+    fn sync_snapshot(&self) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 type Node = Arc<dyn NodeApi>;
@@ -168,7 +212,18 @@ pub fn router(node: Node) -> Router {
         .route("/v1/blocks/{height}", get(block))
         .route("/v1/blocks/{height}/actions", get(block_actions))
         .route("/v1/blocks/{height}/receipts", get(block_receipts))
-        .route("/v1/ws", get(ws))
+        .route("/v1/ready/{chain}", get(ready))
+        .route("/v1/clients/{addr}", get(client))
+        .route("/v1/custody", get(custody_list))
+        .route("/v1/custody/{addr}", get(custody_client))
+        .route(
+            "/v1/custody/{addr}/{chain}/addresses",
+            get(custody_addresses),
+        )
+        .route("/v1/treasury", get(treasury))
+        .route("/v1/sync/meta", get(sync_meta))
+        .route("/v1/sync/snapshot", get(sync_snapshot))
+        .route("/v1/ws", get(ws::ws))
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(node)
 }
@@ -208,6 +263,9 @@ async fn status(AxumState(node): AxumState<Node>) -> Json<Value> {
         "height": s.height,
         "timestamp": s.timestamp,
         "state_hash": hex::encode(s.last_hash),
+        "oldest_block": node.oldest_block(),
+        "version": node.version(),
+        "upgrades": s.gov.upgrades.iter().map(|(v, h)| json!({ "version": v, "height": h })).collect::<Vec<_>>(),
         "validators": node.validators(),
         "mempool": node.mempool_len(),
         "accounts": s.accounts.len(),
@@ -547,6 +605,154 @@ async fn vault(
     })))
 }
 
+/// One custody vault in the shape of `/v1/vaults/{chain}` (`vault`,
+/// `next_deposit_index`, `deposit_owners`), plus `custodian` and
+/// `signer_url`, so the observers derive its address book the same way.
+fn custody_entry(
+    s: &keel_vm::State,
+    v: &keel_vm::modules::custody::CustodyVault,
+    network: keel_chains::Network,
+) -> Value {
+    let owners: serde_json::Map<String, Value> = s
+        .custody
+        .deposit_owner
+        .range((v.chain, v.custodian, 0)..=(v.chain, v.custodian, u64::MAX))
+        .map(|((_, _, i), a)| (i.to_string(), Value::String(a.to_hex())))
+        .collect();
+    let pk: Option<[u8; 33]> = v.public_key.as_slice().try_into().ok();
+    let own_address = match (pk, v.chain_code) {
+        (Some(pk), Some(cc)) => keel_chains::deposit_address(v.chain, network, &pk, &cc, 0).ok(),
+        _ => None,
+    };
+    let reserves: Vec<Value> = s
+        .custody
+        .liabilities
+        .iter()
+        .filter(|((c, a), _)| *c == v.custodian && a.chain() == Some(v.chain.as_str()))
+        .map(|((_, a), l)| {
+            json!({
+                "asset": a.to_string(),
+                "reserve": s.custody.reserve(s, v.custodian, a).max(0).to_string(),
+                "liabilities": l.to_string(),
+                "halted": s.custody.halted.contains(&(v.custodian, a.clone())),
+            })
+        })
+        .collect();
+    json!({
+        "custodian": v.custodian.to_hex(),
+        "chain": v.chain.as_str(),
+        "vault": {
+            "chain": v.chain.as_str(),
+            "epoch": v.epoch,
+            "public_key": hex::encode(&v.public_key),
+            "chain_code": v.chain_code.map(hex::encode),
+            "signers": Vec::<String>::new(),
+            "threshold": 1,
+            "registered_height": v.registered_height,
+        },
+        "signer_url": v.signer_url,
+        "address": own_address,
+        "next_deposit_index": s.custody.next_deposit_index.get(&(v.chain, v.custodian)).copied().unwrap_or(1),
+        "deposit_owners": owners,
+        "reserves": reserves,
+    })
+}
+
+/// Every client-owned custody vault (the observers watch all of them).
+async fn custody_list(AxumState(node): AxumState<Node>) -> Json<Value> {
+    let network = node.external_network();
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let vaults: Vec<Value> = s
+        .custody
+        .vaults
+        .values()
+        .map(|v| custody_entry(&s, v, network))
+        .collect();
+    Json(json!({ "vaults": vaults }))
+}
+
+/// A client's custody vaults with, per asset, the reserve its vault holds
+/// against the custody balances it backs: its proof of reserves.
+async fn custody_client(
+    AxumState(node): AxumState<Node>,
+    Path(addr): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    let custodian = parse_address(&addr)?;
+    let network = node.external_network();
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let vaults: Vec<Value> = s
+        .custody
+        .vaults
+        .values()
+        .filter(|v| v.custodian == custodian)
+        .map(|v| custody_entry(&s, v, network))
+        .collect();
+    let accounts = s
+        .custody
+        .custodian_of
+        .iter()
+        .filter(|(_, c)| **c == custodian)
+        .count();
+    Ok(Json(json!({
+        "custodian": custodian.to_hex(),
+        "vaults": vaults,
+        "accounts": accounts,
+    })))
+}
+
+/// Deposit addresses of a client's vault on a chain, with their owners.
+async fn custody_addresses(
+    AxumState(node): AxumState<Node>,
+    Path((addr, chain)): Path<(String, String)>,
+    Query(q): Query<FromQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    let custodian = parse_address(&addr)?;
+    let chain = parse_chain(&chain)?;
+    let network = node.external_network();
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let v = s.custody.vault(chain, custodian).ok_or_else(|| {
+        err(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "no custody vault on this chain",
+        )
+    })?;
+    let pk: [u8; 33] = v.public_key.as_slice().try_into().map_err(|_| {
+        err(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "vault key is not usable",
+        )
+    })?;
+    let cc = v.chain_code.ok_or_else(|| {
+        err(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "vault has no chain code",
+        )
+    })?;
+    let from = q.from.unwrap_or(0);
+    let limit = q.limit.unwrap_or(100).clamp(1, 1000);
+    let owner = q.owner.as_deref().map(parse_address).transpose()?;
+    let rows: Vec<Value> = s
+        .custody
+        .deposit_owner
+        .range((chain, custodian, from)..=(chain, custodian, u64::MAX))
+        .filter(|(_, a)| owner.is_none_or(|o| **a == o))
+        .take(limit)
+        .map(|((_, _, i), a)| json!({ "index": i, "owner": a.to_hex(), "address": keel_chains::deposit_address(chain, network, &pk, &cc, *i).ok() }))
+        .collect();
+    Ok(Json(json!({
+        "custodian": custodian.to_hex(),
+        "chain": chain.as_str(),
+        "next_deposit_index": s.custody.next_deposit_index.get(&(chain, custodian)).copied().unwrap_or(1),
+        "addresses": rows,
+    })))
+}
+
 #[derive(Deserialize)]
 struct FromQuery {
     from: Option<u64>,
@@ -820,13 +1026,17 @@ async fn outbounds(AxumState(node): AxumState<Node>, Query(q): Query<StatusQuery
                 .as_deref()
                 .is_none_or(|st| format!("{:?}", o.status).eq_ignore_ascii_case(st))
         })
-        .map(outbound_json)
+        .map(|o| {
+            let mut v = outbound_json(o);
+            v["custodian"] = json!(s.custody.outbound_vault.get(&o.id).map(Address::to_hex));
+            v
+        })
         .collect();
     let batches: Vec<Value> = s
         .vaults
         .batches
         .values()
-        .map(|b| json!({ "id": b.id, "chain": b.chain.as_str(), "outbound_ids": b.outbound_ids, "created_height": b.created_height }))
+        .map(|b| json!({ "id": b.id, "chain": b.chain.as_str(), "outbound_ids": b.outbound_ids, "created_height": b.created_height, "custodian": s.custody.batch_vault.get(&b.id).map(Address::to_hex) }))
         .collect();
     Json(json!({ "outbounds": list, "batches": batches }))
 }
@@ -898,9 +1108,15 @@ async fn receipt(
                 "tx id must be 64 hex chars",
             )
         })?;
-    node.receipt(&bytes)
-        .map(|r| Json(receipt_json(&r)))
-        .ok_or_else(|| not_found("receipt"))
+    node.receipt(&bytes).map(|r| Json(receipt_json(&r))).ok_or_else(|| {
+        err(
+            StatusCode::NOT_FOUND,
+            "RECEIPT_NOT_FOUND",
+            format!(
+                "no receipt for {tx_id} among this node's recent blocks; the indexer keeps the full history at /v1/txs/{tx_id}"
+            ),
+        )
+    })
 }
 
 fn receipt_json(r: &Receipt) -> Value {
@@ -923,6 +1139,187 @@ struct BlocksQuery {
 }
 
 /// Newest-first block list from durable history.
+/// A client (attester): its retail schedule, what it earned and paid, and
+/// how many accounts it vouches for.
+async fn client(
+    AxumState(node): AxumState<Node>,
+    Path(addr): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    let address = parse_address(&addr)?;
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let c = &s.clients;
+    let sum = |m: &std::collections::BTreeMap<(Address, keel_types::Asset), u128>| -> Vec<Value> {
+        m.iter()
+            .filter(|((who, _), _)| *who == address)
+            .map(|((_, asset), amount)| json!({ "asset": asset.to_string(), "amount": amount.to_string() }))
+            .collect()
+    };
+    Ok(Json(json!({
+        "address": address.to_hex(),
+        "attester": s.attest.attesters.contains(&address),
+        "fee": c.fees.get(&address).map(to_json),
+        "caps": {
+            "p2p_bps": c.params.fee_cap_p2p_bps,
+            "taker_bps": c.params.fee_cap_taker_bps,
+            "withdraw_bps": c.params.fee_cap_withdraw_bps,
+        },
+        "earned": sum(&c.earned),
+        "usage_paid": sum(&c.usage_paid),
+        "attested_accounts": c.attested_by.values().filter(|a| **a == address).count(),
+        "usage_prices": { "address_keel": c.params.usage_address_keel.to_string(), "outbound_keel": c.params.usage_outbound_keel.to_string() },
+    })))
+}
+
+/// The treasury: system balances per asset, the buyback record and the
+/// governance knobs that price Keel's services.
+async fn treasury(AxumState(node): AxumState<Node>) -> Json<Value> {
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let mut balances = serde_json::Map::new();
+    for kind in ["treasury", "validator_rewards", "burn"] {
+        let per_asset: Vec<Value> = s
+            .tokens
+            .assets
+            .keys()
+            .filter_map(|asset| {
+                let b = s
+                    .ledger
+                    .balance(&keel_vm::modules::tokens::system_key(asset, kind));
+                (b != 0).then(|| json!({ "asset": asset.to_string(), "balance": b.to_string() }))
+            })
+            .collect();
+        balances.insert(kind.to_string(), Value::Array(per_asset));
+    }
+    let buybacks: Vec<Value> = s
+        .clients
+        .last_buyback
+        .iter()
+        .map(|(asset, (h, spent, bought))| json!({ "asset": asset.to_string(), "height": h, "spent": spent.to_string(), "keel_bought": bought.to_string() }))
+        .collect();
+    Json(json!({
+        "height": s.height,
+        "balances": balances,
+        "last_buyback": buybacks,
+        "params": to_json(&s.clients.params),
+        "fee_split_bps": { "treasury": s.params.fee_split_treasury_bps, "validators": s.params.fee_split_validators_bps, "burn": s.params.fee_split_burn_bps },
+    }))
+}
+
+#[derive(Deserialize)]
+struct ReadyQuery {
+    /// Oldest acceptable Bitcoin checkpoint tip, in seconds (default 36 h).
+    max_checkpoint_age: Option<u64>,
+}
+
+/// Whether a client may turn a network on: the vault of `chain`, its
+/// checkpoint, the last credited deposit, pending outbounds and halts, with
+/// the reasons when `ready` is false. This is what a client's per-network
+/// switch polls.
+async fn ready(
+    AxumState(node): AxumState<Node>,
+    Path(chain): Path<String>,
+    Query(q): Query<ReadyQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    let chain = parse_chain(&chain)?;
+    let max_age = q.max_checkpoint_age.unwrap_or(36 * 3600);
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let v = &s.vaults;
+    let mut reasons: Vec<String> = Vec::new();
+    let vault = v.active_vault(chain);
+    if vault.is_none() {
+        reasons.push("no vault registered".into());
+    }
+    let now_secs = s.timestamp / 1000;
+    let checkpoint = match chain {
+        keel_actions::Chain::Bitcoin => match &v.btc_chain {
+            Some(c) => {
+                let age = now_secs.saturating_sub(c.tip_time as u64);
+                if age > max_age {
+                    reasons.push(format!("bitcoin checkpoint tip is {age} s old"));
+                }
+                Some(json!({
+                    "checkpoint_height": c.checkpoint_height,
+                    "tip_height": c.tip_height,
+                    "tip_time": c.tip_time,
+                    "age_secs": age,
+                }))
+            }
+            None => {
+                reasons.push("no bitcoin checkpoint".into());
+                None
+            }
+        },
+        keel_actions::Chain::Ethereum => match &v.eth_sync {
+            Some(_) => Some(json!({ "sync_committee": true })),
+            None => {
+                reasons.push("no ethereum checkpoint".into());
+                None
+            }
+        },
+        _ => None,
+    };
+    let halted: Vec<String> = v
+        .halted
+        .iter()
+        .filter(|a| a.chain() == Some(chain.as_str()))
+        .map(|a| a.to_string())
+        .collect();
+    if !halted.is_empty() {
+        reasons.push(format!("halted: {}", halted.join(", ")));
+    }
+    let pending = v
+        .outbounds
+        .values()
+        .filter(|o| {
+            o.chain == chain
+                && matches!(
+                    o.status,
+                    keel_vm::modules::vaults::OutboundStatus::Queued
+                        | keel_vm::modules::vaults::OutboundStatus::Batched
+                )
+        })
+        .count();
+    let last_credit = node
+        .last_credit(chain.as_str())
+        .map(|(h, t)| json!({ "height": h, "timestamp": t }));
+    Ok(Json(json!({
+        "chain": chain.as_str(),
+        "ready": reasons.is_empty(),
+        "reasons": reasons,
+        "height": s.height,
+        "vault": vault.map(vault_json),
+        "checkpoint": checkpoint,
+        "last_deposit_credited": last_credit,
+        "outbound_pending": pending,
+        "halted": halted,
+        "fee_rate": v.fee_rate(chain),
+    })))
+}
+
+/// Newest snapshot metadata for a node that wants to join from state.
+async fn sync_meta(
+    AxumState(node): AxumState<Node>,
+) -> Result<Json<SyncMeta>, (StatusCode, Json<ErrorBody>)> {
+    node.sync_meta()
+        .map(Json)
+        .ok_or_else(|| not_found("snapshot"))
+}
+
+/// The newest snapshot itself, as bytes.
+async fn sync_snapshot(
+    AxumState(node): AxumState<Node>,
+) -> Result<axum::response::Response, (StatusCode, Json<ErrorBody>)> {
+    use axum::response::IntoResponse;
+    let bytes = node.sync_snapshot().ok_or_else(|| not_found("snapshot"))?;
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
+        bytes,
+    )
+        .into_response())
+}
+
 async fn blocks(AxumState(node): AxumState<Node>, Query(q): Query<BlocksQuery>) -> Json<Value> {
     let limit = q.limit.unwrap_or(50).clamp(1, 500);
     let list = node.block_metas(q.before, limit);
@@ -974,50 +1371,6 @@ async fn block_receipts(
     Ok(Json(
         json!({ "height": height, "receipts": list.iter().map(receipt_json).collect::<Vec<_>>(), "events": to_json(&events) }),
     ))
-}
-
-async fn ws(ws: WebSocketUpgrade, AxumState(node): AxumState<Node>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| stream_blocks(socket, node))
-}
-
-async fn stream_blocks(mut socket: WebSocket, node: Node) {
-    let mut rx = node.subscribe();
-    loop {
-        match rx.recv().await {
-            Ok(update) => {
-                let mut v = to_json(&update);
-                if let Some(receipts) = v.get_mut("receipts") {
-                    *receipts = Value::Array(update.receipts.iter().map(receipt_json).collect());
-                }
-                // Book snapshot after each block, for market UIs.
-                let books: BTreeMap<String, Value> = {
-                    let state = node.state();
-                    let s = state.lock().expect("state lock");
-                    s.markets
-                        .pairs
-                        .iter()
-                        .map(|(k, m)| {
-                            (k.clone(), json!({
-                                "best_bid": m.book.best_price(Side::Buy).map(|p| p.to_string()),
-                                "best_ask": m.book.best_price(Side::Sell).map(|p| p.to_string()),
-                                "last_price": m.last_price.map(|p| p.to_string()),
-                            }))
-                        })
-                        .collect()
-                };
-                v["books"] = to_json(&books);
-                if socket
-                    .send(Message::Text(v.to_string().into()))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-            Err(broadcast::error::RecvError::Lagged(_)) => continue,
-            Err(broadcast::error::RecvError::Closed) => break,
-        }
-    }
 }
 
 #[cfg(test)]

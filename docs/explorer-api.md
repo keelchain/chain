@@ -74,3 +74,10 @@ governance records are read from the node on request (and the DB copy
 refreshed) so objects older than the indexer's first block still resolve;
 when the node is unreachable the last snapshot is served and `/v1/health`
 reports `node_reachable: false`.
+
+## WebSocket
+
+`/v1/ws` uses the same envelope as the node's socket (`chain/crates/keel-rpc/API-WS.md`):
+channels `blocks`, `txs` and `account:<hex>`, a per-connection `seq`, a `gap`
+frame on lag and a heartbeat. A socket that never subscribes receives
+`blocks` and `txs`.

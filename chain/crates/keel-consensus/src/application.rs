@@ -59,6 +59,28 @@ pub trait StateMachine: Send + 'static {
         None
     }
 
+    /// Remember the last block of `epoch` (its height and digest). A node
+    /// that resumes from a snapshot needs this digest as the floor of the
+    /// next epoch when its block store does not hold the block.
+    fn record_boundary(&mut self, epoch: u64, height: u64, digest: [u8; 32]) {
+        let _ = (epoch, height, digest);
+    }
+
+    /// The recorded last block of `epoch`, if any.
+    fn boundary(&self, epoch: u64) -> Option<(u64, [u8; 32])> {
+        let _ = epoch;
+        None
+    }
+
+    /// Keys of every node that should stay connected during `epoch`, on top
+    /// of the validators: bonded-but-inactive validators, observers, RPC
+    /// followers. Peers outside the validator set never vote; they only
+    /// receive blocks and serve backfill. `None` = validators only.
+    fn peers(&self, epoch: u64) -> Option<Vec<[u8; 32]>> {
+        let _ = epoch;
+        None
+    }
+
     /// Block pacing from state: `(busy_ms, idle_ms)`. A proposer waits at
     /// least `busy_ms` after the parent block, and up to `idle_ms` while it
     /// has nothing to include. `(0, 0)` proposes as fast as consensus runs.
@@ -81,6 +103,8 @@ pub struct HashChain {
     hash: Digest,
     /// State hash after every applied height, for cross-node comparison.
     history: std::collections::BTreeMap<u64, Digest>,
+    /// Epoch -> (height, digest) of its last block.
+    boundaries: std::collections::BTreeMap<u64, (u64, [u8; 32])>,
 }
 
 impl Default for HashChain {
@@ -89,6 +113,7 @@ impl Default for HashChain {
             height: Height::zero(),
             hash: Digest::EMPTY,
             history: Default::default(),
+            boundaries: Default::default(),
         }
     }
 }
@@ -122,6 +147,14 @@ impl StateMachine for HashChain {
 
     fn tip(&self) -> (Height, Digest) {
         (self.height, self.hash)
+    }
+
+    fn record_boundary(&mut self, epoch: u64, height: u64, digest: [u8; 32]) {
+        self.boundaries.insert(epoch, (height, digest));
+    }
+
+    fn boundary(&self, epoch: u64) -> Option<(u64, [u8; 32])> {
+        self.boundaries.get(&epoch).copied()
     }
 }
 
@@ -189,6 +222,11 @@ impl<M: StateMachine> Application<M> {
     /// Read-only access to the state machine (RPC, tests).
     pub fn with<R>(&self, f: impl FnOnce(&M) -> R) -> R {
         f(&self.lock())
+    }
+
+    /// Mutable access outside the block path (boundary bookkeeping).
+    pub fn with_mut<R>(&self, f: impl FnOnce(&mut M) -> R) -> R {
+        f(&mut self.lock())
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, M> {

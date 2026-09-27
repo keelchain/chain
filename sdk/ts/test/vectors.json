@@ -743,6 +743,135 @@
       "nonce": 28,
       "signature": "4451d50758ddbb1b635ae1ed9151daf89f248a0218d8f61941cf50bd2bf56f1a0d5adc35461eb7e41a4568f4e5ce2b7bc4fa9a7581a99773c2b3baeba4297100",
       "tx_id": "9e6ce9215598b60d0e0dd2d6154d796f34624477e3717b6e0ea410f673a5f7ae"
+    },
+    {
+      "action_borsh": "2b55000000140000000a000000",
+      "action_json": {
+        "SetClientFee": {
+          "p2p_bps": 85,
+          "taker_bps": 20,
+          "withdraw_bps": 10
+        }
+      },
+      "chain_id": 1,
+      "digest": "d6da9d36f00dca977b57e5ce3555ab1d39291e49ea8097663d74d56c16ccd071",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff981d00000000000000010000002b55000000140000000a000000",
+      "name": "set_client_fee",
+      "nonce": 29,
+      "signature": "327a56f80f70d47448a5586124fc54212158474f69e3e06ebb47da2ceba7a9075626c8f35ddecff7e5e119fc7f5f1222043a9c7680e1ec059ba041a974517306",
+      "tx_id": "4cb7c27eeadb17e214ee9809cb2bcd32a50a5fb531d71401721d808ee0e578c3"
+    },
+    {
+      "action_borsh": "2c000100000000000000210000000202020202020202020202020202020202020202020202020202020202020202020107070707070707070707070707070707070707070707070707070707070707071a00000068747470733a2f2f7369676e65722e6578616d706c652e636f6d",
+      "action_json": {
+        "RegisterCustodyVault": {
+          "chain": "Bitcoin",
+          "chain_code": "0707070707070707070707070707070707070707070707070707070707070707",
+          "epoch": 1,
+          "public_key": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "signer_url": "https://signer.example.com"
+        }
+      },
+      "chain_id": 1,
+      "digest": "696efc7fe338378bff28ca690c1ec0aa6544823caa28a02f6588cc00a5ca4c29",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff981e00000000000000010000002c000100000000000000210000000202020202020202020202020202020202020202020202020202020202020202020107070707070707070707070707070707070707070707070707070707070707071a00000068747470733a2f2f7369676e65722e6578616d706c652e636f6d",
+      "name": "register_custody_vault",
+      "nonce": 30,
+      "signature": "03911272ba68133ea04a9428e2be512866749c3ab4637691edb970edca497e2061c6f0e90bd1132b5dbecb9bff1218f65fd67e7f83f57579dfe734f41cd3020a",
+      "tx_id": "8badb2bd2d309caa107c5271a47399baa726bf56383fdedd513ee9139d0976a2"
+    },
+    {
+      "action_borsh": "2d02699048b9863078cef20577b0f2f0524d8318ead9ac0cb1c771b7adbb17dcce91",
+      "action_json": {
+        "RequestCustodyAddress": {
+          "chain": "Tron",
+          "custodian": "699048b9863078cef20577b0f2f0524d8318ead9ac0cb1c771b7adbb17dcce91"
+        }
+      },
+      "chain_id": 1,
+      "digest": "2ad1f891ef1d99aee222c97c9d06527b652c441dcbe3c23bcecb7a8b1160ced3",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff981f00000000000000010000002d02699048b9863078cef20577b0f2f0524d8318ead9ac0cb1c771b7adbb17dcce91",
+      "name": "request_custody_address",
+      "nonce": 31,
+      "signature": "969d258614a46f3a9316db1d0aea7156a4eb60e775f86247484334818115487bb67b78823e1b49467bbdc3574ec982a1f248b455ed6bb50d8b7a359170c5330e",
+      "tx_id": "a576c949065151a748c8288e2b3c524c1a2d737fb95c4c4896d56a0f632852e4"
+    },
+    {
+      "action_borsh": "2e699048b9863078cef20577b0f2f0524d8318ead9ac0cb1c771b7adbb17dcce91020900000054524f4e2e555344543333333333333333333333333333333333333333333333333333333333333333000000000200000000000000404b4c000000000000000000000000006400000000000000820000000000000000",
+      "action_json": {
+        "ObserveCustodyDeposit": {
+          "custodian": "699048b9863078cef20577b0f2f0524d8318ead9ac0cb1c771b7adbb17dcce91",
+          "observation": {
+            "amount": 5000000,
+            "asset": "TRON.USDT",
+            "chain": "Tron",
+            "deposit_index": 2,
+            "external_height": 100,
+            "index": 0,
+            "proof": "None",
+            "tip_height": 130,
+            "tx_hash": "3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        }
+      },
+      "chain_id": 1,
+      "digest": "a941e16b079630ddd53bb040c12f79ff0f72ce7c50bb58e205dd5f2b4a23b54d",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff982000000000000000010000002e699048b9863078cef20577b0f2f0524d8318ead9ac0cb1c771b7adbb17dcce91020900000054524f4e2e555344543333333333333333333333333333333333333333333333333333333333333333000000000200000000000000404b4c000000000000000000000000006400000000000000820000000000000000",
+      "name": "observe_custody_deposit",
+      "nonce": 32,
+      "signature": "a62e7f9ada130b7b1183e089d86f957844dd699665795e4324b21ba5ab85f87420bf886e93965ea5da628b92c23be5c5ed2cbaf419b3bf870dbccad7ec4c9709",
+      "tx_id": "a0f2694c93b62592427d1a25221156cf8b93122e2854e39a46b522884ae462b8"
+    },
+    {
+      "action_borsh": "2f0900000054524f4e2e555344542200000054516e3959326b6845734c4a573143685657464d534d6552446f77354b63624c534540420f00000000000000000000000000",
+      "action_json": {
+        "WithdrawCustody": {
+          "amount": 1000000,
+          "asset": "TRON.USDT",
+          "to": "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE"
+        }
+      },
+      "chain_id": 1,
+      "digest": "d1290af7a3f018aa05b216d7d3c501baf1ab0fa61b2f0d26d47938a9fd172c33",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff982100000000000000010000002f0900000054524f4e2e555344542200000054516e3959326b6845734c4a573143685657464d534d6552446f77354b63624c534540420f00000000000000000000000000",
+      "name": "withdraw_custody",
+      "nonce": 33,
+      "signature": "03a87b9a9cbc9dd0b4a962d61b554ae23eeb5d21b828ed40b80cfac3b7d68d7fbfc5c8ca6ad27021a91fc0810bbcb95ef11e8042681f9be7818fc0ad3d2b0a02",
+      "tx_id": "7be577ed18a6229ea7565315d0aad836384d5dbbabc5c9616c0aa03f3e8f8347"
     }
   ]
 }

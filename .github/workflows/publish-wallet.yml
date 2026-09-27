@@ -1,0 +1,67 @@
+name: Publish wallet
+
+# Builds the Keel Wallet packages, signs the Firefox build as an unlisted
+# add-on (Mozilla signs it in minutes without a listing review), and attaches
+# everything to a GitHub release `wallet-v<version>`. The site deploy picks
+# the newest such release up and serves the signed .xpi and updates.json
+# under keelchain.com/wallet/downloads/, so Firefox installs it in one click
+# and updates itself from there. Chromium browsers install the zip unpacked
+# until a store listing exists.
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: testnet
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: SDK
+        working-directory: sdk/ts
+        run: npm ci && npm run build
+      - name: Packages
+        working-directory: apps/wallet-extension
+        run: npm ci && npm run package
+      - name: Version
+        id: v
+        working-directory: apps/wallet-extension
+        run: echo "version=$(node -p "require('./manifest.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Sign for Firefox (unlisted)
+        working-directory: apps/wallet-extension
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -z "$WEB_EXT_API_KEY" ]; then echo "AMO_JWT_ISSUER/AMO_JWT_SECRET are not set: skipping the Firefox signature"; exit 0; fi
+          npx --yes web-ext sign --channel unlisted --source-dir dist-store/firefox-unpacked --artifacts-dir dist-store/signed --approval-timeout 900000
+          ls -la dist-store/signed
+      - name: updates.json
+        working-directory: apps/wallet-extension
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          XPI=$(ls dist-store/signed/*.xpi 2>/dev/null | head -1 || true)
+          if [ -n "$XPI" ]; then
+            cp "$XPI" "dist-store/keel-wallet-$VERSION-firefox.xpi"
+            python3 - "$VERSION" <<'PY'
+          import json, sys
+          v = sys.argv[1]
+          json.dump({"addons": {"keel-wallet@keelchain.com": {"updates": [{"version": v, "update_link": f"https://keelchain.com/wallet/downloads/keel-wallet-{v}-firefox.xpi"}]}}}, open("dist-store/updates.json", "w"), indent=2)
+          PY
+          fi
+          ls dist-store
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        working-directory: apps/wallet-extension
+        run: |
+          TAG="wallet-v$VERSION"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" --title "Keel Wallet $VERSION" --notes "Keel Wallet $VERSION: Firefox (signed, unlisted), Chromium (load unpacked) and source packages." \
+            dist-store/*.zip $(ls dist-store/*.xpi dist-store/updates.json 2>/dev/null || true)

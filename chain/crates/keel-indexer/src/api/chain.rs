@@ -657,25 +657,202 @@ pub async fn search(State(app): State<App>, Query(sq): Query<SearchQuery>) -> Ap
     Err(ApiError::not_found("match"))
 }
 
+/// `/v1/ws`: the indexed stream with the same envelope as the node's socket
+/// (`seq` per connection, `channel`, `gap` on lag, `heartbeat`). Channels:
+/// `blocks` (block summaries), `txs` (every transaction summary),
+/// `account:<hex>` (transactions signed by that account). A connection that
+/// never subscribes receives `blocks` and `txs`, as before.
 pub async fn ws(ws: WebSocketUpgrade, State(app): State<App>) -> impl IntoResponse {
-    ws.on_upgrade(move |mut socket| async move {
-        let mut rx = app.ws_tx.subscribe();
-        loop {
-            match rx.recv().await {
-                Ok(msg) => {
-                    if socket.send(Message::Text(msg.into())).await.is_err() {
-                        break;
-                    }
+    ws.on_upgrade(move |socket| ws_run(socket, app))
+}
+
+fn ws_stamp(mut v: Value, seq: &mut u64) -> Value {
+    *seq += 1;
+    v["seq"] = json!(*seq);
+    v
+}
+
+fn ws_channel_ok(name: &str) -> bool {
+    name == "blocks"
+        || name == "txs"
+        || name
+            .strip_prefix("account:")
+            .is_some_and(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// One client frame: ping, subscribe (replaces the set), unsubscribe.
+fn ws_op(
+    text: &str,
+    channels: &mut std::collections::BTreeSet<String>,
+    seq: &mut u64,
+    last_height: u64,
+) -> Vec<Value> {
+    let v: Value = match serde_json::from_str(text) {
+        Ok(v) => v,
+        Err(e) => {
+            return vec![ws_stamp(
+                json!({"type":"error","message":format!("bad json: {e}"),"height":last_height}),
+                seq,
+            )]
+        }
+    };
+    match v.get("op").and_then(Value::as_str) {
+        Some("ping") => vec![ws_stamp(json!({"type":"pong","height":last_height}), seq)],
+        Some(op @ ("subscribe" | "unsubscribe")) => {
+            let names: Vec<String> = v
+                .get("channels")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c.as_str().map(|s| s.trim().to_string()))
+                .collect();
+            if let Some(bad) = names.iter().find(|n| !ws_channel_ok(n)) {
+                return vec![ws_stamp(
+                    json!({"type":"error","message":format!("unknown channel {bad}"),"height":last_height}),
+                    seq,
+                )];
+            }
+            if op == "subscribe" {
+                *channels = names.into_iter().collect();
+            } else {
+                for n in names {
+                    channels.remove(&n);
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+            vec![ws_stamp(
+                json!({
+                    "type": if op == "subscribe" { "subscribed" } else { "unsubscribed" },
+                    "channels": channels.iter().collect::<Vec<_>>(),
+                    "height": last_height,
+                }),
+                seq,
+            )]
+        }
+        other => vec![ws_stamp(
+            json!({"type":"error","message":format!("unknown op {other:?}"),"height":last_height}),
+            seq,
+        )],
+    }
+}
+
+async fn ws_run(socket: axum::extract::ws::WebSocket, app: App) {
+    use futures::{SinkExt as _, StreamExt as _};
+    let (mut sink, mut stream) = socket.split();
+    let mut rx = app.ws_tx.subscribe();
+    let mut channels: std::collections::BTreeSet<String> =
+        ["blocks".to_string(), "txs".to_string()]
+            .into_iter()
+            .collect();
+    let mut seq: u64 = 0;
+    let mut last_height: u64 = 0;
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));
+    heartbeat.tick().await;
+    loop {
+        let out: Vec<Value> = tokio::select! {
+            msg = stream.next() => match msg {
+                Some(Ok(Message::Text(text))) => ws_op(&text, &mut channels, &mut seq, last_height),
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                _ => Vec::new(),
+            },
+            item = rx.recv() => match item {
+                Ok(text) => {
+                    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                    let kind = v.get("type").and_then(Value::as_str).unwrap_or("");
+                    let mut out = Vec::new();
+                    match kind {
+                        "block" => {
+                            if let Some(h) = v["block"]["height"].as_u64() {
+                                last_height = h;
+                            }
+                            if channels.contains("blocks") {
+                                let mut m = v.clone();
+                                m["channel"] = json!("blocks");
+                                m["height"] = json!(last_height);
+                                out.push(ws_stamp(m, &mut seq));
+                            }
+                        }
+                        "tx" => {
+                            let h = v["tx"]["height"].as_u64().unwrap_or(last_height);
+                            if channels.contains("txs") {
+                                let mut m = v.clone();
+                                m["channel"] = json!("txs");
+                                m["height"] = json!(h);
+                                out.push(ws_stamp(m, &mut seq));
+                            }
+                            if let Some(signer) = v["tx"]["signer"].as_str() {
+                                let name = format!("account:{signer}");
+                                if channels.contains(&name) {
+                                    let mut m = v.clone();
+                                    m["channel"] = json!(name);
+                                    m["height"] = json!(h);
+                                    out.push(ws_stamp(m, &mut seq));
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    out
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => vec![ws_stamp(json!({
+                    "type": "gap", "missed": missed, "from_height": last_height + 1, "height": last_height,
+                    "resync": { "blocks": "/v1/blocks?from={height}", "txs": "/v1/txs?from={height}" },
+                }), &mut seq)],
                 Err(_) => break,
+            },
+            _ = heartbeat.tick() => vec![ws_stamp(json!({"type":"heartbeat","height":last_height}), &mut seq)],
+        };
+        for m in out {
+            if sink
+                .send(Message::Text(m.to_string().into()))
+                .await
+                .is_err()
+            {
+                return;
             }
         }
-    })
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ws_ops_set_channels_and_sequence_frames() {
+        let mut ch = std::collections::BTreeSet::new();
+        let mut seq = 0;
+        let out = super::ws_op(
+            r#"{"op":"subscribe","channels":["blocks","account:00000000000000000000000000000000000000000000000000000000000000ab"]}"#,
+            &mut ch,
+            &mut seq,
+            5,
+        );
+        assert_eq!(out[0]["type"], "subscribed");
+        assert_eq!(out[0]["seq"], 1);
+        assert_eq!(ch.len(), 2);
+        let out = super::ws_op(
+            r#"{"op":"unsubscribe","channels":["blocks"]}"#,
+            &mut ch,
+            &mut seq,
+            5,
+        );
+        assert_eq!(out[0]["type"], "unsubscribed");
+        assert_eq!(out[0]["seq"], 2);
+        assert_eq!(ch.len(), 1);
+        let out = super::ws_op(
+            r#"{"op":"subscribe","channels":["nope"]}"#,
+            &mut ch,
+            &mut seq,
+            5,
+        );
+        assert_eq!(out[0]["type"], "error");
+        assert_eq!(ch.len(), 1, "a bad subscribe leaves the set alone");
+        let out = super::ws_op("{", &mut ch, &mut seq, 5);
+        assert_eq!(out[0]["type"], "error");
+        assert_eq!(
+            super::ws_op(r#"{"op":"ping"}"#, &mut ch, &mut seq, 9)[0]["type"],
+            "pong"
+        );
+    }
+
     #[test]
     fn micro_to_usd_formats() {
         assert_eq!(super::micro_to_usd("1234567890"), "1234.567890");

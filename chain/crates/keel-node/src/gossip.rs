@@ -67,6 +67,52 @@ impl NodeApi for Node {
         self.external_network
     }
 
+    fn last_credit(&self, chain: &str) -> Option<(u64, u64)> {
+        self.shared
+            .last_credit
+            .lock()
+            .expect("last credit lock")
+            .get(chain)
+            .copied()
+    }
+
+    fn version(&self) -> String {
+        crate::machine::NODE_VERSION.to_string()
+    }
+
+    fn oldest_block(&self) -> Option<u64> {
+        self.shared.archive.lock().expect("archive lock").oldest()
+    }
+
+    fn sync_meta(&self) -> Option<keel_rpc::SyncMeta> {
+        let (height, _, meta) = crate::machine::Storage::newest_snapshot_file(&self.shared.dir)?;
+        let boundaries = self
+            .shared
+            .boundaries
+            .lock()
+            .expect("boundaries lock")
+            .values()
+            .filter(|b| b.height <= height)
+            .map(|b| keel_rpc::SyncBoundary {
+                epoch: b.epoch,
+                height: b.height,
+                digest: hex::encode(b.digest),
+            })
+            .collect();
+        Some(keel_rpc::SyncMeta {
+            height,
+            state_hash: meta.state_hash,
+            last_hash: meta.last_hash,
+            schema: meta.schema,
+            boundaries,
+        })
+    }
+
+    fn sync_snapshot(&self) -> Option<Vec<u8>> {
+        let (_, path, _) = crate::machine::Storage::newest_snapshot_file(&self.shared.dir)?;
+        std::fs::read(path).ok()
+    }
+
     fn block_meta(&self, height: u64) -> Option<keel_rpc::BlockMeta> {
         self.shared
             .archive

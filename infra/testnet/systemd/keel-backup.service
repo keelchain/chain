@@ -1,0 +1,7 @@
+[Unit]
+Description=Keelchain: daily backup of snapshot, config and indexer database
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/keelchain/backup.env
+ExecStart=/opt/keelchain/backup.sh

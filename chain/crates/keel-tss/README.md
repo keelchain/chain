@@ -11,7 +11,7 @@ keel-tss gen-primes --out primes.json                     # once per host, slow
 keel-tss keygen  --index 0 --n 4 --t 3 --eid keel-vault:BTC:epoch:1 \
                 --peers h0:7000,h1:7000,h2:7000,h3:7000 --out share.enc --primes primes.json
 keel-tss pubkey  --share share.enc
-keel-tss serve   --share share.enc --peers h0:7000,... --http 127.0.0.1:7100
+keel-tss serve   --share share.enc --peers h0:7000,... --http 127.0.0.1:7100 --policy-rpc http://127.0.0.1:5100
 ```
 
 Environment: `KEEL_TSS_PASSPHRASE` (share file), `KEEL_TSS_SECRET` (hex, the
@@ -26,7 +26,7 @@ HMAC key of the signer set's transport).
 | Agreement with the chain's derivation | Tested: `tests/ecdsa.rs` derives `keel_chains::hd::deposit_path(chain, i)` from `(vault_public_key, chain_code)` and verifies the threshold signature under that child key (`keel_chains::eth::recovery_id` agrees too). |
 | Share encryption (`store`) | Real: PBKDF2-HMAC-SHA256 (200,000 iterations, 16-byte salt) → ChaCha20-Poly1305 with the JSON header as associated data. |
 | Transport (`transport::TcpTransport`) | Real but minimal: one JSON line per message over plain TCP, HMAC-SHA256 over a secret shared by the whole set, replay filter of the last 65,536 frames. Authenticates membership, not the sender: run it on a private network or through a TLS tunnel. |
-| `serve` HTTP endpoint | Real, no policy: `POST /sign` signs whatever digest the local observer daemon asks for. The binding of the digest to a finalized withdrawal set (plan §4) is not enforced here yet; bind `--http` to loopback. |
+| `serve` HTTP endpoint and signing policy | Real. `POST /sign` takes the digest, the derivation path and a `context` describing the transaction (`keel_chains::policy::SignContext`). With `--policy-rpc <node>` the coordinator checks the context before announcing and every joiner checks it before taking part: the digest must be the signing hash of the described transaction, the transaction must pay open outbounds of the named batch on the chain, and the signing key must be the vault key the context claims (the spent output on Bitcoin, the owner on Tron). Without the flag any digest is signed (devnet only). Bind `--http` to loopback either way. |
 | Presign pool | Not implemented; every request runs the full (3+1)-round protocol (seconds on a LAN). |
 | Resharing / t,n changes | Not possible with CGGMP21 by design; a new observer set means a new ceremony and a new vault epoch (plan §4). |
 | FROST Ed25519 (`--features frost`) | Library only (`frost::keygen`, `frost::sign`, tested 2-of-3). Not wired into `serve`; Solana comes later. |
@@ -66,10 +66,16 @@ same key for each chain is what the devnet does.
 `serve` loads the share, joins the TCP mesh and listens on `--http` for
 
 ```json
-POST /sign  {"digest": "<32 bytes hex>", "path": [0, 17]}
+POST /sign  {"digest": "<32 bytes hex>", "path": [0, 17], "context": {"chain": "BTC", "batch_id": 7, "raw_tx": "<hex>", "input": 0, "prevout_value": 100000, "prevout_pubkey": "<33 bytes hex>", "network": "signet"}}
 → 200       {"r": "<hex>", "s": "<hex>", "v": 0}
+→ 403       {"error": "policy: ..."}     (context missing or not matching the chain)
 → 400/500   {"error": "..."}
 ```
+
+Contexts per chain: `BTC` (unsigned raw tx, the input, its previous output's
+value and key, the network), `ETH` (the EIP-1559 fields), `TRON` (the
+`raw_data` protobuf). The observer daemon fills them in; a client that runs
+its own signer for its own vault gets the same check for free.
 
 The receiving party coordinates: it picks the signer subset (`--signers`,
 default itself plus the lowest other indexes, exactly `t` parties), sends

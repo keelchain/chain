@@ -13,6 +13,7 @@
 pub mod apply;
 pub mod context;
 pub mod genesis;
+pub mod migrate;
 pub mod modules;
 pub mod params;
 pub mod receipt;

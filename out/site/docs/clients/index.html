@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Building a client · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Building a
+client">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Building a
+client</div>
+  <nav class="toc"><ul>
+<li><a href="#building-a-client-on-keel"
+id="toc-building-a-client-on-keel">Building a client on Keel</a>
+<ul>
+<li><a href="#what-is-stable" id="toc-what-is-stable">What is
+stable</a></li>
+<li><a href="#accounts-and-roles" id="toc-accounts-and-roles">Accounts
+and roles</a></li>
+<li><a href="#the-per-network-switch"
+id="toc-the-per-network-switch">The per-network switch</a></li>
+<li><a href="#custodial-clients-your-own-vault"
+id="toc-custodial-clients-your-own-vault">Custodial clients: your own
+vault</a></li>
+<li><a href="#idempotency-and-reconciliation"
+id="toc-idempotency-and-reconciliation">Idempotency and
+reconciliation</a></li>
+<li><a href="#streams" id="toc-streams">Streams</a></li>
+<li><a href="#signing" id="toc-signing">Signing</a></li>
+<li><a href="#pricing" id="toc-pricing">Pricing</a></li>
+<li><a href="#testnet-policy" id="toc-testnet-policy">Testnet
+policy</a></li>
+<li><a href="#getting-help" id="toc-getting-help">Getting help</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="building-a-client-on-keel">Building a client on Keel</h1>
+<p>A client is any service that signs actions for its users or holds a
+role on the chain: an exchange, a marketplace, a payments desk, a bot.
+This guide is the integration contract: how a client runs its own ledger
+and custody next to Keel, turns Keel on one network at a time, and
+reconciles everything by transaction id. <code>models.md</code> explains
+the two models (custodial client with its own vaults, P2P client on Keel
+Wallet); this page is the mechanics, and it is the same for both.</p>
+<h2 id="what-is-stable">What is stable</h2>
+<p><code>https://testnet.keelchain.com/rpc/v1</code> (node) and
+<code>/api/v1</code> (indexer) are the contract. Within <code>v1</code>
+routes and fields are only added, never removed or renamed; a
+deprecation is announced thirty days ahead in the changelog and kept
+working meanwhile. The reference pages are <code>rpc</code>,
+<code>api</code> and <code>ws</code> under keelchain.com/docs, and
+<code>@keelchain/sdk</code> on npm tracks them.</p>
+<h2 id="accounts-and-roles">Accounts and roles</h2>
+<ul>
+<li><strong>One Keel account per user.</strong> An account is an Ed25519
+public key. A custodial client derives and stores its users' keys (or
+keeps a single aggregate account, see <code>models.md</code>); a P2P
+client's users hold theirs in Keel Wallet. Either way the client submits
+signed actions to <code>POST /v1/actions</code> and reads receipts.</li>
+<li><strong>One operator account per client</strong>, holding the roles
+governance granted it: <strong>attester</strong> (it stamps a KYC tier
+on its users' accounts with <code>Attest</code>, which the chain reads
+for limits) and, when it runs its own vault, the <strong>vault
+owner</strong>. The <code>Onboard client</code> workflow gives a testnet
+client its roles and a starting balance of KEEL and KUSD; on mainnet the
+same goes through a governance proposal. <code>GET /v1/gov/roles</code>
+shows the current sets.</li>
+<li><strong>Budget, not gas.</strong> Every account gets a free daily
+action budget; an operator account that signs at volume locks KEEL for
+capacity (<code>LockBudget</code>) or buys it (<code>BuyBudget</code>).
+<code>GET /v1/accounts/{addr}</code> shows the budget left.</li>
+</ul>
+<h2 id="the-per-network-switch">The per-network switch</h2>
+<p>Turn Keel on one external network at a time. The switch lives in the
+client: when <code>bitcoin</code> is on, <strong>new</strong> deposit
+addresses, <strong>new</strong> withdrawals and <strong>new</strong>
+escrow for Bitcoin go through Keel; everything that started before stays
+on the old custody path until it completes; nothing is moved between the
+two. The client's ledger stays the client's; Keel's balances are the
+Keel side of it.</p>
+<p>Before turning a network on, and continuously afterwards, read</p>
+<pre><code>GET /rpc/v1/ready/{BTC|ETH|TRON}</code></pre>
+<p>It answers <code>ready: true</code> only when the network's vault is
+registered, the light-client checkpoint is fresh (Bitcoin), nothing is
+halted, and it lists the reasons otherwise, plus the last deposit
+credited, the pending outbounds and the fee rate. A client flips its
+switch off when <code>ready</code> goes false and back on when it
+recovers; no funds are at risk in between, only new operations wait.</p>
+<p>Checklist for one network:</p>
+<ol type="1">
+<li><code>ready</code> is true.</li>
+<li>The operator account has budget (locked or bought KEEL).</li>
+<li>One deposit address issued for a test account
+(<code>RequestDepositAddress</code>), and a small deposit credited
+(<code>deposits:&lt;chain&gt;:&lt;addr&gt;</code> on the socket, or
+<code>GET /v1/vaults/deposits?owner=</code>).</li>
+<li>One small withdrawal to an address the client controls, confirmed
+(<code>WithdrawalQueued</code> → <code>OutboundBatched</code> →
+<code>OutboundConfirmed</code>).</li>
+<li>For a P2P client: one escrow round trip (<code>StartTrade</code>,
+<code>MarkPaid</code>, <code>ReleaseTrade</code>).</li>
+<li>The reconciliation job below has run clean for a day.</li>
+</ol>
+<h2 id="custodial-clients-your-own-vault">Custodial clients: your own
+vault</h2>
+<p>A client that keeps its own keys (docs/models.md, Model A) uses the
+custody actions instead of the network vault:
+<code>RegisterCustodyVault</code> once per chain (public key, chain
+code, signer URL), <code>RequestCustodyAddress</code> per account,
+<code>WithdrawCustody</code> per payout. The observers attest deposits
+on the client's addresses like any other; the client's signer signs its
+batches after the same policy check the network signers run. Balances
+land in the <code>custody</code> account type, separate from
+network-backed balances. <code>GET /v1/custody/{addr}</code> is the
+client's reserve versus liabilities per asset; the per-network switch
+applies the same way (enable a network once its custody vault is
+registered and <code>/v1/ready/{chain}</code> is green for
+deposits).</p>
+<h2 id="idempotency-and-reconciliation">Idempotency and
+reconciliation</h2>
+<p>Every signed action carries the signer's <strong>nonce</strong>; the
+chain applies each nonce once and in order, so the nonce is the
+idempotency key. A client keeps a table</p>
+<pre><code>client_id -&gt; (signer, nonce, tx_id, status)</code></pre>
+<p>and computes <code>tx_id</code> locally before submitting
+(<code>txId(signedAction)</code> in the SDK, the hash of the signed
+envelope), so a crashed process can look the receipt up
+(<code>GET /v1/receipts/{tx_id}</code>, or the indexer's
+<code>/v1/txs/{tx_id}</code> for anything older than the node's recent
+window) instead of signing again. A duplicate submit of the same signed
+bytes is rejected as a nonce reuse and is harmless. Free-text
+<code>memo</code> fields on transfers are for people, not for
+matching.</p>
+<p>Reconciliation: once a day, for every Keel account the client
+manages, compare <code>GET /v1/accounts/{addr}</code> balances (deposit,
+escrow, sendout escrow) with the client's ledger, and every outbound of
+the day with the indexer's <code>/v1/vaults/outbounds</code>. The
+explorer shows the same numbers to the client's users.</p>
+<h2 id="streams">Streams</h2>
+<p>Subscribe rather than poll for anything time-sensitive:
+<code>account:&lt;addr&gt;</code> for a user's receipts,
+<code>deposits:&lt;chain&gt;:&lt;addr&gt;</code> for credits,
+<code>pair:</code> and <code>book:</code> for markets. Every frame has a
+sequence number and the server tells a client when it fell behind
+(<code>gap</code>); the SDK's <code>KeelSocket</code> reconnects and
+replays from the last height. Details in the <code>ws</code>
+reference.</p>
+<h2 id="signing">Signing</h2>
+<ul>
+<li>Custodial client: sign server-side with <code>@keelchain/sdk</code>
+(<code>Keypair</code>, <code>RpcClient.send</code>), keys in the
+client's KMS.</li>
+<li>P2P client: ask the user's Keel Wallet
+(<code>window.keel.signAction</code>) and submit what comes back; use a
+<strong>session key</strong> (<code>AuthorizeSessionKey</code>, scope
+<code>markets</code> or <code>p2p_manage</code>) so trading and offer
+management do not need a popup per click. Session keys can never move
+funds. <code>wallet.md</code> has the provider contract.</li>
+<li>Withdrawals from a client-owned vault are signed by the client's own
+signer under the same policy every Keel signer runs: the transaction
+must pay open outbounds of a finalized batch.</li>
+</ul>
+<h2 id="pricing">Pricing</h2>
+<p>Everything Keel charges is paid in KEEL, bought on the chain's own
+order book with KUSD, USDT, BTC or TRX; there is no invoice.</p>
+<ul>
+<li><strong>Custodial clients</strong> pay usage: per deposit address
+issued in their vault, per outbound batch built and broadcast, per
+network watched, plus a service tier chosen by locking KEEL. Nothing is
+a share of the client's own fees.</li>
+<li><strong>P2P clients</strong> pay a wholesale protocol fee on escrow
+releases, order-book fills and withdrawals, and set their own retail fee
+on top (<code>SetClientFee</code>), which the chain pays into the
+client's account in the same posting.</li>
+<li><strong>Service tiers</strong> come from locked KEEL on the client's
+operator account: higher limits, webhooks and a revenue dashboard.
+<code>tokenomics.md</code> has the schedule and the governance
+parameters behind it.</li>
+</ul>
+<h2 id="testnet-policy">Testnet policy</h2>
+<p>The testnet resets when the genesis has to change (a validator set
+change, a schema change that cannot migrate). Resets are announced in
+the changelog and re-onboard every client listed with the workflow;
+balances are testnet balances. <code>GET /rpc/v1/status</code> carries
+the chain id and the state hash a client can pin.</p>
+<h2 id="getting-help">Getting help</h2>
+<p><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> for
+roles, API access and partnerships; <a
+href="mailto:support@keelchain.com">support@keelchain.com</a> for
+everything else.</p>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/clients.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

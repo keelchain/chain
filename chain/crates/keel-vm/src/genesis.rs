@@ -205,7 +205,10 @@ impl Genesis {
                 ),
             ],
             accounts,
-            pairs: vec![markets::default_pair("BTC-KUSD", btc, usds, 8, 6)],
+            pairs: vec![
+                markets::default_pair("BTC-KUSD", btc, usds.clone(), 8, 6),
+                markets::default_pair("KEEL-KUSD", keel, usds, 6, 6),
+            ],
             observers: validators.iter().map(|v| v.address).collect(),
             observer_threshold: (validators.len() as u32 * 2).div_ceil(3).max(1),
             arbitrators: validators.iter().map(|v| v.address).collect(),

@@ -92,6 +92,26 @@ impl AddressBook {
     }
 
     /// Owner of a deposit index, if the chain assigned it.
+    /// Distinguishes a client vault's records from the network vault's in
+    /// the observer's own state file ("" for the network vault).
+    pub fn key_prefix(&self) -> String {
+        match self.vault.custodian {
+            Some(c) => format!("{}:", &c.to_hex()[..16]),
+            None => String::new(),
+        }
+    }
+
+    /// Whether a transfer to `index` is a deposit to attest. The network
+    /// vault's index 0 is its hot/change address (Lightning sweeps are
+    /// announced separately); a client vault's index 0 is the client's own
+    /// top-up address and counts.
+    pub fn watches(&self, index: u64) -> bool {
+        match self.vault.custodian {
+            Some(_) => index == 0 || self.owner(index).is_some(),
+            None => index != 0 && self.owner(index).is_some(),
+        }
+    }
+
     pub fn owner(&self, index: u64) -> Option<keel_types::Address> {
         self.vault.owners.get(&index).copied()
     }
@@ -220,6 +240,8 @@ mod tests {
             threshold: 1,
             next_deposit_index: 3,
             owners: BTreeMap::from([(1, keel_types::Address::tagged(1))]),
+            custodian: None,
+            signer_url: None,
         };
         let book = AddressBook::build(vault, Network::Regtest).unwrap();
         assert_eq!(book.len(), 3);

@@ -242,6 +242,13 @@ impl BlockData {
 
 /// A `/v1/ws` message (`BlockUpdate` in keel-rpc) or a `/v1/blocks/{h}` body.
 pub fn parse_block_update(v: &Value) -> Option<BlockData> {
+    // The node's socket also carries heartbeats, gaps and channel events;
+    // only `block` frames (or untyped frames from an older node) are blocks.
+    if let Some(t) = field_str(v, "type") {
+        if t != "block" {
+            return None;
+        }
+    }
     let height = field_u64(v, "height")?;
     let receipts = v
         .get("receipts")

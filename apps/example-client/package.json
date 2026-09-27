@@ -1,0 +1,19 @@
+{
+  "name": "@keelchain/example-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The shortest complete Keel client: connect Keel Wallet, read balances, sign a transfer, follow the account live.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@keelchain/sdk": "file:../../sdk/ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0"
+  }
+}

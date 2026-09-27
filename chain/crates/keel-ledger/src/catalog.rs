@@ -34,6 +34,12 @@ pub const ACCOUNT_TYPES: &[(&str, NormalSide, bool)] = &[
     ("gift_escrow", NormalSide::Credit, true),
     ("sendout_escrow", NormalSide::Credit, true),
     ("screening_hold", NormalSide::Credit, true),
+    // Balances backed by a client's own vault (custody, docs/models.md
+    // Model A) and the slice of one on its way out. Restricted and
+    // user-owned, but excluded from the network reserve check: each
+    // custody vault is checked against its own reserve.
+    ("custody", NormalSide::Credit, true),
+    ("custody_escrow", NormalSide::Credit, true),
     ("order_escrow", NormalSide::Credit, true),
     // ---- platform revenue (inherited, unrestricted credit-normal) ----
     ("marketplace_escrow_fee", NormalSide::Credit, false),

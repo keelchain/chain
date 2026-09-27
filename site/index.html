@@ -17,6 +17,7 @@
   <nav>
     <a href="#build">Build</a>
     <a href="wallet/">Wallet</a>
+    <a href="docs/">Docs</a>
     <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
     <a href="#network" class="hide-sm">Network</a>
     <a class="pill" href="https://testnet.keelchain.com/rpc/v1/status"><span class="dot"></span>testnet live</a>
@@ -71,12 +72,12 @@
   <h2>One chain, any front end.</h2>
   <div class="two">
     <div>
-      <p class="muted">A read API for everything the explorer shows, a node RPC that accepts signed actions, a WebSocket block feed, and a TypeScript SDK that encodes, signs and submits. The first client is a live marketplace; yours can be a mobile app, a bot or a desk.</p>
+      <p class="muted">A read API for everything the explorer shows, a node RPC that accepts signed actions, a WebSocket block feed, and a TypeScript SDK that encodes, signs and submits. The first client is a live marketplace; yours can be a mobile app, a bot or a desk. Keep your own wallets or let users hold theirs: <a href="docs/models/">two ways to run an exchange on Keel</a>.</p>
       <div class="steps">
-        <div class="step"><div><b>Read</b><p>Blocks, accounts, markets, offers, trades, vaults and governance at <code>testnet.keelchain.com/api/v1</code>.</p></div></div>
+        <div class="step"><div><b>Read</b><p>Blocks, accounts, markets, offers, trades, vaults and governance at <code>testnet.keelchain.com/api/v1</code>. <a href="docs/api/">Read API reference</a>.</p></div></div>
         <div class="step"><div><b>Sign</b><p>Ed25519 keys. Users bring their own through Keel Wallet, or your service holds keys for custodial accounts.</p></div></div>
-        <div class="step"><div><b>Submit</b><p>Post signed actions to <code>testnet.keelchain.com/rpc/v1</code>, get a receipt with events in the next block.</p></div></div>
-        <div class="step"><div><b>Fund</b><p>Accounts receive Bitcoin and Tron through vault addresses the chain assigns; on the testnet that is signet BTC and Nile USDT. <a href="https://github.com/keelchain/chain/blob/main/docs/deposits.md">How deposits work</a>.</p></div></div>
+        <div class="step"><div><b>Submit</b><p>Post signed actions to <code>testnet.keelchain.com/rpc/v1</code>, get a receipt with events in the next block. <a href="docs/rpc/">Node RPC reference</a>.</p></div></div>
+        <div class="step"><div><b>Fund</b><p>Accounts receive Bitcoin and Tron through vault addresses the chain assigns; on the testnet that is signet BTC and Nile USDT. <a href="docs/deposits/">How deposits work</a>.</p></div></div>
         <div class="step"><div><b>Onboard</b><p>Want your service to attest trades or hold a role? Write to <a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> and it goes through governance.</p></div></div>
       </div>
     </div>
@@ -131,8 +132,8 @@ console.log((await rpc.waitReceipt(tx)).events);</code></pre>
   <div><img src="keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>A settlement chain for peer-to-peer trading. Built in Rust, open to any client.</p></div>
   <div><h4>Network</h4><ul>
     <li><a href="https://testnet.keelchain.com/">Explorer</a></li>
-    <li><a href="https://testnet.keelchain.com/api/v1/health">Read API</a></li>
-    <li><a href="https://testnet.keelchain.com/rpc/v1/status">Node RPC</a></li>
+    <li><a href="docs/api/">Read API</a></li>
+    <li><a href="docs/rpc/">Node RPC</a></li>
     <li><a href="wallet/">Keel Wallet</a></li>
   </ul></div>
   <div><h4>Contact</h4><ul>

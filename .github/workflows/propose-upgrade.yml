@@ -1,0 +1,88 @@
+name: Propose upgrade
+
+# Governed binary upgrades. This proposes `SoftwareUpgrade { version, height }`
+# from host 0, marks the version as approved on every host (their vote timers
+# vote Yes within ten minutes), waits for the timelock and executes. From
+# `height` on, a node that is not running `version` stops applying blocks
+# (`keel-node` checks `state.gov.upgrades` before every block), so the
+# matching release must be deployed to every host before that height: run
+# this, then the deploy, with `height` far enough ahead for both (about
+# 120 blocks on the testnet at one idle block per 5 s is ten minutes).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version of the keel-node binary that will apply blocks from the height on (chain/Cargo.toml `version`)
+        required: true
+      height:
+        description: Activation height
+        required: true
+      environment:
+        description: GitHub environment
+        default: testnet
+
+jobs:
+  approve:
+    runs-on: ubuntu-24.04
+    environment: ${{ github.event.inputs.environment || 'testnet' }}
+    strategy:
+      matrix:
+        host: ${{ fromJSON(vars.DEPLOY_HOST_INDEXES || '[0]') }}
+    steps:
+      - name: SSH key
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOST_INDEX: ${{ matrix.host }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          IP=$(python3 -c 'import json,os; print(json.loads(os.environ["HOSTS_JSON"])[int(os.environ["HOST_INDEX"])]["ip"])')
+          if [ -n "$KNOWN_HOSTS" ]; then printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
+      - name: Mark the version approved on host ${{ matrix.host }}
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOST_INDEX: ${{ matrix.host }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[int(os.environ["HOST_INDEX"])]; print(h.get("user","ubuntu")+"@"+h["ip"])')
+          ssh -i ~/.ssh/id_deploy "$H" "printf '%s\n' '$VERSION' | sudo tee -a /etc/keelchain/upgrades-approved >/dev/null && echo approved"
+
+  propose:
+    needs: [approve]
+    runs-on: ubuntu-24.04
+    environment: ${{ github.event.inputs.environment || 'testnet' }}
+    steps:
+      - name: SSH key
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          IP=$(python3 -c 'import json,os; print(json.loads(os.environ["HOSTS_JSON"])[0]["ip"])')
+          if [ -n "$KNOWN_HOSTS" ]; then printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
+      - name: Propose, vote, wait, execute from host 0
+        env:
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          VERSION: ${{ github.event.inputs.version }}
+          HEIGHT: ${{ github.event.inputs.height }}
+        run: |
+          H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[0]; print(h.get("user","ubuntu")+"@"+h["ip"])')
+          ssh -i ~/.ssh/id_deploy "$H" bash -s <<EOF
+          set -euo pipefail
+          set -a; . <(sudo cat /etc/keelchain/checkpoint.env); . <(sudo cat /etc/keelchain/observer-0.env); set +a
+          RPC=http://127.0.0.1:\${RPC_PORT:-5100}
+          KEEL="/opt/keelchain/bin/keel --rpc \$RPC --chain-id \${CHAIN_ID:-3}"
+          KIND='{"SoftwareUpgrade":{"version":"$VERSION","height":$HEIGHT}}'
+          ID=\$(\$KEEL send --secret "\$KEEL_OBSERVER_SECRET" gov propose "Upgrade to $VERSION at $HEIGHT" "\$KIND" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["events"][0]["ProposalCreated"]["proposal_id"])')
+          echo "proposal \$ID"; sleep 8
+          \$KEEL send --secret "\$KEEL_OBSERVER_SECRET" gov vote "\$ID" Yes >/dev/null && echo "host 0 voted"
+          END=\$(curl -s \$RPC/v1/gov/proposals/\$ID | python3 -c 'import json,sys; print(json.load(sys.stdin)["timelock_end"])')
+          echo "waiting for the other hosts' votes and the timelock (end \$END)"
+          while [ "\$(curl -s \$RPC/v1/status | python3 -c 'import json,sys; print(json.load(sys.stdin)["height"])')" -le \$((END+1)) ]; do sleep 10; done
+          \$KEEL send --secret "\$KEEL_OBSERVER_SECRET" gov execute "\$ID" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("executed:", d["ok"], d.get("error"))'
+          curl -s \$RPC/v1/status | python3 -c 'import json,sys; print("upgrades:", json.load(sys.stdin).get("upgrades"))'
+          EOF

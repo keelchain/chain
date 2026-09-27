@@ -19,6 +19,7 @@ keel-vm.workspace = true
 keel-consensus.workspace = true
 keel-chains.workspace = true
 keel-rpc.workspace = true
+reqwest.workspace = true
 commonware-consensus.workspace = true
 commonware-cryptography.workspace = true
 commonware-p2p.workspace = true
@@ -35,6 +36,10 @@ serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
 anyhow.workspace = true
+
+[dev-dependencies]
+tokio-tungstenite = "0.29"
+futures-util = "0.3"
 
 [lints]
 workspace = true

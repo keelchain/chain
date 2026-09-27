@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Documentation · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Documentation">
+<link rel="icon" href="../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../"><img src="../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../docs/">Docs</a>
+    <a href="../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../docs/">Docs</a> / Documentation</div>
+<h1 id="documentation">Documentation</h1>
+<p>Everything here is rendered from the markdown in the public
+repository, so the page you read is the file the code is built from.</p>
+<ul>
+<li><a href="models/">Two ways to run an exchange on Keel</a>: Custodial
+clients with their own wallets, P2P clients on Keel Wallet: where funds
+sit, who signs, what it costs.</li>
+<li><a href="clients/">Building a client</a>: The integration contract:
+accounts and roles, the per-network switch and readiness, idempotency
+and reconciliation, streams, signing, pricing.</li>
+<li><a href="api/">Read API</a>: The indexer's read API: blocks,
+accounts, markets, offers, trades, vaults, governance, search and the
+WebSocket feed.</li>
+<li><a href="rpc/">Node RPC</a>: The node's HTTP API: status, accounts,
+submitting signed actions, receipts, order book, vaults, governance,
+readiness, state sync.</li>
+<li><a href="ws/">WebSocket subscriptions</a>: Filtered, sequenced
+subscriptions on the node and the indexer: accounts, pairs, deposits,
+order books, gaps and replay.</li>
+<li><a href="deposits/">Deposits and withdrawals</a>: Funding an account
+with Bitcoin or Tron on the testnet, confirmation depths, and
+withdrawing.</li>
+<li><a href="wallet/">Keel Wallet</a>: The wallet's provider API, key
+model and what a client site needs to connect.</li>
+<li><a href="connect-keel-wallet/">Connect Keel Wallet</a>: Adding a
+Connect button to a site or app: the provider, login challenges,
+signing, session keys, mobile.</li>
+<li><a href="how-it-works/">How the chain works</a>: Consensus,
+issuance, governance, fees, wallets, custody, markets, P2P trading and
+the resilience scenarios.</li>
+<li><a href="tokenomics/">Tokenomics</a>: KEEL supply, allocation and
+the fee model.</li>
+<li><a href="testnet/">The public testnet</a>: What runs where, how to
+fund an account and how clients are onboarded.</li>
+<li><a href="lightning/">Lightning</a>: Bitcoin Lightning deposits and
+payouts through observer pools.</li>
+<li><a href="whitepaper/">Whitepaper</a>: Why a chain, and why this
+shape.</li>
+</ul>
+<h2 id="live-endpoints">Live endpoints</h2>
+<ul>
+<li>Read API: <code>https://testnet.keelchain.com/api/v1/</code> (health
+at <code>/api/v1/health</code>)</li>
+<li>Node RPC: <code>https://testnet.keelchain.com/rpc/v1/</code> (status
+at <code>/rpc/v1/status</code>)</li>
+<li>Explorer: <a
+href="https://testnet.keelchain.com/">https://testnet.keelchain.com/</a></li>
+<li>SDK: <code>npm install @keelchain/sdk</code></li>
+</ul>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

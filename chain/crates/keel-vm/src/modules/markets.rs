@@ -294,7 +294,7 @@ fn validate(cfg: &PairConfig, o: &PlaceOrder) -> Result<(), VmError> {
     Ok(())
 }
 
-fn place(
+pub(crate) fn place(
     state: &mut State,
     ctx: &BlockContext,
     signer: Address,
@@ -619,6 +619,17 @@ fn settle(
                         f.taker_fee,
                     )?;
                 }
+                // The taker's client, if any, takes its retail fee on the fill.
+                events.extend(super::clients::retail(
+                    state,
+                    &format!("{group}:retail"),
+                    TxType::OrderFill,
+                    Some(&group),
+                    taker,
+                    base,
+                    f.quantity,
+                    super::clients::Flow::Taker,
+                )?);
             }
             Side::Sell => {
                 // base: taker escrow -> maker; quote: maker -> taker
@@ -662,6 +673,16 @@ fn settle(
                         f.taker_fee,
                     )?;
                 }
+                events.extend(super::clients::retail(
+                    state,
+                    &format!("{group}:retail"),
+                    TxType::OrderFill,
+                    Some(&group),
+                    taker,
+                    quote,
+                    f.quote_amount,
+                    super::clients::Flow::Taker,
+                )?);
             }
         }
         // Budgets grow with filled USD volume (both sides).

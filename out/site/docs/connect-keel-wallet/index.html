@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect Keel Wallet · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Connect Keel
+Wallet">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Connect Keel
+Wallet</div>
+  <nav class="toc"><ul>
+<li><a href="#connect-keel-wallet-to-your-site-or-app"
+id="toc-connect-keel-wallet-to-your-site-or-app">Connect Keel Wallet to
+your site or app</a>
+<ul>
+<li><a href="#1-the-provider" id="toc-1-the-provider">1. The
+provider</a></li>
+<li><a href="#2-the-kit-in-the-sdk" id="toc-2-the-kit-in-the-sdk">2. The
+kit in the SDK</a></li>
+<li><a href="#3-signing-actions" id="toc-3-signing-actions">3. Signing
+actions</a></li>
+<li><a href="#4-session-keys-for-trading"
+id="toc-4-session-keys-for-trading">4. Session keys for trading</a></li>
+<li><a href="#5-mobile-apps" id="toc-5-mobile-apps">5. Mobile
+apps</a></li>
+<li><a href="#6-networks" id="toc-6-networks">6. Networks</a></li>
+<li><a href="#7-trying-it" id="toc-7-trying-it">7. Trying it</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="connect-keel-wallet-to-your-site-or-app">Connect Keel Wallet to
+your site or app</h1>
+<p>Keel Wallet is the user's key. A site never sees it: it asks the
+wallet to connect, to sign a login challenge, to sign a chain action, or
+to authorize a session key, and the user approves each request in the
+wallet's own window. This page is the complete contract for a client
+that adds a "Connect Keel Wallet" button, on the web or in a mobile
+app.</p>
+<h2 id="1-the-provider">1. The provider</h2>
+<p>The extension injects <code>window.keel</code> on any site the user
+has enabled it for (Keelchain's own sites and localhost are enabled out
+of the box; for every other site the user clicks <em>Enable on this
+site</em> once in the wallet, which asks the browser for that origin's
+permission). Nothing else about the extension changes per site, so a
+client never waits for a wallet release.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">interface</span> KeelProvider {</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">readonly</span> isKeel<span class="op">:</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">readonly</span> version<span class="op">:</span> <span class="dt">string</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">connect</span>(opts<span class="op">?:</span> { network<span class="op">?:</span> <span class="dt">string</span> })<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ address<span class="op">,</span> network<span class="op">,</span> chainId }<span class="op">&gt;;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">disconnect</span>()<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">&gt;;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">getAccount</span>()<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ address<span class="op">,</span> network<span class="op">,</span> chainId } <span class="op">|</span> <span class="dt">null</span><span class="op">&gt;;</span>   <span class="co">// never prompts</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">signMessage</span>(message<span class="op">:</span> <span class="dt">string</span>)<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ address<span class="op">,</span> signature }<span class="op">&gt;;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">signAction</span>(req<span class="op">:</span> { envelope<span class="op">:</span> { signer<span class="op">,</span> nonce<span class="op">,</span> chain_id<span class="op">,</span> action }<span class="op">,</span> context<span class="op">?</span> })<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ signature<span class="op">,</span> tx_id<span class="op">,</span> signed }<span class="op">&gt;;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">authorizeSession</span>(req<span class="op">:</span> { key<span class="op">,</span> scope<span class="op">:</span> (<span class="st">&quot;markets&quot;</span> <span class="op">|</span> <span class="st">&quot;p2p_manage&quot;</span>)[]<span class="op">,</span> expires_at<span class="op">,</span> nonce<span class="op">,</span> chain_id })<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ signature<span class="op">,</span> tx_id<span class="op">,</span> signed }<span class="op">&gt;;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">on</span>(event<span class="op">:</span> <span class="st">&quot;accountChanged&quot;</span> <span class="op">|</span> <span class="st">&quot;disconnect&quot;</span> <span class="op">|</span> <span class="st">&quot;networkChanged&quot;</span><span class="op">,</span> handler)<span class="op">:</span> () <span class="kw">=&gt;</span> <span class="dt">void</span><span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>Rejections carry <code>{ code, message }</code> with codes
+<code>USER_REJECTED</code>, <code>LOCKED</code>,
+<code>NO_ACCOUNT</code>, <code>NOT_CONNECTED</code>,
+<code>INVALID_REQUEST</code>, <code>WRONG_NETWORK</code>. The provider
+fires <code>keel#initialized</code> on <code>window</code> when it is
+ready.</p>
+<h2 id="2-the-kit-in-the-sdk">2. The kit in the SDK</h2>
+<p><code>@keelchain/sdk</code> ships the browser and server halves:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { detectProvider<span class="op">,</span> connectWallet<span class="op">,</span> mountConnectButton<span class="op">,</span> loginChallenge<span class="op">,</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>         verifyLoginChallenge<span class="op">,</span> requestSession<span class="op">,</span> RpcClient } <span class="im">from</span> <span class="st">&quot;@keelchain/sdk&quot;</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">// A button, no framework needed. In React, call connectWallet() from your own button.</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">mountConnectButton</span>(<span class="bu">document</span><span class="op">.</span><span class="fu">getElementById</span>(<span class="st">&quot;keel&quot;</span>)<span class="op">!,</span> {</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  installUrl<span class="op">:</span> <span class="st">&quot;https://keelchain.com/wallet/&quot;</span><span class="op">,</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  onConnected<span class="op">:</span> <span class="kw">async</span> (account<span class="op">,</span> provider) <span class="kw">=&gt;</span> {</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 1. Login: the server issues a challenge, the wallet signs it, the server verifies.</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> { challenge } <span class="op">=</span> <span class="cf">await</span> api<span class="op">.</span><span class="fu">post</span>(<span class="st">&quot;/auth/keel/challenge&quot;</span><span class="op">,</span> { address<span class="op">:</span> account<span class="op">.</span><span class="at">address</span> })<span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> { signature } <span class="op">=</span> <span class="cf">await</span> provider<span class="op">.</span><span class="fu">signMessage</span>(challenge)<span class="op">;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">await</span> api<span class="op">.</span><span class="fu">post</span>(<span class="st">&quot;/auth/keel/login&quot;</span><span class="op">,</span> { address<span class="op">:</span> account<span class="op">.</span><span class="at">address</span><span class="op">,</span> challenge<span class="op">,</span> signature })<span class="op">;</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  }<span class="op">,</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>})<span class="op">;</span></span></code></pre></div>
+<p>Server side (Node):</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { loginChallenge<span class="op">,</span> verifyLoginChallenge } <span class="im">from</span> <span class="st">&quot;@keelchain/sdk&quot;</span><span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">// issue</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> challenge <span class="op">=</span> <span class="fu">loginChallenge</span>(address<span class="op">,</span> { site<span class="op">:</span> <span class="st">&quot;example.com&quot;</span> })<span class="op">;</span>   <span class="co">// &quot;Keel login\naddress: …\nnonce: …\nissued: …\nsite: example.com&quot;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">store</span>(<span class="fu">nonceOf</span>(challenge)<span class="op">,</span> address)<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co">// verify (throws on a bad signature, a foreign address, an old challenge, an unknown nonce)</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">verifyLoginChallenge</span>(address<span class="op">,</span> challenge<span class="op">,</span> signature<span class="op">,</span> { maxAgeMs<span class="op">:</span> <span class="dv">5</span> <span class="op">*</span> <span class="dv">60_000</span><span class="op">,</span> expectNonce<span class="op">,</span> site<span class="op">:</span> <span class="st">&quot;example.com&quot;</span> })<span class="op">;</span></span></code></pre></div>
+<p>The signed text carries the <code>keel-message-v1</code> domain, so a
+login signature can never be replayed as a chain action.</p>
+<h2 id="3-signing-actions">3. Signing actions</h2>
+<p>For anything that moves the user's funds, the site builds the
+envelope and asks the wallet to sign it; the wallet shows the decoded
+action and the user approves:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> rpc <span class="op">=</span> <span class="kw">new</span> <span class="fu">RpcClient</span>(<span class="st">&quot;https://testnet.keelchain.com/rpc&quot;</span>)<span class="op">;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> acct <span class="op">=</span> <span class="cf">await</span> rpc<span class="op">.</span><span class="fu">account</span>(account<span class="op">.</span><span class="at">address</span>)<span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> { signed<span class="op">,</span> tx_id } <span class="op">=</span> <span class="cf">await</span> provider<span class="op">.</span><span class="fu">signAction</span>({</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  envelope<span class="op">:</span> { signer<span class="op">:</span> account<span class="op">.</span><span class="at">address</span><span class="op">,</span> nonce<span class="op">:</span> acct<span class="op">.</span><span class="at">nonce</span><span class="op">,</span> chain_id<span class="op">:</span> account<span class="op">.</span><span class="at">chainId</span><span class="op">,</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>              action<span class="op">:</span> { Transfer<span class="op">:</span> { to<span class="op">,</span> asset<span class="op">:</span> <span class="st">&quot;KUSD&quot;</span><span class="op">,</span> amount<span class="op">:</span> <span class="dv">25_000_000</span>n<span class="op">,</span> memo<span class="op">:</span> <span class="st">&quot;invoice 42&quot;</span> } } }<span class="op">,</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  context<span class="op">:</span> { title<span class="op">:</span> <span class="st">&quot;Pay invoice 42&quot;</span><span class="op">,</span> description<span class="op">:</span> <span class="st">&quot;25 KUSD to the merchant&quot;</span> }<span class="op">,</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>})<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="cf">await</span> rpc<span class="op">.</span><span class="fu">submit</span>(signed)<span class="op">;</span></span></code></pre></div>
+<h2 id="4-session-keys-for-trading">4. Session keys for trading</h2>
+<p>A popup per order is not usable. The site asks once for a session key
+with a scope, keeps the secret server side for that user, and signs
+order-book and offer actions with it until it expires (at most 30 days).
+A session key cannot transfer, withdraw or release escrow; those still
+go to the wallet.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> { key<span class="op">,</span> expiresAt } <span class="op">=</span> <span class="cf">await</span> <span class="fu">requestSession</span>(provider<span class="op">,</span> { scopes<span class="op">:</span> [<span class="st">&quot;markets&quot;</span>]<span class="op">,</span> nonce<span class="op">:</span> acct<span class="op">.</span><span class="at">nonce</span><span class="op">,</span> chainId<span class="op">:</span> account<span class="op">.</span><span class="at">chainId</span> })<span class="op">;</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co">// later, server side:</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="cf">await</span> rpc<span class="op">.</span><span class="fu">send</span>(key<span class="op">,</span> { PlaceOrder<span class="op">:</span> { pair<span class="op">:</span> <span class="st">&quot;BTC-KUSD&quot;</span><span class="op">,</span> side<span class="op">:</span> <span class="st">&quot;buy&quot;</span><span class="op">,</span> order_type<span class="op">:</span> <span class="st">&quot;limit&quot;</span><span class="op">,</span> price<span class="op">,</span> quantity } }<span class="op">,</span> chainId)<span class="op">;</span></span></code></pre></div>
+<h2 id="5-mobile-apps">5. Mobile apps</h2>
+<p>A browser extension cannot run inside a native or hybrid app. Two
+ways:</p>
+<ul>
+<li><strong>Embed the key model.</strong> The wallet's core (BIP39 seed,
+key derivation, encrypted vault, action encoding and decoding) has no
+browser dependencies and is being split out as
+<code>@keelchain/wallet-core</code>, so a Capacitor, React Native or
+native app can hold the user's key with the same derivation the
+extension uses: the same seed phrase restores the same accounts
+anywhere.</li>
+<li><strong>Deep link to a mobile Keel Wallet.</strong>
+<code>keel://connect?origin=…&amp;challenge=…</code> is reserved for the
+standalone mobile wallet; until it ships, embedding is the way.</li>
+</ul>
+<h2 id="6-networks">6. Networks</h2>
+<p>The wallet knows the public testnet and a local devnet, and the user
+can add a custom network (RPC URL and chain id).
+<code>connect({ network })</code> asks for a specific one; a mismatch
+rejects with <code>WRONG_NETWORK</code>.</p>
+<h2 id="7-trying-it">7. Trying it</h2>
+<p><code>keelchain.com/wallet/try</code> is a one-page client built from
+<code>apps/example-client</code>: connect, read balances, sign a
+transfer, and watch the account channel live. Its source is the shortest
+complete integration.</p>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/connect-keel-wallet.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

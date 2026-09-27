@@ -188,6 +188,7 @@ where
     app: Application<M>,
     signer: PrivateKey,
     genesis_participants: Set<PublicKey>,
+    extra_peers: Set<PublicKey>,
     genesis_digest: Digest,
     epocher: FixedEpocher,
     timings: Timings,
@@ -218,6 +219,7 @@ where
         app: Application<M>,
         signer: PrivateKey,
         genesis_participants: Set<PublicKey>,
+        extra_peers: Set<PublicKey>,
         genesis_digest: Digest,
         epocher: FixedEpocher,
         timings: Timings,
@@ -238,6 +240,7 @@ where
                 app,
                 signer,
                 genesis_participants,
+                extra_peers,
                 genesis_digest,
                 epocher,
                 timings,
@@ -267,6 +270,23 @@ where
             }
             _ => self.genesis_participants.clone(),
         }
+    }
+
+    /// Everyone to keep a connection with in `epoch`: the validators, the
+    /// state machine's extra peers (bonded validators outside the active
+    /// set, observers) and the configured followers. Voting rights stay
+    /// with `participants` alone.
+    fn peers(&self, epoch: Epoch, participants: &Set<PublicKey>) -> Set<PublicKey> {
+        let mut all: Vec<PublicKey> = participants.iter().cloned().collect();
+        if let Some(keys) = self.app.with(|m| m.peers(epoch.get())) {
+            for k in keys {
+                if let Ok(pk) = PublicKey::try_from(k.as_slice()) {
+                    all.push(pk);
+                }
+            }
+        }
+        all.extend(self.extra_peers.iter().cloned());
+        Set::from_iter_dedup(all)
     }
 
     pub fn start(
@@ -311,26 +331,37 @@ where
         let (mux, mut resolvers) = Muxer::new(self.context.child("resolver_mux"), rs, rr, size);
         mux.start();
 
-        // Resume from the epoch containing the last applied height.
+        // Resume from the epoch containing the last applied height. When
+        // the applied height is the last block of its epoch, that epoch is
+        // over: start the next one with the applied block as its floor.
         let (applied, _) = self.app.tip();
-        let start_epoch = self
+        let mut start_epoch = self
             .epocher
             .containing(applied)
             .map(|info| info.epoch())
             .unwrap_or_else(Epoch::zero);
+        if self.epocher.last(start_epoch) == Some(applied) {
+            start_epoch = start_epoch.next();
+        }
         let floor = if start_epoch.is_zero() {
             Floor::Genesis(self.genesis_digest)
         } else {
-            let boundary = start_epoch
-                .previous()
-                .and_then(|prev| self.epocher.last(prev));
+            let prev = start_epoch.previous();
+            let boundary = prev.and_then(|prev| self.epocher.last(prev));
             match boundary {
                 Some(h) => match self.marshal.get_block(h).await {
                     Some(block) => Floor::Genesis(block.digest()),
-                    None => {
-                        error!(%h, "boundary block missing; cannot resume epoch");
-                        return;
-                    }
+                    // The block store is empty (synced from a snapshot):
+                    // the recorded boundary digest stands in for the block.
+                    None => match prev.and_then(|p| self.app.with(|m| m.boundary(p.get()))) {
+                        Some((bh, digest)) if bh == h.get() => {
+                            Floor::Genesis(commonware_cryptography::sha256::Digest(digest))
+                        }
+                        _ => {
+                            error!(%h, "boundary block missing and no recorded boundary; cannot resume epoch");
+                            return;
+                        }
+                    },
                 },
                 None => Floor::Genesis(self.genesis_digest),
             }
@@ -359,7 +390,12 @@ where
                     let height = block.height();
                     if self.epocher.last(active.epoch) == Some(height) {
                         let next = active.epoch.next();
-                        let floor = Floor::Genesis(block.digest());
+                        let digest = block.digest();
+                        let mut raw = [0u8; 32];
+                        raw.copy_from_slice(digest.as_ref());
+                        self.app
+                            .with_mut(|m| m.record_boundary(active.epoch.get(), height.get(), raw));
+                        let floor = Floor::Genesis(digest);
                         match self
                             .enter(next, floor, &mut votes, &mut certificates, &mut resolvers)
                             .await
@@ -399,7 +435,8 @@ where
         let participants = self.participants(epoch);
         let scheme = scheme_for(&participants, &self.signer);
         self.provider.register(epoch, scheme.clone());
-        let _ = self.manager.track(epoch.get(), participants.clone());
+        let peers = self.peers(epoch, &participants);
+        let _ = self.manager.track(epoch.get(), peers);
         let is_member = participants.iter().any(|p| *p == self.signer.public_key());
         // Block pacing from state (settable by governance / the param admin):
         // the leader and certification timeouts stretch by the idle interval

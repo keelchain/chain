@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Read API · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Read API">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Read API</div>
+  <nav class="toc"><ul>
+<li><a href="#keel-explorer--indexer-api-contract-v1"
+id="toc-keel-explorer--indexer-api-contract-v1">Keel explorer — indexer
+API contract (v1)</a>
+<ul>
+<li><a href="#websocket" id="toc-websocket">WebSocket</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="keel-explorer--indexer-api-contract-v1">Keel explorer — indexer
+API contract (v1)</h1>
+<p>The explorer web app (<code>apps/explorer</code>) talks only to the
+indexer (<code>chain/crates/keel-indexer</code>), never to a validator
+directly. One indexer process serves one network; the explorer is
+configured with one base URL per network and shows a switcher:</p>
+<pre><code>VITE_NETWORKS=&#39;[{&quot;id&quot;:&quot;testnet&quot;,&quot;name&quot;:&quot;Testnet&quot;,&quot;api&quot;:&quot;https://testnet.keelchain.com/api&quot;},{&quot;id&quot;:&quot;mainnet&quot;,&quot;name&quot;:&quot;Mainnet&quot;,&quot;api&quot;:&quot;https://api.keelchain.com&quot;}]&#39;</code></pre>
+<p>The indexer keeps full history in Postgres. It backfills from the
+node's <code>GET /v1/blocks/{h}</code> and
+<code>GET /v1/blocks/{h}/receipts</code> (served from the node's
+journals for any height) and then follows <code>/v1/ws</code>. It
+re-verifies the chain of <code>state_hash</code>es it receives against
+<code>/v1/status</code> and flags a mismatch on
+<code>/v1/health</code>.</p>
+<p>The indexer listens on <code>127.0.0.1:6100</code> by default
+(<code>--listen</code>); a mainnet instance conventionally uses
+<code>6101</code>. Do not use 6000–6063 or 6665–6669: browsers refuse
+<code>fetch</code> to those ports (WHATWG "bad ports"), so the explorer
+would silently fail.</p>
+<p>All amounts are decimal strings in smallest units plus a
+<code>decimals</code> where an asset is involved. Addresses and hashes
+are hex. Paging: <code>?limit=&amp;cursor=</code>, responses carry
+<code>next_cursor</code> when more exist. Every list is newest
+first.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Path</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/health</code></td>
+<td><code>{network, chain_id, indexed_height, node_height, lag, state_hash_ok, started_at}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/stats</code></td>
+<td><code>{height, block_time_ms_avg, tps_1h, actions_24h, accounts, validators, tvl_usd, assets:[{asset, supply, holders}], fees_24h:[{asset, amount}]}</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/blocks?limit=&amp;cursor=</code></td>
+<td><code>{blocks:[Block], next_cursor}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/blocks/{height}</code></td>
+<td><code>Block &amp; {receipts:[Tx], events:[Event]}</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/txs?limit=&amp;cursor=&amp;signer=&amp;module=&amp;ok=</code></td>
+<td><code>{txs:[Tx], next_cursor}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/txs/{tx_id}</code></td>
+<td><code>Tx &amp; {action (decoded JSON), block: Block}</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/accounts/{addr}</code></td>
+<td><code>{address, nonce, tier, budget, balances:[{asset, account_type, balance, decimals}], first_seen_height, tx_count, deposit_addresses:[{chain, index, address}], validator?:{...}, offers_count, trades_count}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/accounts/{addr}/txs</code></td>
+<td>like <code>/v1/txs</code> filtered by signer or counterparty</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/accounts/{addr}/orders</code>, <code>/offers</code>,
+<code>/trades</code></td>
+<td>`{orders</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/accounts/{addr}/transfers</code></td>
+<td><code>{transfers:[{tx_id, height, timestamp, asset, amount, from, to, kind}]}</code>
+(Transferred, DepositCredited, OutboundConfirmed, OrderFilled legs,
+TradeReleased)</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/assets</code></td>
+<td><code>[{asset, decimals, kind, supply, holders, reserves?, chain?}]</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/assets/{asset}</code></td>
+<td>asset +
+<code>{holders_top:[{address, balance}], transfers_24h}</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/markets</code></td>
+<td><code>[{pair, base, quote, last_price, volume_24h_base, volume_24h_quote, trades_24h, best_bid, best_ask}]</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/markets/{pair}</code></td>
+<td>market +
+<code>{book:{bids:[[price,size]], asks:[[price,size]]}, house_quote}</code>
+(book fetched live from the node)</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/markets/{pair}/fills?limit=&amp;cursor=</code></td>
+<td><code>{fills:[{tx_id, height, timestamp, price, quantity, quote, taker, maker_order_id, fee}]}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td>`/v1/markets/{pair}/candles?interval=1m</td>
+<td>5m</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/orders/{id}</code></td>
+<td>order record + fills</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/offers?asset=&amp;side=&amp;status=&amp;owner=&amp;limit=&amp;cursor=</code></td>
+<td><code>{offers:[Offer], next_cursor}</code> (public fields only;
+<code>status</code> is `active</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/offers/{id}</code></td>
+<td>Offer + trades</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/trades/{id}</code></td>
+<td>Trade (status history, dispute if any)</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/validators</code></td>
+<td><code>[{address, consensus_key, self_bond, delegated, power, jailed, blocks_proposed_24h?, uptime?}]</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/epochs</code></td>
+<td><code>[{epoch, start_height, validators}]</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/vaults</code></td>
+<td><code>[{chain, epoch, address_count, reserves:[{asset, amount}], liabilities, fee_rate, halted}]</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/vaults/{chain}/deposits?status=&amp;owner=&amp;limit=&amp;cursor=</code></td>
+<td><code>{deposits:[...]}</code> (pending, credited, held, rejected;
+with the external tx hash and depth)</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/vaults/outbounds?status=&amp;owner=&amp;limit=&amp;cursor=</code></td>
+<td><code>{outbounds:[...], batches:[...]}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/governance/proposals</code></td>
+<td><code>[Proposal]</code> with tallies and status</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/governance/proposals/{id}</code></td>
+<td>Proposal + votes</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/governance/params</code></td>
+<td><code>{params:{key: value}, history:[{height, key, from, to, tx_id}], live}</code>;
+nested node params are flattened with dots (<code>budget.base</code>)
+and values are strings</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/search?q=</code></td>
+<td>`{kind: block</td>
+</tr>
+<tr class="even">
+<td>WS</td>
+<td><code>/v1/ws</code></td>
+<td><code>{type:"block", block: Block &amp; {tx_count}}</code> per
+block; <code>{type:"tx", tx: Tx}</code> optional</td>
+</tr>
+</tbody>
+</table>
+<p>Types:</p>
+<pre><code>Block: {height, timestamp, state_hash, tx_count, ok_count, event_count, proposer?}
+Tx:    {tx_id, height, index, timestamp, signer, module, kind, ok, error?:{code, message}, events:[Event]}
+Event: {type, ...fields}  (serde of keel_vm::Event, addresses hex)
+Offer: {id, owner, side, asset, fiat_currency, payment_method, margin_bps, min_amount, max_amount, payment_window_secs, country, min_tier, status, created_height}
+Trade: {id, offer_id, buyer, seller, asset, amount, fee, fiat_amount, fiat_currency, status, started_height, deadline, paid_at?, closed_height?, dispute?}</code></pre>
+<p>Errors: <code>{error:{code, message}}</code> with 400/404/500.</p>
+<p>Live fallbacks: the order book, best bid/ask, balances, vault state
+and governance records are read from the node on request (and the DB
+copy refreshed) so objects older than the indexer's first block still
+resolve; when the node is unreachable the last snapshot is served and
+<code>/v1/health</code> reports <code>node_reachable: false</code>.</p>
+<h2 id="websocket">WebSocket</h2>
+<p><code>/v1/ws</code> uses the same envelope as the node's socket
+(<code>chain/crates/keel-rpc/API-WS.md</code>): channels
+<code>blocks</code>, <code>txs</code> and
+<code>account:&lt;hex&gt;</code>, a per-connection <code>seq</code>, a
+<code>gap</code> frame on lag and a heartbeat. A socket that never
+subscribes receives <code>blocks</code> and <code>txs</code>.</p>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/explorer-api.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

@@ -458,8 +458,18 @@ fn release_trade(
             Record::credit(tokens::deposit_key(t.buyer, &t.asset), t.amount),
         ],
     )?;
-    // TODO(referral): split params.referral_share_bps of the fee to a
-    // referrer once offers carry one (trade-service.ts release split).
+    // The seller's client, if any, collects its retail fee from the seller
+    // in the same block (referrals are the client's own business).
+    let mut retail = super::clients::retail(
+        state,
+        &format!("{group}:retail"),
+        TxType::MarketplaceEscrowRelease,
+        Some(&group),
+        t.seller,
+        &t.asset,
+        t.amount,
+        super::clients::Flow::P2p,
+    )?;
     fees::collect(
         state,
         &format!("{group}:fee"),
@@ -470,11 +480,12 @@ fn release_trade(
         t.fee,
     )?;
     finish_trade(state, trade_id, TradeStatus::Released);
-    Ok(vec![Event::TradeReleased {
+    retail.push(Event::TradeReleased {
         trade_id,
         to_buyer: t.amount,
         fee: t.fee,
-    }])
+    });
+    Ok(retail)
 }
 
 fn cancel_trade(

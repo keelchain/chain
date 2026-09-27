@@ -72,6 +72,9 @@ where
     pub signer: PrivateKey,
     /// Genesis validator set; later epochs come from the state machine.
     pub participants: Set<PublicKey>,
+    /// Extra peers to keep connected in every epoch (followers that the
+    /// state machine does not know about). Never vote.
+    pub extra_peers: Set<PublicKey>,
     pub blocks_per_epoch: NonZeroU64,
     pub mailbox_size: usize,
     pub deque_size: usize,
@@ -253,6 +256,7 @@ where
             app,
             cfg.signer,
             cfg.participants,
+            cfg.extra_peers,
             genesis_digest,
             epocher,
             timings,
@@ -378,6 +382,7 @@ where
         freezer_table_initial_size: 2u32.pow(16),
         signer,
         participants,
+        extra_peers: Set::from_iter_dedup(Vec::<PublicKey>::new()),
         blocks_per_epoch: EPOCH_LENGTH,
         mailbox_size: 1024,
         deque_size: 10,

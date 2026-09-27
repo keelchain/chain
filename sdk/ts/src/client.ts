@@ -18,6 +18,38 @@ export class RpcError extends Error {
   }
 }
 
+/** `GET /v1/ready/{chain}`. */
+export interface Readiness {
+  chain: string;
+  ready: boolean;
+  reasons: string[];
+  height: number;
+  vault: { epoch: number; public_key: string; signers: string[]; threshold: number } | null;
+  checkpoint: Record<string, unknown> | null;
+  last_deposit_credited: { height: number; timestamp: number } | null;
+  outbound_pending: number;
+  halted: string[];
+  fee_rate: number;
+}
+
+/** Minimal indexer lookup used by `waitReceipt`'s fallback. */
+class IndexerLookup {
+  private readonly base: string;
+  private readonly fetchImpl: typeof fetch;
+  constructor(base: string, fetchImpl: typeof fetch) {
+    this.base = base;
+    this.fetchImpl = fetchImpl;
+  }
+  async tx(id: string): Promise<any> {
+    const res = await this.fetchImpl(`${this.base.replace(/\/$/, "")}/v1/txs/${id}`);
+    const text = await res.text();
+    let json: unknown = text;
+    try { json = JSON.parse(text); } catch { /* keep text */ }
+    if (!res.ok) throw new RpcError(res.status, json);
+    return json;
+  }
+}
+
 export class RpcClient {
   readonly base: string;
   private readonly fetchImpl: typeof fetch;
@@ -83,6 +115,26 @@ export class RpcClient {
   validators() { return this.req("GET", "/v1/staking/validators"); }
   receipt(tx: string): Promise<Receipt> { return this.req("GET", `/v1/receipts/${tx}`); }
   blockReceipts(height: number | bigint) { return this.req("GET", `/v1/blocks/${height}/receipts`); }
+  blocks(before?: number | bigint, limit = 50) { return this.req("GET", `/v1/blocks?limit=${limit}${before !== undefined ? `&before=${before}` : ""}`); }
+  block(height: number | bigint) { return this.req("GET", `/v1/blocks/${height}`); }
+  blockActions(height: number | bigint) { return this.req("GET", `/v1/blocks/${height}/actions`); }
+  lightning() { return this.req("GET", "/v1/lightning"); }
+  /** Deposits the node tracks (pending, credited, held, rejected). */
+  deposits(q: { status?: string; owner?: string } = {}) {
+    const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined) as [string, string][]).toString();
+    return this.req("GET", `/v1/vaults/deposits${qs ? `?${qs}` : ""}`);
+  }
+  /** The address string of an assigned deposit index. */
+  vaultAddress(chain: string, index: number | bigint) { return this.req("GET", `/v1/vaults/${chain}/addresses/${index}`); }
+  /** Reverse lookup of a deposit address. */
+  lookupAddress(chain: string, address: string) { return this.req("GET", `/v1/vaults/${chain}/addresses/lookup?address=${encodeURIComponent(address)}`); }
+  roles() { return this.req("GET", "/v1/gov/roles"); }
+  /** Whether a client may turn `chain` on: vault, checkpoint age, halts, pending outbounds, reasons. */
+  ready(chain: "BTC" | "ETH" | "TRON", maxCheckpointAgeSecs?: number): Promise<Readiness> {
+    return this.req("GET", `/v1/ready/${chain}${maxCheckpointAgeSecs !== undefined ? `?max_checkpoint_age=${maxCheckpointAgeSecs}` : ""}`);
+  }
+  /** Newest snapshot metadata for state sync (`keel-node --sync-from`). */
+  syncMeta() { return this.req("GET", "/v1/sync/meta"); }
 
   /** Submit an already-signed action; resolves to the tx id. */
   async submit(sa: SignedAction): Promise<string> {
@@ -100,14 +152,30 @@ export class RpcClient {
     return id;
   }
 
-  /** Poll until the receipt exists (or the deadline passes). */
-  async waitReceipt(tx: string, timeoutMs = 20_000, everyMs = 250): Promise<Receipt> {
+  /**
+   * Poll until the receipt exists (or the deadline passes). The node keeps
+   * receipts for its recent blocks only; pass an indexer base URL (or an
+   * `IndexerClient`) to fall back to the full history at `/v1/txs/{id}`.
+   */
+  async waitReceipt(tx: string, timeoutMs = 20_000, everyMs = 250, indexer?: string | { tx(id: string): Promise<any> }): Promise<Receipt> {
     const deadline = Date.now() + timeoutMs;
+    const fallback = typeof indexer === "string" ? new IndexerLookup(indexer, this.fetchImpl) : indexer;
     for (;;) {
       try {
         return await this.receipt(tx);
       } catch (e) {
-        if (!(e instanceof RpcError) || e.status !== 404 || Date.now() > deadline) throw e;
+        if (!(e instanceof RpcError) || e.status !== 404) throw e;
+        if (fallback) {
+          try {
+            const t = await fallback.tx(tx);
+            if (t && typeof t === "object" && "ok" in t) {
+              return { index: t.index ?? 0, tx_id: tx, signer: t.signer, ok: Boolean(t.ok), error: t.error ?? null, events: t.events ?? [] };
+            }
+          } catch (e2) {
+            if (!(e2 instanceof RpcError) || e2.status !== 404) throw e2;
+          }
+        }
+        if (Date.now() > deadline) throw e;
       }
       await new Promise((r) => setTimeout(r, everyMs));
     }

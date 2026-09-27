@@ -47,6 +47,11 @@ pub struct State {
     pub gov_house_operator: Option<Address>,
     /// Hash after the last applied block.
     pub last_hash: Hash32,
+    /// Client (attester) retail fees, who attested whom, usage prices and
+    /// the treasury buyback knobs. Appended in schema 2.
+    pub clients: clients::ClientsState,
+    /// Client-owned custody vaults (schema 3).
+    pub custody: custody::CustodyState,
 }
 
 impl State {
@@ -73,11 +78,16 @@ impl State {
         sha256(&[b"keel-state-v1", &bytes])
     }
 
+    /// Versioned snapshot: `b"KEEL" | u32 schema | borsh(State)`; see
+    /// `migrate.rs` for the schema rules.
     pub fn snapshot(&self) -> Vec<u8> {
-        borsh::to_vec(self).unwrap_or_default()
+        crate::migrate::frame(&borsh::to_vec(self).unwrap_or_default())
     }
 
+    /// Loads a snapshot of any known schema (headerless bytes are schema 0)
+    /// and upgrades it to the current layout.
     pub fn restore(bytes: &[u8]) -> Option<Self> {
-        State::try_from_slice(bytes).ok()
+        let (schema, payload) = crate::migrate::split(bytes);
+        crate::migrate::upgrade(schema, payload)
     }
 }

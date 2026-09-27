@@ -35,9 +35,10 @@ pub struct WriteOutcome {
     pub touched: Touched,
 }
 
-/// Asset-side (debit-normal) system accounts from `keel_ledger::catalog`:
-/// the reserves and mint counters. Supply is the credit side only, so these
-/// are excluded from the per-asset sum (else issuance double counts).
+/// Asset-side (debit-normal) accounts from `keel_ledger::catalog`: the
+/// reserves and mint counters. Supply is the credit side only, so these are
+/// excluded from the per-asset sum whoever holds them (the network vault's
+/// reserve sits under the system address, a client's under its own).
 const DEBIT_NORMAL_SYSTEM_ACCOUNTS: &[&str] = &[
     "issuance",
     "vault_asset",
@@ -530,7 +531,7 @@ impl Db {
         .ok();
         sqlx::query(
             "UPDATE assets a SET supply = st.supply, holders = st.holders, updated_at = $2 FROM (
-               SELECT asset, COALESCE(SUM(balance) FILTER (WHERE NOT (address = $1 AND account_type = ANY($3))), 0) AS supply,
+               SELECT asset, COALESCE(SUM(balance) FILTER (WHERE NOT (account_type = ANY($3))), 0) AS supply,
                       COUNT(DISTINCT address) FILTER (WHERE address <> $1 AND balance > 0) AS holders
                FROM balances GROUP BY asset) st WHERE st.asset = a.asset",
         )

@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Node RPC · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Node RPC">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Node RPC</div>
+  <nav class="toc"><ul>
+<li><a href="#keel-node-httpws-api-v1"
+id="toc-keel-node-httpws-api-v1">Keel node HTTP/WS API (v1)</a>
+<ul>
+<li><a href="#custody-client-owned-vaults"
+id="toc-custody-client-owned-vaults">Custody (client-owned
+vaults)</a></li>
+<li><a href="#websocket" id="toc-websocket">WebSocket</a></li>
+<li><a href="#stability" id="toc-stability">Stability</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="keel-node-httpws-api-v1">Keel node HTTP/WS API (v1)</h1>
+<p>Base: <code>http://127.0.0.1:&lt;rpc-port&gt;</code> (devnet:
+5000+i). JSON everywhere. Amounts are integers in smallest units and may
+exceed 2^53: parse as bigint. Addresses are 64-hex ed25519 public keys
+in paths; inside a signed action's JSON they are 32-element byte arrays
+(serde form).</p>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Path</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>POST</td>
+<td><code>/v1/actions</code></td>
+<td>body: <code>SignedAction</code> JSON
+(<code>{envelope:{signer,nonce,chain_id,action},signature}</code>) → 202
+<code>{tx_id, admitted:true}</code> or 422
+<code>{admitted:false, code, error}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/status</code></td>
+<td><code>{chain_id, height, timestamp, state_hash, validators[], mempool, accounts, orders}</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/params</code></td>
+<td>governance parameters</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/accounts/{addr}</code></td>
+<td><code>{nonce, budget{used,limit,cancel_limit,remaining,earned}, tier, tier_expires_at, balances[{asset,account_type,balance}]}</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/accounts/{addr}/orders</code></td>
+<td><code>{open:[OrderRecord]}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/accounts/{addr}/trades</code></td>
+<td><code>{trades:[Trade]}</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/markets</code></td>
+<td><code>{markets:[summary]}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/markets/{pair}</code></td>
+<td>summary: cfg, house quote, last price, best bid/ask, volumes</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/markets/{pair}/book?depth=20</code></td>
+<td><code>{bids:[{price,size,orders}], asks:[…], house, height}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/orders/{id}</code></td>
+<td>OrderRecord</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/offers?asset=&amp;side=&amp;fiat=</code></td>
+<td><code>{offers:[Offer]}</code> (open offers only)</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/offers/{id}</code></td>
+<td>Offer</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/trades/{id}</code></td>
+<td>Trade (+ <code>dispute</code> when one exists)</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/vaults/{chain}</code></td>
+<td><code>{chain, vault, state}</code> (vault registrations for the
+chain; whole vaults sub-state)</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/vaults/{chain}/addresses?from=0&amp;limit=100</code></td>
+<td>deposit index → owner rows</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/vaults/outbounds?status=</code></td>
+<td><code>{outbounds:[Outbound]}</code></td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/gov/proposals</code></td>
+<td><code>{proposals:[Proposal], house_operator}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/gov/proposals/{id}</code></td>
+<td>Proposal</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/staking/validators</code></td>
+<td><code>{consensus:[hex keys], staked:[{consensus_key,power}], staking}</code></td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/receipts/{tx_id}</code></td>
+<td><code>{index, tx_id, signer, ok, error{code,message}?, events[]}</code>
+(404 until applied)</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/clients/{addr}</code> →
+<code>{address, attester, fee, caps, earned, usage_paid, attested_accounts, usage_prices}</code></td>
+<td>a client's retail schedule and what it earned and paid</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/treasury</code> →
+<code>{height, balances:{treasury,validator_rewards,burn}, last_buyback, params, fee_split_bps}</code></td>
+<td>system balances per asset and the epoch buyback record</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/ready/{chain}?max_checkpoint_age=</code> →
+<code>{chain, ready, reasons, height, vault, checkpoint, last_deposit_credited, outbound_pending, halted, fee_rate}</code></td>
+<td>whether a client may turn that network on; what a per-network switch
+polls</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/sync/meta</code> →
+<code>{height, state_hash, last_hash, schema, boundaries:[{epoch,height,digest}]}</code></td>
+<td>newest snapshot for state sync
+(<code>keel-node --sync-from</code>)</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/sync/snapshot</code> → bytes</td>
+<td>the snapshot itself (<code>KEEL</code> header, schema, borsh
+state)</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/blocks/{height}/receipts</code></td>
+<td><code>{height, receipts[]}</code> (last 10,000 blocks)</td>
+</tr>
+<tr class="odd">
+<td>WS</td>
+<td><code>/v1/ws</code></td>
+<td>one JSON message per applied block:
+<code>{height, timestamp, state_hash, receipts[], events[], books{pair:{best_bid,best_ask,last_price}}}</code></td>
+</tr>
+</tbody>
+</table>
+<p>Sub-states owned by other modules (offers, trades, vaults, proposals,
+staking) are served as their serde JSON; field names follow the Rust
+structs in <code>crates/keel-vm/src/modules/</code>.</p>
+<p>Error codes on <code>/v1/actions</code>: <code>BAD_SIGNATURE</code>,
+<code>WRONG_CHAIN</code>, <code>BAD_NONCE</code>,
+<code>BUDGET_EXHAUSTED</code>, <code>BLOCK_CAP</code>,
+<code>PAUSED</code>, <code>UNAUTHORIZED</code>, <code>INVALID</code>. A
+nonce may run up to 64 ahead of the chain nonce (pipelining); actions
+are selected per signer in nonce order.</p>
+<h2 id="custody-client-owned-vaults">Custody (client-owned vaults)</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Route</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>GET /v1/custody</code></td>
+<td>every client-owned vault: <code>custodian</code>,
+<code>chain</code>, <code>vault</code> (key, chain code, epoch),
+<code>signer_url</code>, <code>address</code> (index 0),
+<code>next_deposit_index</code>, <code>deposit_owners</code>,
+<code>reserves[]</code> (<code>asset</code>, <code>reserve</code>,
+<code>liabilities</code>, <code>halted</code>)</td>
+</tr>
+<tr class="even">
+<td><code>GET /v1/custody/{addr}</code></td>
+<td>one client's vaults and reserves, plus the number of accounts in its
+custody</td>
+</tr>
+<tr class="odd">
+<td><code>GET /v1/custody/{addr}/{chain}/addresses?from&amp;limit&amp;owner</code></td>
+<td>deposit addresses of that vault with their owners</td>
+</tr>
+</tbody>
+</table>
+<p>Outbound rows and batches under <code>/v1/vaults/outbounds</code>
+carry <code>custodian</code> (null for the network vault).</p>
+<h2 id="websocket">WebSocket</h2>
+<p><code>/v1/ws</code> carries filtered, sequenced subscriptions
+(<code>blocks</code>, <code>account:</code>, <code>pair:</code>,
+<code>deposits:</code>, <code>book:</code>) with a <code>gap</code>
+frame when a client falls behind and replay from a height; the protocol
+is in <code>API-WS.md</code>. A socket that never subscribes receives
+<code>blocks</code>, which is the earlier per-block feed.</p>
+<h2 id="stability">Stability</h2>
+<p><code>/v1</code> is frozen: routes and fields are added, never
+removed or renamed. A deprecation is announced thirty days ahead in the
+changelog and keeps working meanwhile. Action submission may require an
+API key (<code>Authorization: Bearer</code>) on the public testnet;
+reads never do.</p>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>chain/crates/keel-rpc/API.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

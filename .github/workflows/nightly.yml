@@ -1,0 +1,101 @@
+name: Nightly
+
+# The slow checks: threshold custody with the signing policy across three
+# signer daemons, the VM throughput floor, and the consensus chaos cases.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  tss-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+          key: e2e-release
+      - run: sudo apt-get update && sudo apt-get install -y m4
+      - name: Build release binaries
+        working-directory: chain
+        run: cargo build --release --locked -p keel-node -p keel-cli -p keel-observer -p keel-tss
+      - name: Cache Bitcoin Core and the Paillier primes
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin
+            ~/.cache/keel-tss
+          key: tss-e2e-${{ runner.os }}-v1
+      - name: Threshold custody e2e
+        env:
+          NO_BUILD: "1"
+        run: infra/dev/tss-e2e.sh
+      - name: Logs on failure
+        if: failure()
+        run: tail -n 80 /tmp/keel-tss-e2e/*.log /tmp/keel-tss-e2e/tss/*.log /tmp/keel-tss-e2e/observers/*.log 2>/dev/null || true
+
+  client-vault-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+          key: e2e-release
+      - name: Build release binaries
+        working-directory: chain
+        run: cargo build --release --locked -p keel-node -p keel-cli -p keel-observer
+      - name: Cache Bitcoin Core
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: bitcoin-core-${{ runner.os }}-v1
+      - name: Client-owned vault e2e
+        env:
+          NO_BUILD: "1"
+        run: infra/dev/client-vault-e2e.sh
+      - name: Logs on failure
+        if: failure()
+        run: tail -n 80 /tmp/keel-client-vault/*.log /tmp/keel-client-vault/observers/*.log 2>/dev/null || true
+
+  throughput:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+      - run: sudo apt-get update && sudo apt-get install -y m4
+      - name: VM throughput floor
+        env:
+          KEEL_BENCH_FLOOR: ${{ vars.KEEL_BENCH_FLOOR || '2000' }}
+        run: infra/dev/bench-floor.sh
+
+  chaos:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+      - run: sudo apt-get update && sudo apt-get install -y m4
+      - name: Consensus under loss and partitions
+        working-directory: chain
+        run: cargo test -p keel-consensus --release -- --ignored chaos

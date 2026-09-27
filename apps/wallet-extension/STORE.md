@@ -42,7 +42,7 @@ account.
 | Permission | Why |
 |---|---|
 | `storage` | Encrypted key material, settings and per-site connection approvals live in extension storage. |
-| Content scripts on `keelchain.com`, `safethetrade.com`, `mohabmetwally.com`, `localhost` | Injects the `window.keel` provider only on Keelchain's own sites and its listed client sites, so those sites can ask the wallet to connect. Nothing runs until the site calls it, and every request needs the user's approval in the popup. No other site sees the extension. |
+| Content scripts on `keelchain.com` and `localhost` | Injects the `window.keel` provider only on Keelchain's own sites, so those sites can ask the wallet to connect. Nothing runs until the site calls it, and every request needs the user's approval in the popup. No other site sees the extension. |
 | Hosts, the same list | To read the chain RPC behind those sites and to notify open tabs of those sites when the account or network changes. |
 
 No remote code, no analytics, no data collection. The privacy policy states this.

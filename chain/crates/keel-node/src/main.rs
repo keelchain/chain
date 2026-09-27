@@ -12,6 +12,7 @@
 mod archive;
 mod gossip;
 mod machine;
+mod sync;
 
 use clap::Parser;
 use commonware_consensus::marshal::resolver::p2p as resolver;
@@ -66,6 +67,25 @@ struct Args {
     /// `<seed|pubkey>@<ip:port>` of peers to dial first.
     #[arg(long, value_delimiter = ',')]
     bootstrappers: Vec<String>,
+    /// `validator` (this key must be in the validator set) or `follower`
+    /// (verify and serve only, never vote). Default: validator when the key
+    /// is in the set, follower otherwise.
+    #[arg(long)]
+    role: Option<String>,
+    /// RPC base URL of a running node to fetch the newest snapshot from
+    /// when this node's storage is empty (state sync), e.g.
+    /// https://testnet.keelchain.com/rpc.
+    #[arg(long)]
+    sync_from: Option<String>,
+    /// A second node's RPC whose block record must confirm the snapshot's
+    /// tip hash before it is installed.
+    #[arg(long)]
+    sync_verify: Option<String>,
+    /// Keys (seed or 64-hex) of follower nodes to keep connected in every
+    /// epoch, on top of what the chain state knows (bonded validators and
+    /// observers). Validators list their RPC followers here.
+    #[arg(long, value_delimiter = ',')]
+    extra_peers: Vec<String>,
     /// Public `<ip:port>` other validators reach this node at. When set the
     /// p2p socket listens on 0.0.0.0:<port> with the production peer
     /// config; unset = loopback-only devnet behaviour.
@@ -80,6 +100,10 @@ struct Args {
     /// Print the genesis (JSON) that this node would start from and exit.
     #[arg(long)]
     print_genesis: bool,
+    /// Print this node's public identity for `keel genesis-build` and exit:
+    /// the consensus key and the account address derived from `--me`.
+    #[arg(long)]
+    print_identity: bool,
     #[arg(long)]
     storage_dir: String,
     #[arg(long, default_value = "info")]
@@ -91,6 +115,10 @@ struct Args {
     /// arbitrators and attesters, and their account keys are funded.
     #[arg(long)]
     devnet: bool,
+    /// Devnet only: idle block interval in milliseconds (the chain default
+    /// is 5000). Every node of the devnet must pass the same value.
+    #[arg(long)]
+    devnet_idle_ms: Option<u32>,
     /// HTTP/WS API port (default: p2p port + 2000).
     #[arg(long)]
     rpc_port: Option<u16>,
@@ -101,6 +129,11 @@ struct Args {
     /// Write a state snapshot every N blocks.
     #[arg(long, default_value_t = 200)]
     snapshot_interval: u64,
+    /// Keep only this many blocks of journal below the newest snapshot and
+    /// delete older segments (0 = keep the full history). Validators keep
+    /// everything; a follower can prune.
+    #[arg(long, default_value_t = 0)]
+    retain_blocks: u64,
     /// Consensus epoch length in blocks (default: the staking module's
     /// `epoch_length_blocks`, so validator-set changes line up).
     #[arg(long)]
@@ -108,7 +141,7 @@ struct Args {
 }
 
 /// Devnet genesis: one account key and one consensus key per seed.
-fn devnet_genesis(seeds: &[u64], chain_id: u32) -> Genesis {
+fn devnet_genesis(seeds: &[u64], chain_id: u32, idle_ms: Option<u32>) -> Genesis {
     let funded: Vec<_> = seeds
         .iter()
         .map(|s| Keypair::from_seed(*s).address())
@@ -131,6 +164,10 @@ fn devnet_genesis(seeds: &[u64], chain_id: u32) -> Genesis {
     // The first seed doubles as the super admin so `SetParam` (the
     // backoffice "Chain parameters" card) works on a devnet.
     g.param_admin = seeds.first().map(|s| Keypair::from_seed(*s).address());
+    if let Some(ms) = idle_ms {
+        g.params.idle_block_interval_ms = ms;
+        g.params.min_block_interval_ms = g.params.min_block_interval_ms.min(ms);
+    }
     g
 }
 
@@ -168,6 +205,7 @@ fn genesis_of(args: &Args) -> anyhow::Result<Genesis> {
             Ok(devnet_genesis(
                 &seeds,
                 args.chain_id.unwrap_or(CHAIN_ID_DEVNET),
+                args.devnet_idle_ms,
             ))
         }
         (None, false) => anyhow::bail!("pass --genesis <file> or --devnet"),
@@ -191,6 +229,17 @@ fn main() {
     let me = signer.public_key();
     let rpc_port = args.rpc_port.unwrap_or(port + 2000);
     let rpc_listen = args.rpc_listen;
+    if args.print_identity {
+        let seed: u64 = seed.parse().expect("seed");
+        println!(
+            "{}",
+            serde_json::json!({
+                "consensus_key": hex::encode(me.as_ref()),
+                "address": Keypair::from_seed(seed).address().to_hex(),
+            })
+        );
+        return;
+    }
 
     let genesis_doc = genesis_of(&args).expect("genesis");
     if args.print_genesis {
@@ -216,11 +265,46 @@ fn main() {
             .collect()
     };
     let validators: Set<PublicKey> = Set::from_iter_dedup(participants);
-    assert!(
-        validators.index(&me).is_some(),
-        "--me must be one of the validators (--participants or the genesis validators)"
+    let in_set = validators.index(&me).is_some();
+    let role = match args.role.as_deref() {
+        Some("validator") => {
+            assert!(
+                in_set,
+                "--role validator needs --me in the validator set (--participants or the genesis validators)"
+            );
+            "validator"
+        }
+        Some("follower") => "follower",
+        Some(other) => panic!("--role must be validator or follower, not {other}"),
+        None => {
+            if in_set {
+                "validator"
+            } else {
+                "follower"
+            }
+        }
+    };
+    let extra_peers: Set<PublicKey> = Set::from_iter_dedup(
+        args.extra_peers
+            .iter()
+            .map(|s| parse_key(s).expect("extra peer key"))
+            .collect::<Vec<_>>(),
     );
-    let max_peers_per_set = authenticated::peer_set_limit(&validators, &me);
+    // Connections are accepted only from tracked peers, so the tracked set
+    // is the validators plus every follower, ourselves included.
+    let tracked: Set<PublicKey> = Set::from_iter_dedup(
+        validators
+            .iter()
+            .cloned()
+            .chain(extra_peers.iter().cloned())
+            .chain(std::iter::once(me.clone()))
+            .collect::<Vec<_>>(),
+    );
+    // Peer sets grow when validators bond after genesis and the p2p layer
+    // asserts on a set larger than this limit, so leave headroom.
+    let max_peers_per_set =
+        std::num::NonZeroUsize::new(authenticated::peer_set_limit(&tracked, &me).get().max(64))
+            .expect("peer limit");
 
     let bootstrappers = args
         .bootstrappers
@@ -238,10 +322,18 @@ fn main() {
         .collect();
 
     let storage_dir = PathBuf::from(&args.storage_dir);
+    if let Some(from) = args.sync_from.as_deref() {
+        sync::bootstrap(&storage_dir.join("vm"), from, args.sync_verify.as_deref())
+            .expect("state sync");
+    }
     let genesis = load_genesis(genesis_doc, &storage_dir).expect("genesis");
-    let (machine, shared) =
-        machine::VmMachine::open(&storage_dir.join("vm"), genesis, args.snapshot_interval)
-            .expect("open vm storage");
+    let (machine, shared) = machine::VmMachine::open(
+        &storage_dir.join("vm"),
+        genesis,
+        args.snapshot_interval,
+        args.retain_blocks,
+    )
+    .expect("open vm storage");
     let genesis_hash = hex::encode(shared.state.lock().expect("state").last_hash);
     let blocks_per_epoch = args.blocks_per_epoch.unwrap_or_else(|| {
         shared
@@ -288,10 +380,10 @@ fn main() {
             Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port + 1000)),
             None,
         );
-        info!(?me, port, rpc_port, validators = validators.len(), state = %genesis_hash, "starting");
+        info!(?me, port, rpc_port, role, validators = validators.len(), followers = extra_peers.len(), state = %genesis_hash, "starting");
 
         let (mut network, mut oracle) = discovery::Network::new(context.child("network"), p2p_cfg);
-        oracle.track(0, validators.clone());
+        oracle.track(0, tracked.clone());
         let rate = Quota::per_second(NZU32!(1024));
         let votes = network.register(VOTES, rate);
         let certificates = network.register(CERTIFICATES, rate);
@@ -312,6 +404,7 @@ fn main() {
             Sequential,
         );
         cfg.blocks_per_epoch = blocks_per_epoch;
+        cfg.extra_peers = extra_peers;
         let engine = Engine::new(context.child("engine"), app.clone(), cfg).await;
         let backfill = resolver::init(
             context.child("backfill"),
@@ -389,7 +482,7 @@ mod tests {
 
     #[test]
     fn devnet_genesis_carries_the_chain_id() {
-        let g = devnet_genesis(&[1, 2], 42);
+        let g = devnet_genesis(&[1, 2], 42, None);
         assert_eq!(g.chain_id, 42);
         assert_eq!(g.validators.len(), 2);
         assert_eq!(g.param_admin, Some(Keypair::from_seed(1).address()));

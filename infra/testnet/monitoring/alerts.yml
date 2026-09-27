@@ -1,0 +1,51 @@
+groups:
+  - name: keel
+    rules:
+      - alert: KeelNodeDown
+        expr: keel_node_up == 0 or absent(keel_node_up)
+        for: 3m
+        labels: { severity: page }
+        annotations: { summary: "keel-node on host {{ $labels.host }} is not answering" }
+      - alert: KeelChainStalled
+        expr: changes(keel_height[3m]) == 0 and keel_node_up == 1
+        for: 3m
+        labels: { severity: page }
+        annotations: { summary: "no new block for 3 minutes on host {{ $labels.host }}" }
+      - alert: KeelHostsDisagree
+        expr: max(keel_height) - min(keel_height) > 20
+        for: 5m
+        labels: { severity: warn }
+        annotations: { summary: "hosts are more than 20 blocks apart" }
+      - alert: KeelNetworkNotReady
+        expr: keel_ready == 0 and keel_vault_registered == 1
+        for: 15m
+        labels: { severity: warn }
+        annotations: { summary: "{{ $labels.chain }} not ready on host {{ $labels.host }} for 15 minutes" }
+      - alert: KeelCheckpointStale
+        expr: keel_checkpoint_age_seconds > 6 * 3600
+        for: 10m
+        labels: { severity: warn }
+        annotations: { summary: "the {{ $labels.chain }} checkpoint is over 6 hours old" }
+      - alert: KeelOutboundsStuck
+        expr: keel_outbound_pending > 0 and changes(keel_outbound_pending[2h]) == 0
+        for: 2h
+        labels: { severity: warn }
+        annotations: { summary: "{{ $labels.chain }} outbounds pending for 2 hours on host {{ $labels.host }}" }
+      - alert: KeelUnitDown
+        expr: keel_unit_active == 0
+        for: 5m
+        labels: { severity: page }
+        annotations: { summary: "{{ $labels.unit }} is not active on host {{ $labels.host }}" }
+      - alert: KeelUnitRestarting
+        expr: increase(keel_unit_restarts[1h]) > 3
+        labels: { severity: warn }
+        annotations: { summary: "{{ $labels.unit }} restarted more than 3 times in an hour on host {{ $labels.host }}" }
+      - alert: KeelDiskFilling
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.2
+        for: 10m
+        labels: { severity: warn }
+        annotations: { summary: "less than 20% disk left on {{ $labels.instance }}" }
+      - alert: KeelProbeStale
+        expr: time() - keel_probe_timestamp_seconds > 300
+        labels: { severity: warn }
+        annotations: { summary: "the health probe has not run for 5 minutes on host {{ $labels.host }}" }

@@ -12,6 +12,9 @@ path = "src/main.rs"
 [dependencies]
 keel-types.workspace = true
 keel-crypto.workspace = true
+keel-chains.workspace = true
+keel-actions.workspace = true
+ureq = { version = "3", features = ["json"] }
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true

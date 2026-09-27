@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keel Wallet · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Keel Wallet">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Keel Wallet</div>
+  <nav class="toc"><ul>
+<li><a href="#keel-wallet-non-custodial-keys-decided-2026-09-09"
+id="toc-keel-wallet-non-custodial-keys-decided-2026-09-09">Keel Wallet:
+non-custodial keys (decided 2026-09-09)</a>
+<ul>
+<li><a href="#1-keys-and-signatures-unchanged-chain-primitives"
+id="toc-1-keys-and-signatures-unchanged-chain-primitives">1. Keys and
+signatures (unchanged chain primitives)</a></li>
+<li><a href="#2-provider-api--windowkeel"
+id="toc-2-provider-api--windowkeel">2. Provider API —
+<code>window.keel</code></a></li>
+<li><a href="#3-marketplace-api-the-site-talks-to-this"
+id="toc-3-marketplace-api-the-site-talks-to-this">3. Marketplace API
+(the site talks to this)</a></li>
+<li><a href="#4-chain-session-keys-and-expiry"
+id="toc-4-chain-session-keys-and-expiry">4. Chain: session keys and
+expiry</a></li>
+<li><a href="#5-migration-custodial--wallet"
+id="toc-5-migration-custodial--wallet">5. Migration (custodial →
+wallet)</a></li>
+<li><a href="#6-what-the-operator-still-signs-its-own-keys-never-users"
+id="toc-6-what-the-operator-still-signs-its-own-keys-never-users">6.
+What the operator still signs (its own keys, never users')</a></li>
+<li><a href="#7-status-2026-09-09" id="toc-7-status-2026-09-09">7.
+Status (2026-09-09)</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="keel-wallet-non-custodial-keys-decided-2026-09-09">Keel Wallet:
+non-custodial keys (decided 2026-09-09)</h1>
+<p>My requirement: no user private key on any server, ever. The user
+holds the key in a browser extension (later a mobile app); the
+marketplace becomes a front end that asks the wallet to sign. This
+document is the contract between the three parts:</p>
+<ul>
+<li><code>apps/wallet-extension</code> — the browser wallet (MV3), built
+on <code>sdk/ts</code>.</li>
+<li><code>apps/marketplace</code> — asks for signatures, never holds
+user keys (custodial keys remain only until each user migrates).</li>
+<li><code>apps/web</code> — the site: connects the wallet, relays
+signing requests.</li>
+</ul>
+<p>Chain-side support: session keys (<code>AuthorizeSessionKey</code> /
+<code>RevokeSessionKey</code>) so order-book trading does not need a
+popup per click, and permissionless trade expiry so a stuck trade needs
+no operator key.</p>
+<h2 id="1-keys-and-signatures-unchanged-chain-primitives">1. Keys and
+signatures (unchanged chain primitives)</h2>
+<ul>
+<li>Account key: Ed25519. The chain address is the 32-byte public key
+(hex).</li>
+<li>Action envelope:
+<code>signer(32) ‖ nonce(u64) ‖ chain_id(u32) ‖ borsh(action)</code>;
+digest <code>sha256("keel-action-v1" ‖ envelope)</code>; signature
+Ed25519 over the digest;
+<code>tx_id = sha256("keel-txid" ‖ digest ‖ signature)</code>. All in
+<code>sdk/ts/src/sign.ts</code> (byte-identical to
+<code>crates/keel-actions</code>).</li>
+<li>Message signing (login challenges, wallet linking), NOT a chain
+action: digest <code>sha256("keel-message-v1" ‖ utf8(message))</code>,
+Ed25519 signature, hex. A message can never be mistaken for an envelope
+because the domain tags differ.</li>
+</ul>
+<h2 id="2-provider-api--windowkeel">2. Provider API —
+<code>window.keel</code></h2>
+<p>Injected by the extension's content script on Keelchain's own sites
+and on localhost out of the box, and on any site the user enables from
+the wallet's settings (the browser asks for that origin once; no wallet
+release is needed per client). <code>connect-keel-wallet.md</code> is
+the integration guide. All methods return promises; rejections use
+<code>{ code, message }</code> with codes <code>USER_REJECTED</code>,
+<code>LOCKED</code>, <code>NO_ACCOUNT</code>,
+<code>NOT_CONNECTED</code>, <code>INVALID_REQUEST</code>,
+<code>WRONG_NETWORK</code>.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">interface</span> KeelProvider {</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">readonly</span> isKeel<span class="op">:</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">readonly</span> version<span class="op">:</span> <span class="dt">string</span><span class="op">;</span>                      <span class="co">// &quot;1.0.0&quot;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="co">/** Ask the user to connect this origin. Remembered per origin until disconnect. */</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">connect</span>(opts<span class="op">?:</span> { network<span class="op">?:</span> <span class="dt">string</span> })<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ address<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> network<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> chainId<span class="op">:</span> <span class="dt">number</span> }<span class="op">&gt;;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">disconnect</span>()<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span><span class="dt">void</span><span class="op">&gt;;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">/** The connected account for this origin, or null (never prompts). */</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">getAccount</span>()<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ address<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> network<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> chainId<span class="op">:</span> <span class="dt">number</span> } <span class="op">|</span> <span class="dt">null</span><span class="op">&gt;;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">/** Sign an arbitrary message (login challenge). Popup shows the text. */</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">signMessage</span>(message<span class="op">:</span> <span class="dt">string</span>)<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ address<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> signature<span class="op">:</span> <span class="dt">string</span> }<span class="op">&gt;;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>  <span class="co">/**</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co">   * Sign a chain action. The popup decodes the action (SDK) and shows a</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="co">   * human-readable summary before the user approves. `envelope.signer`</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="co">   * must equal the connected address, else INVALID_REQUEST.</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co">   */</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">signAction</span>(req<span class="op">:</span> {</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    envelope<span class="op">:</span> { signer<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> nonce<span class="op">:</span> <span class="dt">number</span><span class="op">;</span> chain_id<span class="op">:</span> <span class="dt">number</span><span class="op">;</span> action<span class="op">:</span> Action }<span class="op">;</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">/** Optional caller context shown above the decoded action. */</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    context<span class="op">?:</span> { title<span class="op">?:</span> <span class="dt">string</span><span class="op">;</span> description<span class="op">?:</span> <span class="dt">string</span> }<span class="op">;</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>  })<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ signature<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> tx_id<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> signed<span class="op">:</span> SignedAction }<span class="op">&gt;;</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>  <span class="co">/** Sugar for signAction with `AuthorizeSessionKey`; the popup explains the scope and expiry. */</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">authorizeSession</span>(req<span class="op">:</span> { key<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> scope<span class="op">:</span> SessionScope[]<span class="op">;</span> expires_at<span class="op">:</span> <span class="dt">number</span><span class="op">;</span> nonce<span class="op">:</span> <span class="dt">number</span><span class="op">;</span> chain_id<span class="op">:</span> <span class="dt">number</span> })<span class="op">:</span> <span class="bu">Promise</span><span class="op">&lt;</span>{ signature<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> tx_id<span class="op">:</span> <span class="dt">string</span><span class="op">;</span> signed<span class="op">:</span> SignedAction }<span class="op">&gt;;</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">on</span>(event<span class="op">:</span> <span class="st">&#39;accountChanged&#39;</span> <span class="op">|</span> <span class="st">&#39;disconnect&#39;</span> <span class="op">|</span> <span class="st">&#39;networkChanged&#39;</span><span class="op">,</span> handler<span class="op">:</span> (payload<span class="op">:</span> <span class="dt">unknown</span>) <span class="kw">=&gt;</span> <span class="dt">void</span>)<span class="op">:</span> () <span class="kw">=&gt;</span> <span class="dt">void</span><span class="op">;</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> SessionScope <span class="op">=</span> <span class="st">&#39;markets&#39;</span> <span class="op">|</span> <span class="st">&#39;p2p_manage&#39;</span><span class="op">;</span></span></code></pre></div>
+<p>Extension behaviour:</p>
+<ul>
+<li>One vault (encrypted with the wallet password, PBKDF2-SHA256 ≥ 300k
+iterations + AES-GCM) holding one or more Ed25519 keys; the seed phrase
+is BIP39 (24 words), key = first 32 bytes of the BIP39 seed (documented,
+so any BIP39 tool can recover the same key).</li>
+<li>Networks: a list <code>{ id, name, rpc, chainId, explorer }</code>;
+default entries <code>testnet</code>
+(<code>http://127.0.0.1:5000</code>, chain id 1, explorer
+<code>http://127.0.0.1:5177/testnet</code>) and <code>mainnet</code>
+(placeholder).</li>
+<li>Every <code>signAction</code> shows: origin, decoded action (kind,
+fields with asset decimals), nonce, network, and a "Reject / Approve"
+pair. Nothing is signed silently. <code>signMessage</code> shows the
+message.</li>
+<li>Connected origins are stored per network; <code>getAccount</code>
+answers without a prompt; anything else while locked prompts for the
+password.</li>
+<li>No network calls except the node RPC the user configured (balance
+display), never to the marketplace.</li>
+</ul>
+<h2 id="3-marketplace-api-the-site-talks-to-this">3. Marketplace API
+(the site talks to this)</h2>
+<h3 id="login-and-linking">Login and linking</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Path</th>
+<th>Body → Result</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>POST</td>
+<td><code>/v1/auth/wallet/challenge</code></td>
+<td><code>{address}</code> → <code>{challenge, expiresAt}</code>;
+challenge text:
+<code>Keel login\naddress: &lt;addr&gt;\nnonce: &lt;random&gt;\nissued: &lt;iso&gt;</code></td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/v1/auth/wallet/login</code></td>
+<td><code>{address, challenge, signature}</code> → the normal session
+<code>{token, userId, role, walletAddress}</code> for an address already
+bound to an account</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/v1/auth/wallet/register</code></td>
+<td><code>{address, challenge, signature, email, country, referralCode?, attribution?}</code>
+→ 201 with the session; creates the account with the wallet as its
+credential (no password; the email is still required for notifications,
+verification and KYC) and binds the address immediately</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/v1/auth/wallet/link</code></td>
+<td>logged-in email user; <code>{address, signature}</code> → binds the
+address to the account (starts migration for custodial users, see
+§5)</td>
+</tr>
+</tbody>
+</table>
+<h3
+id="signing-requests-server-needs-a-signature-from-the-wallet">Signing
+requests (server needs a signature from the wallet)</h3>
+<p>The server keeps every existing flow (offers, trades, withdrawals,
+budget lock…). Where it used to sign with the stored key it now creates
+a signing request and waits for the browser.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Path</th>
+<th>Body → Result</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GET</td>
+<td><code>/v1/wallet/signing/pending</code></td>
+<td><code>{requests: [{id, envelope, summary, createdAt, expiresAt}]}</code>
+for the session user</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/v1/wallet/signing/:id</code></td>
+<td><code>{signature}</code> → <code>{ok, txId}</code>; the server
+verifies the signature against the envelope before use</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/v1/wallet/signing/:id/reject</code></td>
+<td><code>{reason?}</code> → <code>{ok}</code>; the waiting flow fails
+with <code>SIGNATURE_REJECTED</code></td>
+</tr>
+</tbody>
+</table>
+<p>Also pushed as in-app notification
+<code>wallet.signing_request</code> <code>{id}</code> so the site can
+react without polling; the site polls every 2 s as fallback while a
+request is open. A request expires after 180 s → the flow fails with
+<code>SIGNATURE_TIMEOUT</code>. <code>summary</code> is the server's
+human text (e.g. "Release 0.05 BTC of trade #123 to @bob") — the wallet
+ALSO decodes the action itself and shows both.</p>
+<h3 id="session-keys">Session keys</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Path</th>
+<th>Body → Result</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>POST</td>
+<td><code>/v1/wallet/session</code></td>
+<td><code>{scope: SessionScope[], ttlSecs}</code> →
+<code>{signingRequestId, key, expiresAt}</code>: server generates the
+session keypair (stored encrypted; scope-limited, cannot move funds) and
+queues an <code>AuthorizeSessionKey</code> signing request</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/v1/wallet/session</code></td>
+<td><code>{active: {key, scope, expiresAt} | null}</code></td>
+</tr>
+<tr class="odd">
+<td>DELETE</td>
+<td><code>/v1/wallet/session</code></td>
+<td>queues <code>RevokeSessionKey</code> (or lets it expire)</td>
+</tr>
+</tbody>
+</table>
+<p>While a session is active and in scope, the server signs order-book
+actions with it directly (no popup). Out-of-scope actions still go to
+the wallet.</p>
+<h3 id="account-mode">Account mode</h3>
+<p><code>GET /v1/chain/info</code> gains
+<code>keyMode: 'custodial' | 'wallet' | 'none'</code> and
+<code>walletAddress</code>.</p>
+<h2 id="4-chain-session-keys-and-expiry">4. Chain: session keys and
+expiry</h2>
+<ul>
+<li><code>AuthorizeSessionKey { key: Address, scope: u32, expires_at: u64 }</code>
+signed by the principal (a session key cannot authorize another).
+<code>RevokeSessionKey { key }</code> by the principal or the session
+key itself. At most 16 live sessions per principal;
+<code>expires_at</code> ≤ 30 days ahead.</li>
+<li>Scope bits: <code>MARKETS = 1</code> (PlaceOrder, CancelOrder,
+HouseQuote); <code>P2P_MANAGE = 2</code> (CreateOffer, UpdateOffer,
+PauseOffer, CloseOffer, MarkPaid). Never in any scope: Transfer,
+Withdraw, ReleaseTrade, CancelTrade, StartTrade, LockBudget,
+UnlockBudget, Bond/Unbond/Delegate, governance, Attest, session
+management.</li>
+<li>Admission: the envelope's signer is the session key (own nonce, own
+account). If a live session maps it to a principal and the action is in
+scope, the action executes as the principal and spends the principal's
+budget; otherwise <code>Unauthorized</code>.</li>
+<li>Trade expiry: once <code>now &gt; deadline</code> any address may
+<code>CancelTrade</code> an unpaid trade (buyer any time, as before).
+The marketplace's sweep signs with its own operator key; no user key
+needed.</li>
+</ul>
+<h2 id="5-migration-custodial--wallet">5. Migration (custodial →
+wallet)</h2>
+<ol type="1">
+<li>User links a wallet (<code>/v1/auth/wallet/link</code>).
+Precondition: no open offers, trades, orders, or unlock queue on the
+custodial address; the site lists what to close first.</li>
+<li>Server, with the custodial key, signs one <code>Transfer</code> per
+asset of the full deposit balance to the wallet address, and the
+attester signs a fresh <code>Attest</code> with the current tier for the
+wallet address.</li>
+<li>Server marks the account <code>wallet</code>:
+<code>chain_user_keys.address</code> = wallet address,
+<code>secret_enc = NULL</code>, <code>key_mode = 'wallet'</code>. From
+now on every signature is a signing request. The custodial secret is
+gone.</li>
+<li>Every step is a chain tx id, shown in the Chain tab.</li>
+</ol>
+<h2 id="6-what-the-operator-still-signs-its-own-keys-never-users">6.
+What the operator still signs (its own keys, never users')</h2>
+<p>Attester (KYC tiers), param admin (fees), treasury (awards, referral
+payouts), house maker quotes, the trade-expiry sweep, session keys it is
+authorized to hold. These stay in the marketplace's KMS/env as
+today.</p>
+<h2 id="7-status-2026-09-09">7. Status (2026-09-09)</h2>
+<p>Implemented and verified on the local testnet:</p>
+<ul>
+<li>Chain: <code>AuthorizeSessionKey</code> /
+<code>RevokeSessionKey</code> (<code>keel-vm::modules::sessions</code>,
+scopes <code>MARKETS=1</code>, <code>P2P_MANAGE=2</code>, ≤16 live keys,
+≤30 days, a session key has its own nonce and spends the principal's
+budget, may revoke itself after expiry); expired unpaid trades are
+cancelable by anyone. RPC account view: <code>sessions</code>,
+<code>session_of</code>. SDK: the two actions,
+<code>SESSION_SCOPE</code>, <code>signMessage</code> /
+<code>verifyMessage</code> / <code>messageDigest</code>.</li>
+<li>Extension <code>apps/wallet-extension</code> (MV3): BIP39 vault
+(PBKDF2 310k + AES-GCM), <code>window.keel</code> per §2, approval
+windows with the decoded action, per-origin-per-network connections, 43
+tests; load <code>dist/</code> unpacked. Derivation:
+<code>secret_0 = BIP39 seed[0..32]</code>,
+<code>secret_i = sha256(seed ‖ u32_le(i))</code>; vector
+<code>abandon×23 art</code> → <code>1de352e4…2961</code>.</li>
+<li>Marketplace: migration 0146 (<code>key_mode</code>, nullable secret,
+<code>chain_session_keys</code>); <code>signing-requests.ts</code>
+(in-memory queue, 180 s, signature verified against the stored
+envelope), <code>session-keys.ts</code>, <code>wallet-auth.ts</code>
+(challenges), <code>migration.ts</code> (balances moved, re-attested,
+deposit addresses retired, secret deleted); <code>ChainSigner</code> may
+be async; <code>ChainUserKeys.signerFor(user, action)</code> picks
+session key → wallet → custodial. Routes as in §3 plus
+<code>GET /v1/wallet/migration</code> and
+<code>GET /v1/moderation/users/:id/wallet</code>. Expired-trade sweeps
+for wallet-mode buyers are signed by the treasury key. Attestations are
+keyed by subject so a migrated address gets a fresh one.</li>
+<li>Web: "Sign in with Keel Wallet" on the login page,
+<code>SigningBridge</code> (polls pending requests, hands them to the
+extension, posts signatures or rejections, banner while waiting), Wallet
+→ "Your keys" (mode, blockers, confirmation, migrate, trading-key
+on/off), chain-info <code>keyMode</code>.</li>
+<li>Backoffice: user page shows key mode, trading key, migration
+blockers.</li>
+</ul>
+<p>Known gaps:</p>
+<ul>
+<li>Deposits sent to a retired custodial deposit address after migration
+are credited to the abandoned key. The site warns and retires the cached
+addresses; a chain action to reassign vault deposit indexes to the new
+owner (signed by the old key during migration) would close this.</li>
+<li>Sign-up with the wallet exists
+(<code>/v1/auth/wallet/register</code>, "Create account with Keel
+Wallet" on the register page) but still asks for an email:
+notifications, verification and KYC need it. There is no password; the
+reset flow can set one later.</li>
+<li>The marketplace holds session keys (scope-limited by the chain) and
+its own operator keys; nothing else.</li>
+</ul>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/wallet.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

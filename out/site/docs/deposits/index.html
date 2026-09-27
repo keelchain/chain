@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deposits and withdrawals · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Deposits and
+withdrawals">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Deposits and
+withdrawals</div>
+  <nav class="toc"><ul>
+<li><a href="#funding-an-account" id="toc-funding-an-account">Funding an
+account</a>
+<ul>
+<li><a href="#1-get-your-deposit-address"
+id="toc-1-get-your-deposit-address">1. Get your deposit address</a></li>
+<li><a href="#2-send-coins-to-it" id="toc-2-send-coins-to-it">2. Send
+coins to it</a></li>
+<li><a href="#3-see-it-land" id="toc-3-see-it-land">3. See it
+land</a></li>
+<li><a href="#what-has-to-be-true-on-the-chain-side"
+id="toc-what-has-to-be-true-on-the-chain-side">What has to be true on
+the chain side</a></li>
+<li><a href="#withdrawing" id="toc-withdrawing">Withdrawing</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="funding-an-account">Funding an account</h1>
+<p>Keelchain accounts hold assets from other chains through
+<strong>vaults</strong>: a threshold-signed key per chain whose child
+addresses are handed out to accounts. You send coins to your child
+address on the external chain, the observers watch it, and after that
+chain's confirmation depth the amount is credited to your Keelchain
+account as a vault asset (<code>BTC.BTC</code>, <code>TRON.USDT</code>,
+<code>TRON.TRX</code>, <code>ETH.ETH</code>, <code>ETH.USDT</code>).
+<code>KEEL</code> and <code>KUSD</code> never leave the chain:
+<code>KUSD</code> is minted only against vaulted USDT, <code>KEEL</code>
+is transferred.</p>
+<p>On the public testnet the external chains are <strong>Bitcoin
+signet</strong> and <strong>Tron Nile</strong>. Mainnet coins sent to a
+testnet address are lost.</p>
+<h2 id="1-get-your-deposit-address">1. Get your deposit address</h2>
+<p>The chain assigns the address; it is not derived in the wallet. Three
+ways:</p>
+<p><strong>Keel Wallet.</strong> Open the wallet, card <em>Receive</em>,
+press <em>Bitcoin</em> or <em>Tron</em>. The wallet asks the chain for
+an address the first time (a free signed action, no site involved) and
+shows it with a copy button from then on.</p>
+<p><strong>CLI.</strong></p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">keel</span> <span class="at">--rpc</span> https://testnet.keelchain.com/rpc <span class="at">--chain-id</span> 3 send <span class="at">--secret</span> <span class="op">&lt;</span>secret<span class="op">&gt;</span> deposit-address BTC</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">keel</span> <span class="at">--rpc</span> https://testnet.keelchain.com/rpc <span class="at">--chain-id</span> 3 deposit-address BTC <span class="op">&lt;</span>your address<span class="op">&gt;</span></span></code></pre></div>
+<p><strong>SDK.</strong></p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode ts"><code class="sourceCode typescript"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> rpc <span class="op">=</span> <span class="kw">new</span> <span class="fu">RpcClient</span>(<span class="st">&quot;https://testnet.keelchain.com/rpc&quot;</span>)<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> { index<span class="op">,</span> address } <span class="op">=</span> <span class="cf">await</span> rpc<span class="op">.</span><span class="fu">requestDepositAddress</span>(key<span class="op">,</span> <span class="st">&quot;BTC&quot;</span><span class="op">,</span> <span class="dv">3</span>)<span class="op">;</span></span></code></pre></div>
+<p>Under the hood: the account signs
+<code>RequestDepositAddress { chain }</code>; the chain records the next
+free index for that account and chain; anyone can read the address at
+<code>/v1/vaults/BTC/addresses?owner=&lt;account&gt;</code> or
+<code>/v1/vaults/BTC/addresses/&lt;index&gt;</code>. One index per
+account per chain; asking again returns the same one.</p>
+<h2 id="2-send-coins-to-it">2. Send coins to it</h2>
+<ul>
+<li><strong>Bitcoin signet:</strong> get coins from a signet faucet
+(search "bitcoin signet faucet"; the Bitcoin Core project lists current
+ones) and send them to the <code>tb1…</code> address. Credited after
+<strong>2 confirmations</strong> (<code>confirmations_btc</code>), about
+20 minutes on signet.</li>
+<li><strong>Tron Nile:</strong> get test TRX and USDT from the Nile
+faucet (nileex.io) and send to the <code>T…</code> address. Credited
+after <strong>19 confirmations</strong>, about one minute.</li>
+</ul>
+<p>Any amount works. Deposits above <code>large_deposit_usd_micro</code>
+(50,000 USD equivalent) are held for
+<code>large_deposit_delay_blocks</code> before they are usable.</p>
+<h2 id="3-see-it-land">3. See it land</h2>
+<ul>
+<li>Wallet: <em>Balances</em> → Refresh.</li>
+<li>Explorer: <a
+href="https://testnet.keelchain.com">https://testnet.keelchain.com</a> →
+Vaults → the deposit list, or your account page.</li>
+<li>RPC: <code>/v1/accounts/&lt;account&gt;</code> lists balances;
+<code>/v1/vaults/deposits?owner=&lt;account&gt;</code> lists pending and
+credited deposits with the external transaction hash.</li>
+</ul>
+<h2 id="what-has-to-be-true-on-the-chain-side">What has to be true on
+the chain side</h2>
+<ul>
+<li>A vault is registered for the chain (<code>/v1/vaults/BTC</code> is
+not null). The deploy registers BTC and TRON vaults on a fresh
+testnet.</li>
+<li>For Bitcoin, a <strong>checkpoint</strong> exists: deposits are
+verified by a light client from a governance-set header, so a brand-new
+chain credits nothing until the first <code>SetBtcCheckpoint</code>
+proposal executes. The deploy proposes one right after bootstrapping
+(about six minutes of voting and timelock) and a timer proposes a fresh
+one daily. <code>/v1/vaults/BTC</code> shows the checkpoint height.</li>
+<li>An observer is running with access to a Bitcoin node and TronGrid;
+it builds the deposit observations and, with the quorum, signs
+payouts.</li>
+</ul>
+<h2 id="withdrawing">Withdrawing</h2>
+<p><code>Withdraw { asset, to, amount }</code> (wallet: <em>Send</em>,
+CLI:
+<code>keel send withdraw BTC.BTC &lt;address&gt; &lt;sats&gt;</code>)
+queues a payout; the observers batch, sign with the vault key and
+broadcast. The flat withdrawal fee comes from
+<code>withdraw_flat_fee_usd_micro</code>.</p>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/deposits.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

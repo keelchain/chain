@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Two ways to run an exchange on Keel · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Two ways to
+run an exchange on Keel">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Two ways to run
+an exchange on Keel</div>
+  <nav class="toc"><ul>
+<li><a href="#two-ways-to-run-an-exchange-on-keel"
+id="toc-two-ways-to-run-an-exchange-on-keel">Two ways to run an exchange
+on Keel</a>
+<ul>
+<li><a href="#model-a-the-custodial-client"
+id="toc-model-a-the-custodial-client">Model A: the custodial
+client</a></li>
+<li><a href="#model-b-the-p2p-client"
+id="toc-model-b-the-p2p-client">Model B: the P2P client</a></li>
+<li><a href="#control-can-a-client-have-signing-power-over-the-escrow"
+id="toc-control-can-a-client-have-signing-power-over-the-escrow">Control:
+can a client have signing power over the escrow?</a></li>
+<li><a href="#the-per-network-setting"
+id="toc-the-per-network-setting">The per-network setting</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="two-ways-to-run-an-exchange-on-keel">Two ways to run an exchange
+on Keel</h1>
+<p>Keel is infrastructure. An exchange, a marketplace, a payments desk
+or a bot is a client of the chain, and every client chooses one of two
+models per network (Bitcoin, Ethereum, Tron). Both models use the same
+API, the same explorer, the same SDK and the same readiness endpoints;
+they differ in one question: <strong>who holds the funds and who signs
+the withdrawals.</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th></th>
+<th>Model A: custodial client</th>
+<th>Model B: P2P client</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Who holds user funds</td>
+<td>The client, in <strong>its own vault</strong>: keys it owns, a
+signer it runs</td>
+<td>Keel's network vault for that chain, threshold-signed by the
+observer set; escrow on chain</td>
+</tr>
+<tr class="even">
+<td>What Keel does</td>
+<td>Detects deposits to the client's addresses, keeps the ledger, builds
+and batches withdrawals, estimates fees, broadcasts, records everything
+on the explorer</td>
+<td>Everything in A, plus on-chain escrow, disputes, the order book and
+session keys</td>
+</tr>
+<tr class="odd">
+<td>Who signs withdrawals</td>
+<td>The client's own signer</td>
+<td>The observer set (2-of-3 on the testnet)</td>
+</tr>
+<tr class="even">
+<td>Who signs user actions</td>
+<td>The client, as custodian</td>
+<td>The user, with Keel Wallet</td>
+</tr>
+<tr class="odd">
+<td>What users can verify</td>
+<td>Proof of reserves for that client: vault addresses, reserve against
+the sum of balances, every movement with a transaction id</td>
+<td>Their own account and every action they signed</td>
+</tr>
+<tr class="even">
+<td>Client fees and margin</td>
+<td><strong>Untouched.</strong> Keel charges usage, never a share of the
+client's fees</td>
+<td>A small wholesale protocol fee; the client sets its own retail fee
+on top and receives it in the same posting</td>
+</tr>
+<tr class="odd">
+<td>How Keel is paid</td>
+<td>In KEEL, bought on the chain's own order book</td>
+<td>In KEEL, the same way</td>
+</tr>
+</tbody>
+</table>
+<p>A client can run both models at once: custodial accounts in its own
+vault, wallet users on the network vault. It can also switch a network
+from one model to the other with its own per-network setting; old
+balances stay where they are, new deposits follow the new setting, and
+nothing has to be moved.</p>
+<h2 id="model-a-the-custodial-client">Model A: the custodial client</h2>
+<p>This is for an exchange that already runs its own wallets and wants
+to keep doing so. Today such an exchange pays a custody provider for
+address generation, deposit webhooks, signing and broadcasting, and it
+has no way to show its users what it holds. On Keel it keeps its keys
+and gets the rest.</p>
+<p><strong>What the client does</strong></p>
+<ol type="1">
+<li>Generates its vault key and keeps it. A single key, a hardware
+signer, its existing KMS, or a threshold set of its own: the chain does
+not care. The client runs
+<code>keel-tss serve --policy-rpc &lt;node&gt;</code> on its own machine
+(the same signer the network observers run, with the signing policy that
+checks every request against the chain's outbound rows), or puts a small
+signing hook in front of its KMS: <code>POST /sign</code> with
+<code>{digest, path, context}</code> answering
+<code>{r, s, recovery_id}</code>, exactly what
+<code>keel-tss serve</code> answers. The URL must be reachable by the
+observers that build its batches (a public HTTPS endpoint behind the
+client's own allow-list).</li>
+<li>Registers the vault on chain with <code>RegisterCustodyVault</code>:
+chain, epoch, the compressed public key, the chain code and the signer
+URL. Only an attester (a client onboarded by governance) can register,
+and only its own vaults; a higher epoch rotates the key.</li>
+<li>Requests deposit addresses in its vault with
+<code>RequestCustodyAddress</code> (<code>chain</code>,
+<code>custodian</code>): the client itself for an aggregate account, or
+any account the client attested, one address per user. Index 0 is the
+vault's own address: the client's own top-ups of gas and float land
+there and belong to the client.</li>
+<li>Withdraws with <code>WithdrawCustody</code>; the chain escrows the
+custody balance, batches the vault's outbounds separately from the
+network's, an observer builds the transaction, the client's signer signs
+it after the policy check, and the observers broadcast and confirm it.
+Network fees come out of the client's own vault: from its gas balance at
+index 0 when it has one, otherwise booked as its expense until its next
+top-up settles it.</li>
+</ol>
+<p>Custody balances are a separate account type (<code>custody</code>),
+never mixed with balances backed by the network vault: a custody balance
+cannot be traded on the chain's order book or withdrawn through the
+network vault, and an account belongs to one custodian. That separation
+is what makes the per-vault reserve check exact.</p>
+<p><strong>What Keel does</strong></p>
+<ul>
+<li>Observers watch the client's addresses on Bitcoin, Ethereum and Tron
+and attest deposits with the same proofs and quorum as the network
+vault.</li>
+<li>The ledger credits the right account, keeps the vault's reserve and
+the sum of its balances in balance, and halts withdrawals from that
+vault for an asset whose reserve no longer covers the balances (the halt
+clears on its own when the client covers the gap). The network vault's
+own reserve check leaves client vaults out entirely.</li>
+<li><code>GET /v1/custody/{client}</code> shows the client's vaults and,
+per asset, the reserve against the balances it backs;
+<code>/v1/custody/{client}/{chain}/ addresses</code> lists its addresses
+and their owners; the explorer renders the same. That page is the
+client's proof of reserves, and it costs the client nothing to
+publish.</li>
+</ul>
+<p><strong>What the client never gives up</strong></p>
+<ul>
+<li>Its keys. No share of them lives on a Keel machine.</li>
+<li>Its fee schedule. Keel does not take a percentage of anything the
+client charges its users.</li>
+<li>Its ledger, if it wants to keep one. Two ways are supported:
+<em>rails only</em> (one chain account per client holds the aggregate;
+per-user balances stay in the client's own database) and
+<em>transparent</em> (one chain account per user, the client signs as
+custodian, users see their balance on the explorer).</li>
+</ul>
+<p><strong>What Keel charges</strong> (all in KEEL, set by governance):
+the usage prices <code>clients.usage_address_keel</code> per custody
+address issued and <code>clients.usage_outbound_keel</code> per custody
+withdrawal, charged to the custodian's KEEL balance whoever signed the
+action, plus a service tier chosen by locking KEEL. The client sees
+every charge as a posting on the explorer, like any other. Compared with
+a custody provider: no invoice, no per-call opacity, no vendor that can
+drop a subscription or a webhook, one API for every network, and the
+same numbers visible to the client's users.</p>
+<h2 id="model-b-the-p2p-client">Model B: the P2P client</h2>
+<p>This is for a marketplace whose users hold their own keys. Users
+install Keel Wallet, the client's site asks the wallet to connect, and
+every action the user takes (an offer, a trade, a release, a withdrawal)
+is signed by the user and visible on the explorer. Funds sit in Keel's
+network vault, signed by the observer set; escrow is a restricted
+account on chain; disputes are ruled by bonded arbitrators.</p>
+<p>The client holds operator roles (attester for its KYC tiers, treasury
+for its revenue) and scope-limited session keys so that trading does not
+need a popup per click. It never holds a user's spendable key.</p>
+<p><strong>What Keel charges:</strong> a wholesale protocol fee on
+escrow releases, order-book fills and withdrawals, small enough that the
+user pays one number and the client's margin stays what it was. The
+client sets its own retail fee on top (<code>SetClientFee</code>), and
+the chain pays that fee into the client's account in the same posting as
+the release. <code>clients.md</code> has the numbers.</p>
+<h2
+id="control-can-a-client-have-signing-power-over-the-escrow">Control:
+can a client have signing power over the escrow?</h2>
+<p>A P2P client may want a say over the funds its trades put in escrow,
+beyond what the protocol guarantees. The honest options, in increasing
+weight:</p>
+<ol type="1">
+<li><strong>Bond as an observer.</strong> An account that posts
+<code>min_observer_bond</code> and is voted into the observer set by
+governance holds a real threshold share and co-signs every outbound of
+the network vault. This is full custody participation, with the bond at
+stake for misbehaviour.</li>
+<li><strong>A client-scoped vault.</strong> The Model A machinery
+pointed at Model B: a vault whose signer set is the client's key plus
+Keel observers, with a threshold that cannot be met without the client.
+Withdrawals of the client's users then need the client's signature.</li>
+<li><strong>Bond as an arbitrator.</strong> An elected arbitrator rules
+on disputes for trades it is assigned; that is control over the outcome
+of escrow, not over the keys.</li>
+<li><strong>Hold KEEL.</strong> Governance sets the observer set, the
+arbitrator set, the attesters and every fee. A client that holds KEEL
+votes on who signs. Whether the chain ends up governed by its clients is
+a question of how much KEEL they hold, not of code.</li>
+</ol>
+<p>None of these is switched on by default; each is a governance
+decision.</p>
+<h2 id="the-per-network-setting">The per-network setting</h2>
+<p>A client turns Keel on one network at a time. For a network that is
+on, new deposit addresses, new withdrawals and new escrow go through
+Keel; everything that started before stays on the old path until it
+completes; no funds are moved between the two. Before turning a network
+on, the client checks <code>GET /v1/ready/{chain}</code>: the vault
+epoch and signers, the age of the last checkpoint, the last credited
+deposit, pending outbounds and whether the vault is halted.
+<code>clients.md</code> has the checklist.</p>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/models.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

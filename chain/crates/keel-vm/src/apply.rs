@@ -6,8 +6,8 @@
 use crate::{
     context::BlockContext,
     modules::{
-        attest, budgets, disputes, gov, lightning, markets, p2p, sessions, stable, staking, tokens,
-        vaults,
+        attest, budgets, clients, custody, disputes, gov, lightning, markets, p2p, sessions,
+        stable, staking, tokens, treasury, vaults,
     },
     receipt::{Event, Receipt, VmError},
     state::State,
@@ -95,7 +95,9 @@ pub fn apply_block(
     end.extend(p2p::end_block(state, ctx));
     end.extend(disputes::end_block(state, ctx));
     end.extend(vaults::end_block(state, ctx));
+    end.extend(custody::end_block(state, ctx));
     end.extend(stable::end_block(state, ctx));
+    end.extend(treasury::end_block(state, ctx));
     end.extend(staking::end_block(state, ctx));
     end.extend(gov::end_block(state, ctx));
     end.extend(invariants(state));
@@ -193,11 +195,21 @@ fn apply_one(
         Action::OpenDispute { .. } | Action::SubmitEvidence { .. } | Action::RuleDispute { .. } => {
             disputes::apply(state, ctx, signer, &tx_id, action)
         }
-        Action::RequestDepositAddress { .. }
-        | Action::ObserveDeposit(_)
+        Action::RequestDepositAddress { .. } | Action::Withdraw(_) => {
+            // The user's client pays the usage price for the service.
+            vaults::apply(state, ctx, signer, &tx_id, action).and_then(|mut events| {
+                let kind = if matches!(action, Action::Withdraw(_)) {
+                    "outbound"
+                } else {
+                    "address"
+                };
+                events.extend(clients::charge_usage(state, signer, kind, &tx_id)?);
+                Ok(events)
+            })
+        }
+        Action::ObserveDeposit(_)
         | Action::ObserveOutbound(_)
         | Action::ReportNetworkFee { .. }
-        | Action::Withdraw(_)
         | Action::RegisterVault(_) => vaults::apply(state, ctx, signer, &tx_id, action),
         Action::MintStable { .. } | Action::BurnStable { .. } => {
             stable::apply(state, ctx, signer, &tx_id, action)
@@ -216,6 +228,11 @@ fn apply_one(
             expires_at,
         } => attest::apply_attest(state, ctx, signer, *subject, *tier, *expires_at),
         Action::SetParam { key, value } => gov::set_param(state, signer, key, *value),
+        Action::SetClientFee(fee) => clients::apply_set_fee(state, signer, fee),
+        Action::RegisterCustodyVault(_)
+        | Action::RequestCustodyAddress { .. }
+        | Action::ObserveCustodyDeposit { .. }
+        | Action::WithdrawCustody(_) => custody::apply(state, ctx, signer, &tx_id, action),
         Action::AuthorizeSessionKey {
             key: k,
             scope,
@@ -272,8 +289,18 @@ fn invariants(state: &mut State) -> Vec<Event> {
         .map(|(a, _)| a.clone())
         .collect();
     for asset in assets {
-        let reserves = state.ledger.system_reserves(&asset).max(0) as u128;
-        let liabilities = state.ledger.user_liabilities(&asset);
+        // Client vaults back their own custody balances and are checked
+        // on their own (custody::end_block); leave both sides out here.
+        let (custody_reserves, custody_liabilities) = custody::totals(state, &asset);
+        let reserves = state
+            .ledger
+            .system_reserves(&asset)
+            .saturating_sub(custody_reserves)
+            .max(0) as u128;
+        let liabilities = state
+            .ledger
+            .user_liabilities(&asset)
+            .saturating_sub(custody_liabilities);
         if reserves < liabilities {
             events.push(Event::InvariantBreached {
                 asset: asset.clone(),

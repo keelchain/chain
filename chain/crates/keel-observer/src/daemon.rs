@@ -30,6 +30,9 @@ pub struct Books {
     pub ethereum: Option<AddressBook>,
     pub tron: Option<AddressBook>,
     pub params: ChainParams,
+    /// Client-owned custody vaults, watched like the network vault; their
+    /// outbounds are signed by each vault's own signer.
+    pub custody: Vec<AddressBook>,
 }
 
 pub struct Nodes {
@@ -187,10 +190,66 @@ impl Daemon {
                 books.tron = Some(AddressBook::build(v, Network::Mainnet)?);
             }
         }
+        // Client vaults: same derivation, the network observer set as the
+        // builders (every observer may build; takeover order as usual).
+        let mut custody = Vec::new();
+        for mut view in self.rpc.custody_vaults().await? {
+            let (network, network_book) = match view.chain {
+                Chain::Bitcoin => match &self.cfg.bitcoin {
+                    Some(c) => (c.network, books.bitcoin.as_ref()),
+                    None => continue,
+                },
+                Chain::Ethereum => match &self.cfg.ethereum {
+                    Some(c) => (c.network, books.ethereum.as_ref()),
+                    None => continue,
+                },
+                Chain::Tron => {
+                    if self.cfg.tron.is_none() {
+                        continue;
+                    }
+                    (Network::Mainnet, books.tron.as_ref())
+                }
+            };
+            view.signers = network_book
+                .map(|b| b.vault.signers.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| vec![self.submitter.address()]);
+            view.threshold = 1;
+            let book = match AddressBook::build(view, network) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!(error = %e, "custody vault skipped");
+                    continue;
+                }
+            };
+            if book.chain == Chain::Bitcoin {
+                if let (Some(rpc), Some(c)) = (&self.nodes.bitcoin, &self.cfg.bitcoin) {
+                    let cursor = format!("btc:imported_upto:{}", book.key_prefix());
+                    let upto = self.state.cursor(&cursor).unwrap_or(0);
+                    match btc::ensure_wallet(
+                        rpc.as_ref(),
+                        &c.wallet,
+                        &book,
+                        upto,
+                        c.network == Network::Regtest,
+                    )
+                    .await
+                    {
+                        Ok(new_upto) => self.state.set_cursor(&cursor, new_upto)?,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "custody wallet import failed")
+                        }
+                    }
+                }
+            }
+            custody.push(book);
+        }
+        books.custody = custody;
         tracing::debug!(
             btc = books.bitcoin.as_ref().map(AddressBook::len),
             eth = books.ethereum.as_ref().map(AddressBook::len),
             tron = books.tron.as_ref().map(AddressBook::len),
+            custody = books.custody.len(),
             "address books synced"
         );
         Ok(())
@@ -218,6 +277,33 @@ impl Daemon {
                 deposits::scan_ethereum(&ctx, rpc.as_ref(), beacon, eth_scanner, book, cfg).await
             {
                 tracing::warn!(error = %e, "ethereum deposit scan failed");
+            }
+        }
+        for book in &books.custody {
+            let r = match book.chain {
+                Chain::Bitcoin => match (&self.nodes.bitcoin, &self.cfg.bitcoin) {
+                    (Some(rpc), Some(cfg)) => {
+                        deposits::scan_bitcoin(&ctx, rpc.as_ref(), book, cfg).await
+                    }
+                    _ => continue,
+                },
+                Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
+                    (Some(rpc), Some(cfg)) => {
+                        let beacon = self.nodes.beacon.as_deref();
+                        deposits::scan_ethereum(&ctx, rpc.as_ref(), beacon, eth_scanner, book, cfg)
+                            .await
+                    }
+                    _ => continue,
+                },
+                Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
+                    (Some(api), Some(cfg)) => {
+                        deposits::scan_tron(&ctx, api.as_ref(), book, cfg).await
+                    }
+                    _ => continue,
+                },
+            };
+            if let Err(e) = r {
+                tracing::warn!(error = %e, chain = book.chain.as_str(), "custody deposit pass failed");
             }
         }
         if let (Some(api), Some(book), Some(cfg)) = (&self.nodes.tron, &books.tron, &self.cfg.tron)
@@ -260,6 +346,44 @@ impl Daemon {
         {
             if let Err(e) = outbound::process_tron(&ctx, api.as_ref(), book, cfg, &rows).await {
                 tracing::warn!(error = %e, "tron outbound pass failed");
+            }
+        }
+        // Client vaults: built and broadcast here, signed by the client's
+        // own signer (its `keel-tss serve` or a compatible `POST /sign`).
+        for book in &books.custody {
+            let Some(url) = book.vault.signer_url.as_deref() else {
+                continue;
+            };
+            let signer = tss::HttpTss::new(url);
+            let ctx = outbound::OutboundContext {
+                submitter: &self.submitter,
+                state: &self.state,
+                params: &books.params,
+                tss: &signer,
+                cfg: &self.cfg.outbound,
+            };
+            let r = match book.chain {
+                Chain::Bitcoin => match (&self.nodes.bitcoin, &self.cfg.bitcoin) {
+                    (Some(rpc), Some(cfg)) => {
+                        outbound::process_bitcoin(&ctx, rpc.as_ref(), book, cfg, &rows).await
+                    }
+                    _ => continue,
+                },
+                Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
+                    (Some(rpc), Some(cfg)) => {
+                        outbound::process_ethereum(&ctx, rpc.as_ref(), book, cfg, &rows).await
+                    }
+                    _ => continue,
+                },
+                Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
+                    (Some(api), Some(cfg)) => {
+                        outbound::process_tron(&ctx, api.as_ref(), book, cfg, &rows).await
+                    }
+                    _ => continue,
+                },
+            };
+            if let Err(e) = r {
+                tracing::warn!(error = %e, chain = book.chain.as_str(), "custody outbound pass failed");
             }
         }
         Ok(())

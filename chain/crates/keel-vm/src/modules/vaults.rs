@@ -211,7 +211,7 @@ pub fn confirmations(state: &State, chain: Chain) -> u32 {
     }
 }
 
-fn chain_of(state: &State, asset: &Asset) -> Result<Chain, VmError> {
+pub(crate) fn chain_of(state: &State, asset: &Asset) -> Result<Chain, VmError> {
     match state.tokens.kind(asset) {
         Some(AssetKind::Vault { chain }) => Ok(*chain),
         Some(_) => Err(VmError::Invalid(format!("{asset} is not a vault asset"))),
@@ -299,14 +299,17 @@ fn request_address(
     }])
 }
 
-fn require_observer(state: &State, signer: &Address) -> Result<(Vec<Address>, u32), VmError> {
+pub(crate) fn require_observer(
+    state: &State,
+    signer: &Address,
+) -> Result<(Vec<Address>, u32), VmError> {
     if !staking::is_observer(state, signer) {
         return Err(VmError::Unauthorized);
     }
     Ok(staking::observers(state))
 }
 
-fn verify_proof(state: &mut State, o: &DepositObservation) -> Result<(), VmError> {
+pub(crate) fn verify_proof(state: &mut State, o: &DepositObservation) -> Result<(), VmError> {
     let required = confirmations(state, o.chain);
     match (&o.proof, o.chain) {
         // `o.index` is the OUTPUT index (vout), so one transaction paying
@@ -710,6 +713,17 @@ fn withdraw(
             flat,
         )?;
     }
+    // The withdrawer's client, if any, takes its retail fee on the amount.
+    let retail = super::clients::retail(
+        state,
+        &format!("{group}:retail:{id}"),
+        TxType::SendoutComplete,
+        Some(&group),
+        signer,
+        &w.asset,
+        w.amount,
+        super::clients::Flow::Withdraw,
+    )?;
 
     state.vaults.next_outbound_id += 1;
     state.vaults.outbounds.insert(
@@ -731,13 +745,15 @@ fn withdraw(
             votes: Vec::new(),
         },
     );
-    Ok(vec![Event::WithdrawalQueued {
+    let mut out = retail;
+    out.push(Event::WithdrawalQueued {
         outbound_id,
         owner: signer,
         asset: w.asset.clone(),
         amount: w.amount,
         to: w.to.clone(),
-    }])
+    });
+    Ok(out)
 }
 
 fn escrow_key(owner: Address, asset: &Asset) -> AccountKey {
@@ -780,6 +796,12 @@ fn observe_outbound(
     let fee_paid = fees.get(fees.len() / 2).copied().unwrap_or(o.fee_paid);
     let successes = ob.votes.iter().filter(|(_, _, ok)| *ok).count();
     let success = successes * 2 >= ob.votes.len();
+    if let Some(custodian) = state.custody.outbound_vault.get(&ob.id).copied() {
+        // Drawn from a client's own vault: its reserve, its fee.
+        return super::custody::settle_outbound(
+            state, &ob, custodian, fee_paid, success, &o.tx_hash,
+        );
+    }
     let group = format!("outbound:{}", ob.id);
     let mut events = Vec::new();
     if state.lightning.fundings.contains_key(&ob.id) {
@@ -937,6 +959,7 @@ pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
                     o.chain == chain
                         && o.status == OutboundStatus::Queued
                         && !state.vaults.halted.contains(&o.asset)
+                        && !state.custody.outbound_vault.contains_key(&o.id)
                 })
                 .map(|o| o.id)
                 .collect();

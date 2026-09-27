@@ -32,6 +32,15 @@ enum Cmd {
     },
     /// Print an example configuration.
     ExampleConfig,
+    /// Development signer over HTTP (`POST /sign`), standing in for a
+    /// client's `keel-tss serve` in local end-to-end runs. Prints the key
+    /// to register as the client's custody vault.
+    DevSigner {
+        #[arg(long)]
+        seed: String,
+        #[arg(long, default_value = "127.0.0.1:7300")]
+        listen: std::net::SocketAddr,
+    },
     /// Print the deposit addresses of a chain's active vault.
     Addresses {
         #[arg(long)]
@@ -76,6 +85,15 @@ async fn main() -> anyhow::Result<()> {
         .init();
     match Cli::parse().cmd {
         Cmd::ExampleConfig => print!("{}", keel_observer::config::EXAMPLE),
+        Cmd::DevSigner { seed, listen } => {
+            let seed = hex::decode(seed.trim())?;
+            let s = LocalSigner::from_seed(&seed)?;
+            println!(
+                "{}",
+                serde_json::json!({ "public_key": hex::encode(s.public_key()), "chain_code": hex::encode(s.chain_code()), "listen": listen.to_string() })
+            );
+            keel_observer::tss::serve_local(&seed, listen).await?;
+        }
         Cmd::Run { config } => {
             let cfg = Config::load(&config)?;
             let key = Config::keypair_from_env()?;

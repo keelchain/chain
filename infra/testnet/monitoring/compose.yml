@@ -1,0 +1,38 @@
+# Optional monitoring stack on host 0 (KEEL_MONITORING=1 in the deploy):
+# Prometheus scrapes node_exporter (with the keel-probe textfile metrics) on
+# every host over the WireGuard mesh, Alertmanager sends the alerts in
+# alerts.yml by email, Grafana reads Prometheus. Memory-capped for a small
+# box. Files are rendered by deploy-remote.sh into /opt/keelchain/monitoring.
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d", "--storage.tsdb.path=/prometheus"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    mem_limit: 300m
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports: ["127.0.0.1:9093:9093"]
+    mem_limit: 100m
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SERVER_ROOT_URL: https://testnet.keelchain.com/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/keel.yml:ro
+    ports: ["127.0.0.1:3000:3000"]
+    mem_limit: 200m
+volumes:
+  prometheus:
+  grafana:

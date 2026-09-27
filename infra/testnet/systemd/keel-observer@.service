@@ -1,6 +1,6 @@
 [Unit]
 Description=Keelchain observer-signer %i
-After=network-online.target keel-validator@0.service
+After=network-online.target keel-validator@%i.service keel-tss@%i.service
 Wants=network-online.target
 
 [Service]

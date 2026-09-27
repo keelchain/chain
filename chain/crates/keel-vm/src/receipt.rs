@@ -285,6 +285,38 @@ pub enum Event {
         outbound_id: u64,
         refunded: Amount,
     },
+    /// A client's retail fee, paid by one of its attested accounts into
+    /// the client's deposit account (`flow`: p2p | taker | withdraw).
+    ClientFeePaid {
+        client: Address,
+        payer: Address,
+        asset: Asset,
+        amount: Amount,
+        flow: String,
+    },
+    /// A usage charge paid by a client for a service its account used
+    /// (`kind`: address | outbound).
+    UsageCharged {
+        client: Address,
+        asset: Asset,
+        amount: Amount,
+        kind: String,
+    },
+    /// The epoch buyback: `spent` of `asset` from the `kind` system
+    /// account (treasury | validator_rewards | burn) became `keel_bought`.
+    TreasurySwept {
+        kind: String,
+        asset: Asset,
+        spent: Amount,
+        keel_bought: Amount,
+    },
+    /// A client set its retail schedule.
+    ClientFeeSet {
+        client: Address,
+        p2p_bps: u32,
+        taker_bps: u32,
+        withdraw_bps: u32,
+    },
     NetworkFeeReported {
         chain: String,
         observer: Address,
@@ -358,6 +390,40 @@ pub enum Event {
     VestingReleased {
         owner: Address,
         amount: Amount,
+    },
+    // ---- custody (client-owned vaults)
+    CustodyVaultRegistered {
+        custodian: Address,
+        chain: String,
+        epoch: u64,
+    },
+    CustodyAddressAssigned {
+        custodian: Address,
+        owner: Address,
+        chain: String,
+        index: u64,
+    },
+    CustodyDepositCredited {
+        custodian: Address,
+        owner: Address,
+        asset: Asset,
+        amount: Amount,
+    },
+    CustodyWithdrawalQueued {
+        custodian: Address,
+        outbound_id: u64,
+        owner: Address,
+        asset: Asset,
+        amount: Amount,
+        to: String,
+    },
+    /// A custody vault's reserve fell below the balances it backs; its
+    /// outbounds in `asset` are halted until the reserve covers them.
+    CustodyReserveBreached {
+        custodian: Address,
+        asset: Asset,
+        reserve: Amount,
+        liabilities: Amount,
     },
 }
 

@@ -13,6 +13,32 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
   const [deposit, setDeposit] = useState<DepositAddressInfo | null>(null);
   const [depositBusy, setDepositBusy] = useState<string | null>(null);
   const [depositError, setDepositError] = useState<string | null>(null);
+  const [sendKind, setSendKind] = useState<'transfer' | 'withdraw'>('transfer');
+  const [sendAsset, setSendAsset] = useState('');
+  const [sendTo, setSendTo] = useState('');
+  const [sendAmount, setSendAmount] = useState('');
+  const [sendMemo, setSendMemo] = useState('');
+  const [sendConfirm, setSendConfirm] = useState(false);
+  const [sendBusy, setSendBusy] = useState(false);
+  const [sendResult, setSendResult] = useState<string | null>(null);
+
+  const doSend = async () => {
+    setSendBusy(true);
+    try {
+      const decimals = decimalsOf(sendAsset);
+      const [whole, frac = ''] = sendAmount.split('.');
+      if (!/^\d+$/.test(whole ?? '') || !/^\d*$/.test(frac) || frac.length > decimals) throw new Error(`Amount must be a number with at most ${decimals} decimals.`);
+      const raw = (BigInt(whole ?? '0') * 10n ** BigInt(decimals) + BigInt((frac + '0'.repeat(decimals)).slice(0, decimals))).toString();
+      const r = await call<{ txId: string; ok: boolean; error: string | null }>('send', { kind: sendKind, asset: sendAsset, to: sendTo, amount: raw, memo: sendMemo });
+      setSendResult(r.ok ? `done: ${r.txId}${r.error ? ` (${r.error})` : ''}` : `rejected: ${r.error ?? 'unknown'} (${r.txId})`);
+      setSendConfirm(false);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      setSendResult(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSendBusy(false);
+    }
+  };
 
   const receive = (chain: string) => {
     setDepositBusy(chain);
@@ -33,7 +59,12 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
     let live = true;
     setError(null);
     fetchAccount(network.rpc, address).then(
-      (a) => live && setAccount(a),
+      (a) => {
+        if (!live) return;
+        setAccount(a);
+        const first = a.balances.find((b) => b.account_type === 'deposit')?.asset;
+        if (first) setSendAsset((cur) => cur || first);
+      },
       (e: unknown) => live && setError(`Cannot reach ${network.rpc}: ${e instanceof Error ? e.message : String(e)}`),
     );
     return () => {
@@ -110,6 +141,37 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
               <p className="muted small">{network.id === 'testnet' ? (deposit.chain === 'BTC' ? 'Signet coins only (a signet faucet works). Credited as BTC.BTC after 2 confirmations.' : 'Nile testnet only. USDT is credited as TRON.USDT, TRX as TRON.TRX, after 19 confirmations.') : 'Send only the assets of this chain to this address.'}</p>
             </div>
           )}
+        </div>
+      )}
+      {!network.placeholder && address && (
+        <div className="card">
+          <div className="label">Send</div>
+          <div className="row">
+            <select value={sendKind} onChange={(e) => setSendKind(e.target.value as 'transfer' | 'withdraw')} title="Kind">
+              <option value="transfer">Transfer on Keel</option>
+              <option value="withdraw">Withdraw to another chain</option>
+            </select>
+            <select value={sendAsset} onChange={(e) => setSendAsset(e.target.value)} title="Asset">
+              {(account?.balances ?? []).filter((b) => b.account_type === 'deposit').map((b) => <option key={b.asset} value={b.asset}>{b.asset}</option>)}
+            </select>
+          </div>
+          <input value={sendTo} placeholder={sendKind === 'transfer' ? 'Recipient Keel address (64 hex)' : 'Destination address on that chain'} onChange={(e) => setSendTo(e.target.value.trim())} />
+          <div className="row">
+            <input value={sendAmount} placeholder={`Amount in ${sendAsset || 'units'}`} onChange={(e) => setSendAmount(e.target.value.trim())} />
+            {sendKind === 'transfer' && <input value={sendMemo} placeholder="Memo (optional)" onChange={(e) => setSendMemo(e.target.value)} />}
+          </div>
+          {sendConfirm ? (
+            <div>
+              <p className="small">{sendKind === 'transfer' ? 'Transfer' : 'Withdraw'} <b>{sendAmount} {sendAsset}</b> to <code className="small">{sendTo}</code>{sendKind === 'withdraw' ? ' (network fee is taken from the amount)' : ''}?</p>
+              <div className="row">
+                <button disabled={sendBusy} onClick={() => void doSend()}>{sendBusy ? 'Signing…' : 'Confirm'}</button>
+                <button className="mini" disabled={sendBusy} onClick={() => setSendConfirm(false)}>Back</button>
+              </div>
+            </div>
+          ) : (
+            <button disabled={!sendAsset || !sendTo || !sendAmount} onClick={() => { setSendResult(null); setSendConfirm(true); }}>Review</button>
+          )}
+          {sendResult && <p className={sendResult.startsWith('done') ? 'small' : 'error'}>{sendResult}</p>}
         </div>
       )}
       <div className="row">

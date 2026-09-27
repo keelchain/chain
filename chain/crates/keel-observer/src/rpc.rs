@@ -53,6 +53,10 @@ pub struct VaultView {
     pub next_deposit_index: u64,
     /// deposit index → owner.
     pub owners: BTreeMap<u64, Address>,
+    /// Set for a client-owned custody vault: whose it is and where its
+    /// signer answers (`/v1/custody`).
+    pub custodian: Option<Address>,
+    pub signer_url: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +74,9 @@ pub struct OutboundRow {
     pub created_height: u64,
     #[serde(default)]
     pub tx_hash: Option<String>,
+    /// The custody vault this outbound is drawn from (`None` = network).
+    #[serde(default)]
+    pub custodian: Option<Address>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,6 +91,11 @@ pub trait SttRpc: Send + Sync {
     async fn status(&self) -> anyhow::Result<Status>;
     async fn params(&self) -> anyhow::Result<ChainParams>;
     async fn vault(&self, chain: Chain) -> anyhow::Result<Option<VaultView>>;
+    /// Every client-owned custody vault (empty when the node has none or
+    /// does not serve the route).
+    async fn custody_vaults(&self) -> anyhow::Result<Vec<VaultView>> {
+        Ok(Vec::new())
+    }
     async fn outbounds(&self, status: &str) -> anyhow::Result<Vec<OutboundRow>>;
     async fn nonce(&self, addr: &Address) -> anyhow::Result<u64>;
     async fn submit(&self, action: &SignedAction) -> anyhow::Result<SubmitResult>;
@@ -149,7 +161,40 @@ pub fn parse_vault(chain: Chain, v: &Value) -> anyhow::Result<Option<VaultView>>
         threshold: u64_of(&vault["threshold"]).unwrap_or(0) as u32,
         next_deposit_index: u64_of(&v["next_deposit_index"]).unwrap_or(1),
         owners,
+        custodian: v
+            .get("custodian")
+            .and_then(Value::as_str)
+            .and_then(Address::from_hex),
+        signer_url: v
+            .get("signer_url")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     }))
+}
+
+/// `GET /v1/custody` → every client-owned vault as a [`VaultView`].
+pub fn parse_custody(v: &Value) -> anyhow::Result<Vec<VaultView>> {
+    let mut out = Vec::new();
+    for entry in v
+        .get("vaults")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
+        let Some(chain) = entry
+            .get("chain")
+            .and_then(Value::as_str)
+            .and_then(chain_from_json)
+        else {
+            continue;
+        };
+        match parse_vault(chain, &entry) {
+            Ok(Some(view)) if view.custodian.is_some() => out.push(view),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, "custody vault entry skipped"),
+        }
+    }
+    Ok(out)
 }
 
 /// `GET /v1/vaults/outbounds` → rows. Tolerates `amount` as number or string.
@@ -189,6 +234,10 @@ pub fn parse_outbounds(v: &Value) -> anyhow::Result<Vec<OutboundRow>> {
                 Value::Array(_) => bytes_of(t).map(hex::encode),
                 _ => None,
             }),
+            custodian: o
+                .get("custodian")
+                .and_then(Value::as_str)
+                .and_then(Address::from_hex),
         });
     }
     Ok(out)
@@ -346,6 +395,16 @@ impl SttRpc for HttpSttRpc {
         Ok(parse_params(&self.get("/v1/params").await?))
     }
 
+    async fn custody_vaults(&self) -> anyhow::Result<Vec<VaultView>> {
+        match self.get("/v1/custody").await {
+            Ok(v) => parse_custody(&v),
+            Err(e) => {
+                tracing::debug!(error = %e, "custody route unavailable");
+                Ok(Vec::new())
+            }
+        }
+    }
+
     async fn vault(&self, chain: Chain) -> anyhow::Result<Option<VaultView>> {
         let v = self.get(&format!("/v1/vaults/{}", chain.as_str())).await?;
         match parse_vault(chain, &v) {
@@ -377,6 +436,8 @@ impl SttRpc for HttpSttRpc {
             threshold: fb.threshold,
             next_deposit_index: view.next_deposit_index(chain),
             owners: view.owners.get(&chain).cloned().unwrap_or_default(),
+            custodian: None,
+            signer_url: None,
         }))
     }
 

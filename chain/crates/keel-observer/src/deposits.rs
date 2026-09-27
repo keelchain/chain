@@ -24,11 +24,21 @@ pub struct DepositContext<'a> {
 }
 
 impl DepositContext<'_> {
-    async fn submit(&self, key: &str, obs: DepositObservation) -> anyhow::Result<bool> {
-        let res = self
-            .submitter
-            .submit(Some(key), Action::ObserveDeposit(obs))
-            .await?;
+    async fn submit(
+        &self,
+        book: &AddressBook,
+        key: &str,
+        obs: DepositObservation,
+    ) -> anyhow::Result<bool> {
+        // A deposit on a client's vault is attested as that client's.
+        let action = match book.vault.custodian {
+            Some(custodian) => Action::ObserveCustodyDeposit {
+                custodian,
+                observation: obs,
+            },
+            None => Action::ObserveDeposit(obs),
+        };
+        let res = self.submitter.submit(Some(key), action).await?;
         if res.admitted {
             tracing::info!(key, tx_id = ?res.tx_id, "deposit observation submitted");
         }
@@ -50,11 +60,18 @@ pub async fn scan_bitcoin(
         let Some(index) = book.index_of(&u.address) else {
             continue;
         };
-        if index == 0 || book.owner(index).is_none() {
-            continue; // hot/change address or an index the chain has not assigned
+        if !book.watches(index) {
+            continue;
         }
-        let key = format!("deposit:BTC:{}:{}", u.txid_hex, u.vout);
+        let key = format!("deposit:BTC:{}{}:{}", book.key_prefix(), u.txid_hex, u.vout);
         if ctx.state.is_submitted(&key) || u.confirmations.saturating_sub(1) < required {
+            continue;
+        }
+        // A client vault's own address (index 0) takes the client's
+        // top-ups, but a payout's change also lands there: only coins
+        // coming from outside the vault are deposits.
+        if index == 0 && btc::spends_from_book(rpc, &u.txid_hex, book).await? {
+            ctx.state.mark_submitted(&key, "")?;
             continue;
         }
         let Some(obs) = btc::build_observation(rpc, &u, index, cfg.max_proof_headers).await? else {
@@ -63,7 +80,7 @@ pub async fn scan_bitcoin(
         if obs.tip_height.saturating_sub(obs.external_height) < required {
             continue;
         }
-        if ctx.submit(&key, obs).await? {
+        if ctx.submit(book, &key, obs).await? {
             submitted += 1;
         }
     }
@@ -129,10 +146,15 @@ pub async fn scan_ethereum(
             let Some(index) = book.index_of(&to_addr) else {
                 continue;
             };
-            if index == 0 || book.owner(index).is_none() {
+            if !book.watches(index) {
                 continue;
             }
-            let key = format!("deposit:ETH:{}:{}", log.tx_hash_hex, log.log_index);
+            let key = format!(
+                "deposit:ETH:{}{}:{}",
+                book.key_prefix(),
+                log.tx_hash_hex,
+                log.log_index
+            );
             if ctx.state.is_submitted(&key) || ctx.state.is_submitted(&format!("unprovable:{key}"))
             {
                 continue;
@@ -168,7 +190,7 @@ pub async fn scan_ethereum(
                 ctx.state.mark_submitted(&format!("unprovable:{key}"), "")?;
                 continue;
             }
-            if ctx.submit(&key, obs).await? {
+            if ctx.submit(book, &key, obs).await? {
                 submitted += 1;
             }
         }
@@ -225,7 +247,7 @@ pub async fn scan_tron(
         let Some(index) = book.index_of(&t.to) else {
             continue;
         };
-        if index == 0 || book.owner(index).is_none() {
+        if !book.watches(index) {
             continue;
         }
         let (asset, symbol) = match &t.token {
@@ -235,7 +257,12 @@ pub async fn scan_tron(
             },
             None => (Asset::vault("TRON", "TRX"), "TRX".into()),
         };
-        let key = format!("deposit:TRON:{}:{}", t.txid_hex, symbol);
+        let key = format!(
+            "deposit:TRON:{}{}:{}",
+            book.key_prefix(),
+            t.txid_hex,
+            symbol
+        );
         if ctx.state.is_submitted(&key) {
             continue;
         }
@@ -261,7 +288,7 @@ pub async fn scan_tron(
             None => 0,
         };
         let obs = tron::observation(&t, asset, index, log_index, info.block_number, now.number);
-        if ctx.submit(&key, obs).await? {
+        if ctx.submit(book, &key, obs).await? {
             submitted += 1;
         }
     }
@@ -296,6 +323,8 @@ mod tests {
             threshold: 1,
             next_deposit_index: 3,
             owners: BTreeMap::from([(1, Address::tagged(1)), (2, Address::tagged(2))]),
+            custodian: None,
+            signer_url: None,
         }
     }
 

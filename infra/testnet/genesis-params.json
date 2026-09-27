@@ -2,5 +2,6 @@
   "_comment": "Parameter overrides applied on top of `keel-node --devnet --print-genesis` when the testnet is (re)bootstrapped. Keys are Params fields; `budget` merges.",
   "voting_period_blocks": 60,
   "timelock_blocks": 10,
-  "proposal_deposit": 1000000000
+  "proposal_deposit": 1000000000,
+  "epoch_length_blocks": 600
 }

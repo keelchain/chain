@@ -31,8 +31,15 @@ cd apps/wallet-extension && npm ci && npm test && npm run package
 ```
 
 Rust 1.98 and `m4` (GMP for the threshold-signing crate). A local devnet:
-`infra/dev/devnet.sh`; the full custody loop against regtest Bitcoin:
-`infra/dev/custody-e2e.sh`.
+`infra/dev/devnet.sh`. End-to-end checks, each a script under `infra/dev/`
+that starts real processes on loopback: `e2e.sh` (order fill, restart
+catch-up), `custody-e2e.sh` (Bitcoin deposit and withdrawal on regtest),
+`client-vault-e2e.sh` (the same through a client-owned vault and signer),
+`sync-e2e.sh` (a fifth node joins from a snapshot), `failover-e2e.sh` (two
+of three validators keep finalizing, one does not), `tss-e2e.sh` (2-of-3
+threshold signers with the signing policy). CI runs the first four on every
+push; the nightly workflow runs the threshold one, the throughput floor and
+the consensus chaos cases.
 
 ## Testnet
 
@@ -45,6 +52,8 @@ the box. Secrets and settings live in the `testnet` GitHub environment;
 
 ## Read next
 
+- `docs/models.md`: the two ways to run an exchange on Keel, and where funds sit in each.
+- `docs/clients.md`: the integration contract for a client: roles, the per-network switch, reconciliation.
 - `docs/how-it-works.md`: the chain end to end, module by module.
 - `docs/whitepaper.md` and `docs/tokenomics.md`: why, and the KEEL model.
 - `docs/deposits.md`: funding an account with Bitcoin or Tron, and withdrawing.

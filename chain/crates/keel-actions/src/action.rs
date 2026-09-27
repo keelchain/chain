@@ -176,6 +176,36 @@ pub enum Action {
         tx_hash: Hash32,
         amount: Amount,
     },
+    /// A client's (attester's) retail fees on top of the protocol fee,
+    /// paid to the client by the accounts it attested; capped by
+    /// governance (`clients.*` parameters).
+    SetClientFee(ClientFee),
+    // ---- custody (client-owned vaults, docs/models.md Model A)
+    /// A client (attester) registers or rotates its own vault on a chain.
+    /// Deposits to its addresses are credited as custody balances; its
+    /// withdrawals are signed by the client's own signer at `signer_url`.
+    RegisterCustodyVault(CustodyVaultRegistration),
+    /// Ask for a deposit address inside `custodian`'s vault. The signer is
+    /// the custodian itself or an account it attested.
+    RequestCustodyAddress {
+        chain: Chain,
+        custodian: Address,
+    },
+    /// Observer attests a deposit that landed on a custody vault address.
+    ObserveCustodyDeposit {
+        custodian: Address,
+        observation: DepositObservation,
+    },
+    /// Withdraw from a custody balance through the custodian's vault.
+    WithdrawCustody(Withdraw),
+}
+
+/// Retail fee schedule of a client, in basis points of the amount.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct ClientFee {
+    pub p2p_bps: u32,
+    pub taker_bps: u32,
+    pub withdraw_bps: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -237,6 +267,7 @@ impl Action {
                 | Action::ObserveLightningPayout { .. }
                 | Action::FundLightningPool { .. }
                 | Action::AnnounceLightningSweep { .. }
+                | Action::ObserveCustodyDeposit { .. }
         )
     }
 
@@ -279,6 +310,11 @@ impl Action {
             Action::Propose(_) | Action::Vote { .. } | Action::ExecuteProposal { .. } => "gov",
             Action::Attest { .. } => "attest",
             Action::SetParam { .. } => "gov",
+            Action::SetClientFee(_) => "clients",
+            Action::RegisterCustodyVault(_)
+            | Action::RequestCustodyAddress { .. }
+            | Action::ObserveCustodyDeposit { .. }
+            | Action::WithdrawCustody(_) => "custody",
         }
     }
 }
@@ -497,6 +533,20 @@ pub struct VaultRegistration {
     /// Observer-signers holding shares of this key.
     pub signers: Vec<Address>,
     pub threshold: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct CustodyVaultRegistration {
+    pub chain: Chain,
+    /// Bumped on every rotation; the highest epoch is the active vault.
+    pub epoch: u64,
+    /// Compressed secp256k1 vault key (33 bytes).
+    pub public_key: Vec<u8>,
+    #[serde(with = "crate::hex32::option")]
+    pub chain_code: Option<[u8; 32]>,
+    /// The client's signing service (`keel-tss serve` or a compatible
+    /// `POST /sign`), reachable by the observers that build its batches.
+    pub signer_url: String,
 }
 
 // ---------------- staking ----------------

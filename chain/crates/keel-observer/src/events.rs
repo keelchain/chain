@@ -145,6 +145,7 @@ impl EventsView {
                         batch_id: None,
                         created_height: height,
                         tx_hash: None,
+                        custodian: None,
                     },
                 );
             }

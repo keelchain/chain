@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tokenomics · Keelchain docs</title>
+<meta name="description" content="Keelchain documentation: Tokenomics">
+<link rel="icon" href="../../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../keel.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  .doc h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin-bottom: .3em; }
+  .doc h2 { font-size: 1.45rem; margin-top: 2.2em; padding-top: .6em; border-top: 1px solid var(--line); }
+  .doc h3 { font-size: 1.1rem; margin-top: 1.6em; }
+  .doc p, .doc li { color: var(--ink); }
+  .doc pre { margin: 14px 0; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .92rem; display: block; overflow-x: auto; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .doc th { background: var(--card); color: var(--muted); font-weight: 600; }
+  .doc blockquote { margin: 14px 0; padding: 4px 18px; border-left: 3px solid var(--teal-dim); color: var(--muted); }
+  .doc .crumbs { color: var(--muted); font-size: .9rem; margin-bottom: 18px; }
+  .doc nav.toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 18px 0 28px; font-size: .92rem; }
+  .doc nav.toc ul { margin: 0; padding-left: 18px; }
+  .doc hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../../"><img src="../../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../../docs/">Docs</a>
+    <a href="../../wallet/">Wallet</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a href="https://github.com/keelchain/chain" class="hide-sm">Source</a>
+  </nav>
+</div></header>
+
+<main class="doc">
+  <div class="crumbs"><a href="../../docs/">Docs</a> / Tokenomics</div>
+  <nav class="toc"><ul>
+<li><a href="#keel-tokenomics-draft-v01-open-decisions-marked-tbd"
+id="toc-keel-tokenomics-draft-v01-open-decisions-marked-tbd">KEEL
+tokenomics (draft v0.1, open decisions marked TBD)</a>
+<ul>
+<li><a href="#supply" id="toc-supply">Supply</a></li>
+<li><a
+href="#genesis-allocation-defaults-in-code-keel_vmgenesisallocation"
+id="toc-genesis-allocation-defaults-in-code-keel_vmgenesisallocation">Genesis
+allocation (defaults in code:
+<code>keel_vm::genesis::Allocation</code>)</a></li>
+<li><a href="#demand-sinks" id="toc-demand-sinks">Demand sinks</a></li>
+<li><a href="#fee-flows-defaults-in-keel_vmparams-editable-live"
+id="toc-fee-flows-defaults-in-keel_vmparams-editable-live">Fee flows
+(defaults in <code>keel_vm::Params</code>, editable live)</a></li>
+<li><a href="#epoch-rewards" id="toc-epoch-rewards">Epoch
+rewards</a></li>
+<li><a href="#wholesale-and-retail-how-clients-and-keel-are-paid"
+id="toc-wholesale-and-retail-how-clients-and-keel-are-paid">Wholesale
+and retail: how clients and Keel are paid</a></li>
+</ul></li>
+</ul></nav>
+<h1 id="keel-tokenomics-draft-v01-open-decisions-marked-tbd">KEEL
+tokenomics (draft v0.1, open decisions marked TBD)</h1>
+<h2 id="supply">Supply</h2>
+<ul>
+<li>Hard cap: <strong>21,000,000,000 KEEL</strong> (matches the existing
+<code>KEEL_MAX_SUPPLY</code>).</li>
+<li>Smallest unit: 10^-6 KEEL.</li>
+<li>No inflation beyond the cap. Fee revenue, not issuance, pays
+operators.</li>
+<li>Burn: the <code>fee_split_burn_bps</code> share of every fee (launch
+proposal 10%) plus vetoed proposal deposits and slashed bonds.</li>
+</ul>
+<h2
+id="genesis-allocation-defaults-in-code-keel_vmgenesisallocation">Genesis
+allocation (defaults in code:
+<code>keel_vm::genesis::Allocation</code>)</h2>
+<p>The whole 21B is issued at genesis into DAO-controlled buckets.
+Nothing leaves a bucket without a governance proposal, except team
+grants, which vest on a schedule the chain enforces.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Bucket</th>
+<th>Share</th>
+<th>Where it sits</th>
+<th>How it moves</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DAO treasury</td>
+<td>35%</td>
+<td>system <code>treasury</code></td>
+<td><code>TreasurySpend</code> proposals</td>
+</tr>
+<tr class="even">
+<td>Community rewards (trading, liquidity, referrals)</td>
+<td>25%</td>
+<td>system <code>community_pool</code></td>
+<td>proposals; the KEEL awards already promised by the platform are paid
+from this bucket at genesis, line by line</td>
+</tr>
+<tr class="odd">
+<td>Team and early contributors</td>
+<td>15%</td>
+<td><code>vesting</code> (granted) + <code>team_reserve</code>
+(ungranted)</td>
+<td>1-year cliff, then linear over 4 years, released every block;
+ungranted remainder by proposal</td>
+</tr>
+<tr class="even">
+<td>Validator / observer bootstrap</td>
+<td>10%</td>
+<td>system <code>validator_bootstrap</code></td>
+<td>proposals (bonds for the first operator sets)</td>
+</tr>
+<tr class="odd">
+<td>Liquidity (house maker + stablecoin)</td>
+<td>10%</td>
+<td>system <code>swap_pool</code></td>
+<td>the house maker's inventory from block one</td>
+</tr>
+<tr class="even">
+<td>Strategic reserve</td>
+<td>5%</td>
+<td>system <code>strategic_reserve</code></td>
+<td>proposals</td>
+</tr>
+</tbody>
+</table>
+<p>Shares are basis points and must sum to 10,000;
+<code>total_supply</code> defaults to the cap.
+<code>keel genesis-from-export --allocation alloc.json</code> overrides
+them; <code>--no-allocation</code> skips issuance on test networks.</p>
+<h3 id="what-i-still-have-to-decide-and-what-each-needs">What I still
+have to decide, and what each needs</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Decision</th>
+<th>Needed</th>
+<th>Default until decided</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Team grants</td>
+<td>A list of (chain address, share of the team bucket in bps) and, if
+different, the cliff and duration</td>
+<td>no grants; the whole 15% waits in <code>team_reserve</code></td>
+</tr>
+<tr class="even">
+<td>Bucket shares</td>
+<td>Only if the 35/25/15/10/10/5 split changes; must sum to 100%</td>
+<td>the split above</td>
+</tr>
+<tr class="odd">
+<td>Community emissions</td>
+<td>A schedule (how much per epoch to trading/referral rewards);
+executed as proposals or a later emissions module</td>
+<td>nothing emitted automatically</td>
+</tr>
+<tr class="even">
+<td>Validator bootstrap use</td>
+<td>Whether the first operators get their bonds from this bucket (and
+the lock-up)</td>
+<td>nothing distributed</td>
+</tr>
+<tr class="odd">
+<td>Super admin</td>
+<td>The chain address that will hold <code>param_admin</code> (the
+backoffice super admin's chain key)</td>
+<td>devnet: seed 0; mainnet: must be passed to
+<code>genesis-from-export --param-admin</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="demand-sinks">Demand sinks</h2>
+<ul>
+<li>Validator bond (min 100,000 KEEL), observer bond (500,000),
+arbitrator bond (50,000); slashed on misconduct.</li>
+<li>Governance vote weight.</li>
+<li>Action capacity by locking (2026-09-08, the Tron energy model): each
+whole KEEL locked grants <code>budget.per_locked_keel_per_day</code>
+actions per day (default 100) on top of the free base; unlocking returns
+the KEEL in full after <code>budget.unlock_delay_secs</code> (default 3
+days). Nothing is paid, so it adds demand without adding a fee. Buying
+budget (0.001 KEEL per action) stays as the no-wait fallback.</li>
+<li>Offer listing deposit: 10 KEEL per live offer (refundable).</li>
+<li>Proposal deposit: 1,000,000 KEEL (refunded on pass or reject; burned
+on veto).</li>
+<li>Fee tier discounts for stakers (planned parameter).</li>
+</ul>
+<h2 id="fee-flows-defaults-in-keel_vmparams-editable-live">Fee flows
+(defaults in <code>keel_vm::Params</code>, editable live)</h2>
+<p>Every number below is a chain parameter. At launch the platform super
+admin changes them directly from the backoffice (Fees page → "Chain
+parameters", signed with <code>CHAIN_ADMIN_SECRET</code>, the
+<code>SetParam</code> action); governance can take that right away with
+a <code>SetParamAdmin { admin: None }</code> proposal, after which only
+<code>ParamChange</code> proposals can move them.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Fee</th>
+<th>Rate</th>
+<th>Payer</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Book taker</td>
+<td>10 bps</td>
+<td>taker, from what it receives</td>
+</tr>
+<tr class="even">
+<td>Book maker</td>
+<td>0</td>
+<td>—</td>
+</tr>
+<tr class="odd">
+<td>P2P release</td>
+<td>1% (+1% under $50)</td>
+<td>seller</td>
+</tr>
+<tr class="even">
+<td>Withdrawal</td>
+<td>network cost + $1 flat</td>
+<td>withdrawer</td>
+</tr>
+<tr class="odd">
+<td>Dispute</td>
+<td>1% of escrow</td>
+<td>losing side</td>
+</tr>
+</tbody>
+</table>
+<p>Split: 50% treasury, 40% validators + observers + delegators
+(observers take 25% of that share first), 10% burn. All splits are
+on-chain ledger legs, auditable per fee.</p>
+<h2 id="epoch-rewards">Epoch rewards</h2>
+<p>At each epoch boundary the accumulated <code>validator_rewards</code>
+balance per asset is paid out in kind (KUSD, BTC.BTC, …), so operators
+earn the exchange's revenue directly rather than a native inflation
+subsidy.</p>
+<h2 id="wholesale-and-retail-how-clients-and-keel-are-paid">Wholesale
+and retail: how clients and Keel are paid</h2>
+<p>Every payment to Keel is a purchase of KEEL; nothing is invoiced in
+fiat.</p>
+<p><strong>Protocol fees</strong> (governance parameters) are collected
+in the asset of the flow: <code>p2p_seller_fee_bps</code> on an escrow
+release, <code>taker_fee_bps</code> on a fill,
+<code>withdraw_flat_fee_usd_micro</code> plus the network fee on a
+withdrawal, <code>dispute_fee_bps</code> on a ruling, and the budget
+purchases. Each fee is split at collection into the
+<code>treasury</code>, <code>validator_rewards</code> and
+<code>burn</code> system accounts (<code>fee_split_*_bps</code>).</p>
+<p><strong>Retail fees</strong> belong to the client. A client is an
+attester: the account that vouched for a user's tier. It publishes its
+own schedule with <code>SetClientFee</code> (<code>p2p_bps</code>,
+<code>taker_bps</code>, <code>withdraw_bps</code>, each capped by the
+<code>clients.fee_cap_*</code> parameters), and whenever one of its
+attested accounts pays a protocol fee, the retail fee is charged to that
+account in the same block and credited to the client's deposit account,
+up to what the payer holds. <code>GET /rpc/v1/clients/{address}</code>
+shows a client's schedule and what it has earned per asset. A user with
+no attester pays no retail fee.</p>
+<p><strong>Usage</strong> is what a custodial client pays for the
+custody rails its accounts use: <code>clients.usage_address_keel</code>
+per deposit address issued and <code>clients.usage_outbound_keel</code>
+per withdrawal queued, charged in KEEL to the client through the
+protocol fee split. A client without KEEL cannot have addresses or
+withdrawals issued for its users, which is its bill falling due. Both
+prices are zero until governance sets them.</p>
+<p><strong>The buyback.</strong> At every epoch boundary the chain
+sweeps the non-KEEL balances of the three system accounts: for each
+asset with a <code>KEEL-&lt;asset&gt;</code> pair
+(<code>KEEL-KUSD</code> at launch) it places a market buy for KEEL with
+that balance against the order book, moves the KEEL bought back into the
+same system account and returns any budget the book could not fill. The
+burn account's KEEL is the burn. Balances below
+<code>clients.buyback_dust_usd_micro</code> are left alone, and an asset
+whose best ask sits more than
+<code>clients.buyback_max_slippage_bps</code> above the last price is
+skipped that epoch. Validators are therefore paid in KEEL, the treasury
+holds KEEL, and fee income is demand for KEEL on the chain's own market.
+<code>GET /rpc/v1/treasury</code> shows the balances and the last
+buyback per asset.</p>
+<p><strong>Service tiers</strong> are read from the KEEL a client's
+operator account has locked (<code>LockBudget</code>), and a dedicated
+node is paid by a KEEL transfer to the treasury
+(<code>clients.service_dedicated_keel_per_period</code> per 30
+days).</p>
+</main>
+
+<footer><div class="wrap">
+  <div><img src="../../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>Rendered from <code>docs/tokenomics.md</code> in the public repository.</p></div>
+  <div><h4>Keelchain</h4><ul><li><a href="../../">Home</a></li><li><a href="https://testnet.keelchain.com/">Explorer</a></li><li><a href="../../docs/">All docs</a></li></ul></div>
+  <div><h4>Contact</h4><ul><li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li><li><a href="mailto:support@keelchain.com">support@keelchain.com</a></li></ul></div>
+</div></footer>
+</body>
+</html>

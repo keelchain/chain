@@ -5,6 +5,13 @@ on:
   pull_request:
 
 jobs:
+  words:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No client names in the tree
+        run: infra/dev/check-forbidden-words.sh
+
   rust:
     runs-on: ubuntu-latest
     steps:
@@ -44,3 +51,50 @@ jobs:
       - name: Wallet extension
         working-directory: apps/wallet-extension
         run: npm ci && npm test && npm run build
+
+  # The devnet, custody, state-sync and failover checks: real processes on a
+  # loopback network. Release binaries are cached between runs.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+          key: e2e-release
+      - name: Install m4 (GMP for the TSS crate)
+        run: sudo apt-get update && sudo apt-get install -y m4
+      - name: Build release binaries
+        working-directory: chain
+        run: cargo build --release --locked -p keel-node -p keel-cli -p keel-observer -p keel-tss
+      - name: Cache Bitcoin Core
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: bitcoin-core-29.1-${{ runner.os }}
+      - name: Devnet e2e
+        env:
+          NO_BUILD: "1"
+          DEVNET_IDLE_MS: "1000"
+        run: infra/dev/e2e.sh
+      - name: Custody e2e (regtest)
+        env:
+          NO_BUILD: "1"
+          DEVNET_IDLE_MS: "1000"
+        run: infra/dev/custody-e2e.sh
+      - name: State-sync e2e
+        env:
+          NO_BUILD: "1"
+          DEVNET_IDLE_MS: "1000"
+        run: infra/dev/sync-e2e.sh
+      - name: Failover e2e
+        env:
+          NO_BUILD: "1"
+        run: infra/dev/failover-e2e.sh
+      - name: Logs on failure
+        if: failure()
+        run: tail -n 60 /tmp/keel-*/*.log /tmp/keel-*/observers/*.log 2>/dev/null || true
