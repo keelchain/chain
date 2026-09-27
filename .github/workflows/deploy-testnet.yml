@@ -258,8 +258,13 @@ jobs:
           INDEXER_PG_CONTAINER: ${{ vars.INDEXER_PG_CONTAINER }}
           TRON_API_URL: ${{ vars.TRON_API_URL }}
           TRON_USDT_CONTRACT: ${{ vars.TRON_USDT_CONTRACT }}
-          RESET_CHAIN: ${{ (inputs.reset_chain == true || github.event.inputs.reset_chain == 'true') && 'true' || 'false' }}
+          # The manual run's checkbox, or the KEEL_RESET_CHAIN variable set to
+          # 'true' for one run (remove it afterwards: every later deploy would
+          # wipe the chain again).
+          RESET_CHAIN: ${{ (inputs.reset_chain == true || github.event.inputs.reset_chain == 'true' || vars.KEEL_RESET_CHAIN == 'true') && 'true' || 'false' }}
+          TRIGGER: ${{ github.event_name }}
         run: |
+          echo "trigger=$TRIGGER reset_chain=$RESET_CHAIN"
           cp -r infra release/infra
           chmod +x release/bin/*
           umask 077
