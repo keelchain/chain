@@ -43,7 +43,7 @@ NHOSTS=$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])))' "$HOS
 MY_IP=$(hostf "$N" ip); MY_WG=$(hostf "$N" wg_ip)
 IS_HOST0=false; [ "$N" = 0 ] && IS_HOST0=true
 
-log "host $N of $NHOSTS ($MY_IP, wg ${MY_WG:-none}), signer mode $SIGNER_MODE"
+log "host $N of $NHOSTS ($MY_IP, wg ${MY_WG:-none}), signer mode $SIGNER_MODE, reset_chain=$RESET"
 
 log "directories and binaries"
 sudo install -d -m 755 /opt/keelchain "$BIN" "$LIB" "$LIB/tss"

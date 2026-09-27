@@ -258,7 +258,7 @@ jobs:
           INDEXER_PG_CONTAINER: ${{ vars.INDEXER_PG_CONTAINER }}
           TRON_API_URL: ${{ vars.TRON_API_URL }}
           TRON_USDT_CONTRACT: ${{ vars.TRON_USDT_CONTRACT }}
-          RESET_CHAIN: ${{ github.event.inputs.reset_chain || 'false' }}
+          RESET_CHAIN: ${{ (inputs.reset_chain == true || github.event.inputs.reset_chain == 'true') && 'true' || 'false' }}
         run: |
           cp -r infra release/infra
           chmod +x release/bin/*
