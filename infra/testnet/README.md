@@ -45,6 +45,7 @@ Variables:
 |---|---|
 | `DEPLOY_HOSTS` | JSON list, host order = index: `[{"ip":"<public ip>","user":"ubuntu","wg_ip":"10.90.0.1"},{"ip":"…","wg_ip":"10.90.0.2"},{"ip":"…","wg_ip":"10.90.0.3"}]` |
 | `DEPLOY_HOST_INDEXES` | `[0,1,2]` (which hosts the matrix deploys) |
+| `DEPLOY_HOST`, `DEPLOY_USER` | the old single-box layout, still honoured as host 0 when `DEPLOY_HOSTS` is unset (with the old `KEEL_VALIDATOR_SEED` secret standing in for `KEEL_VALIDATOR_SEED_0`) |
 | `WG_PUBKEYS` | JSON list of the hosts' WireGuard public keys, host order |
 | `DEPLOY_KNOWN_HOSTS` | optional `ssh-keyscan` output for every host; without it host keys are scanned at deploy time |
 | `KEEL_CHAIN_ID` | `3` |

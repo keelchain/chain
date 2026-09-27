@@ -31,7 +31,7 @@ Dates are UTC.
   for node_exporter with an optional Prometheus, Alertmanager and Grafana
   stack, a vote timer for pre-approved proposals, a staging environment
   input on the deploy, client re-onboarding after a reset.
-- Wallet 1.2.0: the `window.stt` alias and client domains are gone; any
+- Wallet 1.2.0: the old client alias and client domains are gone; any
   site can be enabled from the wallet; Send and Withdraw from the popup;
   custom networks; unlisted Firefox signing and self-hosted updates.
 - SDK 0.1.x: `KeelSocket`, `IndexerClient`, `ready()`, the connect kit

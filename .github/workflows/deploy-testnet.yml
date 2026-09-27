@@ -113,10 +113,28 @@ jobs:
         with:
           name: keel-bin
           path: bin
-      - name: Identities and genesis
+      - name: Resolve hosts
+        # The multi-host layout (DEPLOY_HOSTS, KEEL_VALIDATOR_SEED_<i>). A
+        # single box configured the old way (DEPLOY_HOST, DEPLOY_USER,
+        # KEEL_VALIDATOR_SEED) still works as host 0.
         env:
           DEPLOY_HOSTS: ${{ vars.DEPLOY_HOSTS }}
-          KEEL_VALIDATOR_SEED_0: ${{ secrets.KEEL_VALIDATOR_SEED_0 }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          if [ -n "$DEPLOY_HOSTS" ]; then
+            python3 -c 'import json,os; h=json.loads(os.environ["DEPLOY_HOSTS"]); assert isinstance(h, list) and h and all("ip" in x for x in h)' \
+              || { echo "::error::DEPLOY_HOSTS must be a JSON list of {\"ip\",\"user\",\"wg_ip\"} (infra/testnet/README.md)"; exit 1; }
+            echo "HOSTS_JSON=$DEPLOY_HOSTS" >> "$GITHUB_ENV"
+          elif [ -n "$DEPLOY_HOST" ]; then
+            echo "::warning::DEPLOY_HOSTS is not set; using the single host DEPLOY_HOST as host 0"
+            echo "HOSTS_JSON=[{\"ip\":\"$DEPLOY_HOST\",\"user\":\"${DEPLOY_USER:-ubuntu}\"}]" >> "$GITHUB_ENV"
+          else
+            echo "::error::set the DEPLOY_HOSTS variable in the '${{ github.event.inputs.environment || 'testnet' }}' environment (infra/testnet/README.md)"; exit 1
+          fi
+      - name: Identities and genesis
+        env:
+          KEEL_VALIDATOR_SEED_0: ${{ secrets.KEEL_VALIDATOR_SEED_0 || secrets.KEEL_VALIDATOR_SEED }}
           KEEL_VALIDATOR_SEED_1: ${{ secrets.KEEL_VALIDATOR_SEED_1 }}
           KEEL_VALIDATOR_SEED_2: ${{ secrets.KEEL_VALIDATOR_SEED_2 }}
           KEEL_CHAIN_ID: ${{ vars.KEEL_CHAIN_ID || '3' }}
@@ -130,14 +148,16 @@ jobs:
           chmod +x bin/*
           umask 077
           mkdir -p release
-          NHOSTS=$(python3 -c 'import json,os; print(len(json.loads(os.environ["DEPLOY_HOSTS"])))')
+          NHOSTS=$(python3 -c 'import json,os; print(len(json.loads(os.environ["HOSTS_JSON"])))')
           : > release/identities.json
           IDS="["
           ARGS=""
           for i in $(seq 0 $((NHOSTS-1))); do
             SEED_VAR="KEEL_VALIDATOR_SEED_$i"; SEED="${!SEED_VAR}"
-            [ -n "$SEED" ] || { echo "secret $SEED_VAR is missing"; exit 1; }
-            ID=$(bin/keel-node --print-identity --me "$SEED@0" --storage-dir /tmp/keel-id-$i)
+            [ -n "$SEED" ] || { echo "::error::secret $SEED_VAR is missing (one decimal u64 per host, infra/testnet/README.md)"; exit 1; }
+            case "$SEED" in *[!0-9]*) echo "::error::secret $SEED_VAR must be a decimal u64"; exit 1;; esac
+            ID=$(bin/keel-node --print-identity --me "$SEED@0" --storage-dir /tmp/keel-id-$i 2>/tmp/keel-id-$i.err) || { echo "::error::keel-node --print-identity failed for host $i"; cat /tmp/keel-id-$i.err; exit 1; }
+            echo "$ID" | python3 -c 'import json,sys; json.load(sys.stdin)' || { echo "::error::unexpected identity output for host $i"; echo "$ID"; cat /tmp/keel-id-$i.err; exit 1; }
             CK=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["consensus_key"])' "$ID")
             AD=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["address"])' "$ID")
             [ "$i" = 0 ] || IDS="$IDS,"
@@ -185,11 +205,29 @@ jobs:
         with:
           name: keel-genesis
           path: release
+      - name: Resolve hosts
+        # The multi-host layout (DEPLOY_HOSTS, KEEL_VALIDATOR_SEED_<i>). A
+        # single box configured the old way (DEPLOY_HOST, DEPLOY_USER,
+        # KEEL_VALIDATOR_SEED) still works as host 0.
+        env:
+          DEPLOY_HOSTS: ${{ vars.DEPLOY_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          if [ -n "$DEPLOY_HOSTS" ]; then
+            python3 -c 'import json,os; h=json.loads(os.environ["DEPLOY_HOSTS"]); assert isinstance(h, list) and h and all("ip" in x for x in h)' \
+              || { echo "::error::DEPLOY_HOSTS must be a JSON list of {\"ip\",\"user\",\"wg_ip\"} (infra/testnet/README.md)"; exit 1; }
+            echo "HOSTS_JSON=$DEPLOY_HOSTS" >> "$GITHUB_ENV"
+          elif [ -n "$DEPLOY_HOST" ]; then
+            echo "::warning::DEPLOY_HOSTS is not set; using the single host DEPLOY_HOST as host 0"
+            echo "HOSTS_JSON=[{\"ip\":\"$DEPLOY_HOST\",\"user\":\"${DEPLOY_USER:-ubuntu}\"}]" >> "$GITHUB_ENV"
+          else
+            echo "::error::set the DEPLOY_HOSTS variable in the '${{ github.event.inputs.environment || 'testnet' }}' environment (infra/testnet/README.md)"; exit 1
+          fi
       - name: Stage release
         env:
           HOST_INDEX: ${{ matrix.host }}
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
-          KEEL_VALIDATOR_SEED: ${{ secrets[format('KEEL_VALIDATOR_SEED_{0}', matrix.host)] }}
+          KEEL_VALIDATOR_SEED: ${{ secrets[format('KEEL_VALIDATOR_SEED_{0}', matrix.host)] || secrets.KEEL_VALIDATOR_SEED }}
           WG_PRIVATE_KEY: ${{ secrets[format('WG_PRIVATE_KEY_{0}', matrix.host)] }}
           WG_PUBKEYS: ${{ vars.WG_PUBKEYS }}
           KEEL_TSS_PASSPHRASE: ${{ secrets.KEEL_TSS_PASSPHRASE }}
@@ -236,7 +274,6 @@ jobs:
           tar czf release.tgz -C release .
       - name: SSH key
         env:
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
           HOST_INDEX: ${{ matrix.host }}
           KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
         run: |
@@ -247,7 +284,6 @@ jobs:
           else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
       - name: Upload and run
         env:
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
           HOST_INDEX: ${{ matrix.host }}
         run: |
           H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[int(os.environ["HOST_INDEX"])]; print(h.get("user","ubuntu")+"@"+h["ip"])')
