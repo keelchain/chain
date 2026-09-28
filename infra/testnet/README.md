@@ -124,6 +124,10 @@ carry a proposal.
   attester and param-admin proposals for addresses in `KEEL_CLIENTS`, and
   software upgrades whose version the propose-upgrade run wrote to
   `/etc/keelchain/upgrades-approved`. Everything else waits for a hand vote.
+- **Memory.** `keel-node` reserves about 18 MB per peer slot up front, so
+  the validator unit's `MemoryMax=600M` holds for a set of a few validators
+  and followers (the limit defaults to today's peers plus eight;
+  `--max-peers` in `KEEL_NODE_EXTRA_ARGS` raises it, and the cap with it).
 - **Upgrades.** `keel-node` compares its version with the executed
   `SoftwareUpgrade` proposals before every block and stops at an activation
   height it was not voted in for. The `Propose upgrade` workflow proposes,

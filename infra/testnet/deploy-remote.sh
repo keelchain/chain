@@ -35,7 +35,13 @@ RPC=http://127.0.0.1:$RPC_PORT
 log() { printf '\n== %s\n' "$*"; }
 root_write() { # root_write <mode> <path>  (content on stdin)
   sudo install -m "$1" /dev/null "$2"; sudo tee "$2" >/dev/null; }
-wait_rpc() { for _ in $(seq 1 90); do curl -sf $RPC/v1/status >/dev/null && return 0; sleep 2; done; echo "node RPC did not come up"; exit 1; }
+wait_rpc() {
+  for _ in $(seq 1 90); do curl -sf $RPC/v1/status >/dev/null && return 0; sleep 2; done
+  echo "node RPC did not come up; unit state and the last log lines:"
+  sudo systemctl status "keel-validator@$N" --no-pager -l 2>&1 | head -20
+  sudo journalctl -u "keel-validator@$N" -n 80 --no-pager 2>&1 | tail -80
+  exit 1
+}
 height() { curl -s $RPC/v1/status | python3 -c 'import json,sys; print(json.load(sys.stdin)["height"])'; }
 hostf() { # hostf <index> <field>
   python3 -c 'import json,sys; print(json.loads(sys.argv[1])[int(sys.argv[2])].get(sys.argv[3], ""))' "$HOSTS_JSON" "$1" "$2"; }

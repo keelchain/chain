@@ -91,6 +91,10 @@ struct Args {
     /// config; unset = loopback-only devnet behaviour.
     #[arg(long)]
     advertise: Option<String>,
+    /// Upper bound of the peer set (validators plus followers). Defaults to
+    /// today's peers plus eight; each slot costs memory up front.
+    #[arg(long)]
+    max_peers: Option<usize>,
     /// Address the HTTP/WS API binds to.
     #[arg(long, default_value = "127.0.0.1")]
     rpc_listen: IpAddr,
@@ -301,10 +305,15 @@ fn main() {
             .collect::<Vec<_>>(),
     );
     // Peer sets grow when validators bond after genesis and the p2p layer
-    // asserts on a set larger than this limit, so leave headroom.
-    let max_peers_per_set =
-        std::num::NonZeroUsize::new(authenticated::peer_set_limit(&tracked, &me).get().max(64))
-            .expect("peer limit");
+    // asserts on a set larger than this limit, so leave headroom: eight
+    // slots beyond today's peers, `--max-peers` to override. The p2p layer
+    // reserves buffers per slot (about 18 MB each), so the limit is memory.
+    let natural = authenticated::peer_set_limit(&tracked, &me).get();
+    let limit = args
+        .max_peers
+        .unwrap_or_else(|| (tracked.len() + 8).clamp(natural, 64))
+        .max(natural);
+    let max_peers_per_set = std::num::NonZeroUsize::new(limit).expect("peer limit");
 
     let bootstrappers = args
         .bootstrappers
