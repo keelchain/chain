@@ -16,6 +16,12 @@ use std::sync::{Arc, Mutex};
 
 #[async_trait]
 pub trait NodeClient: Send + Sync + 'static {
+    /// `POST` a JSON body (action submission); the node's JSON answer or an
+    /// error carrying its body.
+    async fn post(&self, path: &str, body: &Value) -> Result<Value> {
+        let _ = (path, body);
+        Err(anyhow!("this node client cannot submit actions"))
+    }
     /// `GET {rpc}{path}`; `Ok(None)` on 404.
     async fn get(&self, path: &str) -> Result<Option<Value>>;
     /// Live blocks from `/v1/ws`; the stream ends when the socket drops.
@@ -183,6 +189,24 @@ impl HttpNodeClient {
 
 #[async_trait]
 impl NodeClient for HttpNodeClient {
+    async fn post(&self, path: &str, body: &Value) -> Result<Value> {
+        let url = format!("{}{}", self.rpc, path);
+        let resp = self
+            .http
+            .post(&url)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("POST {url}"))?;
+        let status = resp.status();
+        let text = resp.text().await?;
+        let json: Value = serde_json::from_str(&text).unwrap_or(Value::String(text.clone()));
+        if !status.is_success() {
+            return Err(anyhow!("POST {url}: HTTP {status}: {json}"));
+        }
+        Ok(json)
+    }
+
     async fn get(&self, path: &str) -> Result<Option<Value>> {
         let url = format!("{}{}", self.rpc, path);
         let resp = self

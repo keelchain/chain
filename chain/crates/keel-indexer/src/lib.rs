@@ -39,6 +39,23 @@ pub struct Config {
     /// Re-scan for holes from this height (fills blocks the node did not
     /// serve on an earlier run).
     pub backfill_from: Option<u64>,
+    /// The testnet faucet (`POST /v1/faucet`); None when no key is configured.
+    pub faucet: Option<FaucetConfig>,
+}
+
+/// Faucet settings (`KEEL_FAUCET_*`). Amounts are whole coins; the chain
+/// uses six decimals for both KEEL and the stable.
+#[derive(Clone, Debug)]
+pub struct FaucetConfig {
+    pub secret: [u8; 32],
+    pub keel: u64,
+    pub kusd: u64,
+    /// Seconds an address waits between claims.
+    pub cooldown_secs: i64,
+    /// Claims one IP may make per day.
+    pub ip_per_day: i64,
+    /// Explorer base for the links in the response (`https://testnet.keelchain.com`).
+    pub explorer_url: String,
 }
 
 impl Config {

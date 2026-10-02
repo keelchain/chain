@@ -36,6 +36,7 @@ Secrets:
 | `INDEXER_DATABASE_URL` | Postgres URL for the indexer on host 0 |
 | `BITCOIN_RPC_PASSWORD` | the signet bitcoind RPC password (host 0's `bitcoin.conf`) |
 | `TRONGRID_API_KEY` | optional |
+| `KEEL_FAUCET_SECRET` | optional; the faucet account's 32-byte secret (64 hex). Without it the deploy keeps a key generated on the box in `/etc/keelchain/faucet.env`, if one exists; without either the faucet is off |
 | `RCLONE_CONF` | optional; an rclone config defining the `keel-backups` remote (B2, S3, …) the daily backup copies to. Without it archives stay under `/var/backups/keel` |
 | `ALERT_SMTP_PASSWORD`, `GRAFANA_PASSWORD` | optional; with `KEEL_MONITORING=1` |
 
@@ -61,6 +62,7 @@ Variables:
 | `INDEXER_PG_CONTAINER` | the Postgres container the indexer database lives in (recreated on reset) |
 | `TRON_API_URL`, `TRON_USDT_CONTRACT` | `https://nile.trongrid.io`, the Nile USDT contract |
 | `EXPLORER_NETWORKS` | JSON network list baked into the explorer build |
+| `KEEL_FAUCET_KEEL`, `KEEL_FAUCET_KUSD` | optional; coins per claim (default 100 each). Cooldown per address 24 h, 5 claims per IP per day |
 | `AGE_RECIPIENT` | optional; an `age` public key; backups are encrypted to it (keep the identity off the boxes) |
 | `KEEL_CLIENTS` | optional; JSON list of clients to re-onboard after a reset and to pre-approve in governance votes: `[{"address":"<hex>","attester":true,"param_admin":false,"keel":100000,"kusd":100000}]` |
 | `KEEL_MONITORING` | `1` to run Prometheus, Alertmanager and Grafana on host 0 (`infra/testnet/monitoring`), scraping every host's node_exporter over the mesh |

@@ -22,10 +22,12 @@ groups:
         labels: { severity: warn }
         annotations: { summary: "{{ $labels.chain }} not ready on host {{ $labels.host }} for 15 minutes" }
       - alert: KeelCheckpointStale
-        expr: keel_checkpoint_age_seconds > 6 * 3600
+        # Checkpoints are proposed daily (keel-btc-checkpoint.timer), so a
+        # healthy age runs up to about 24 h plus the vote and timelock.
+        expr: keel_checkpoint_age_seconds > 30 * 3600
         for: 10m
         labels: { severity: warn }
-        annotations: { summary: "the {{ $labels.chain }} checkpoint is over 6 hours old" }
+        annotations: { summary: "the {{ $labels.chain }} checkpoint is over 30 hours old: the daily proposal did not land" }
       - alert: KeelOutboundsStuck
         expr: keel_outbound_pending > 0 and changes(keel_outbound_pending[2h]) == 0
         for: 2h

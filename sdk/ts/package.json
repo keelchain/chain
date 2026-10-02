@@ -1,6 +1,6 @@
 {
   "name": "@keelchain/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript SDK for the Keelchain: action encoding (borsh), ed25519 signing, RPC client.",
   "license": "MIT",
   "type": "module",

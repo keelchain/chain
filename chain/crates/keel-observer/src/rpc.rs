@@ -536,19 +536,40 @@ impl Submitter {
             }
         }
         let nonce = self.take_nonce().await?;
-        let signed = SignedAction::sign(&self.key, nonce, self.chain_id, action);
-        let res = self.rpc.submit(&signed).await?;
-        if res.admitted {
+        let signed = SignedAction::sign(&self.key, nonce, self.chain_id, action.clone());
+        let mut res = self.rpc.submit(&signed).await?;
+        if !res.admitted
+            && res
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("bad nonce"))
+        {
+            // Another process signs with this key too (the vote timer, an
+            // onboarding run): resync from the node and retry once now
+            // instead of losing this pass.
+            *self.next_nonce.lock().expect("nonce lock") = None;
+            let nonce = self.take_nonce().await?;
+            let signed = SignedAction::sign(&self.key, nonce, self.chain_id, action);
+            res = self.rpc.submit(&signed).await?;
+            if res.admitted {
+                *self.next_nonce.lock().expect("nonce lock") = Some(nonce + 1);
+                if let Some(k) = key {
+                    self.state
+                        .mark_submitted(k, res.tx_id.as_deref().unwrap_or(""))?;
+                }
+                return Ok(res);
+            }
+        } else if res.admitted {
             *self.next_nonce.lock().expect("nonce lock") = Some(nonce + 1);
             if let Some(k) = key {
                 self.state
                     .mark_submitted(k, res.tx_id.as_deref().unwrap_or(""))?;
             }
-        } else {
-            // Any refusal may be a nonce disagreement: resync next time.
-            *self.next_nonce.lock().expect("nonce lock") = None;
-            tracing::warn!(key = key.unwrap_or("-"), error = ?res.error, "action refused");
+            return Ok(res);
         }
+        // Any refusal may be a nonce disagreement: resync next time.
+        *self.next_nonce.lock().expect("nonce lock") = None;
+        tracing::warn!(key = key.unwrap_or("-"), error = ?res.error, "action refused");
         Ok(res)
     }
 }

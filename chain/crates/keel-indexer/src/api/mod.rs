@@ -2,6 +2,7 @@
 //! a few live proxies to the node (balances, order book, vault state).
 
 mod chain;
+mod faucet;
 mod markets;
 mod network;
 mod p2p;
@@ -26,6 +27,8 @@ pub struct AppState {
     pub node: Node,
     pub status: Arc<SyncStatus>,
     pub ws_tx: broadcast::Sender<String>,
+    /// Serializes faucet claims (one nonce stream for the faucet key).
+    pub faucet_lock: tokio::sync::Mutex<()>,
 }
 
 pub type App = Arc<AppState>;
@@ -68,6 +71,8 @@ pub fn router(state: App) -> Router {
         .route("/v1/governance/proposals", get(network::proposals))
         .route("/v1/governance/proposals/{id}", get(network::proposal))
         .route("/v1/governance/params", get(network::params))
+        .route("/v1/faucet", get(faucet::info).post(faucet::claim))
+        .route("/v1/faucet/claims", get(faucet::claims))
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(state)
 }

@@ -54,6 +54,16 @@ N blocks below each new snapshot; `/v1/status` reports `oldest_block` and
 connected through `--extra-peers` or, once the follower bonds, through the
 chain state itself.
 
+## Faucet
+
+`keelchain.com/faucet` sends 100 KEEL and 100 KUSD to any account address,
+once per address a day and a few times per network address. It is an
+ordinary account funded from genesis; its sends are plain transfers on the
+explorer. Scripted: `POST https://testnet.keelchain.com/api/v1/faucet` with
+`{"address": "<64 hex>"}`; `GET /v1/faucet` for the amounts and what it
+holds, `GET /v1/faucet/claims` for history. Clients' operator accounts are
+funded through onboarding, not the faucet.
+
 ## Operations
 
 Every host backs itself up daily (snapshot, config, and the indexer database

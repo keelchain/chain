@@ -119,8 +119,12 @@ printf 'SEED=%s\nP2P_PORT=%s\nADVERTISE=%s:%s\nRPC_LISTEN=127.0.0.1\nRPC_PORT=%s
   "$KEEL_VALIDATOR_SEED" "$P2P_PORT" "$MY_IP" "$P2P_PORT" "$RPC_PORT" "$EXT" "$BOOT" "${KEEL_NODE_EXTRA_ARGS:-}" | root_write 600 "$ETC/validator-$N.env"
 printf 'KEEL_OBSERVER_SECRET=%s\n' "$SECRET" | root_write 600 "$ETC/observer-$N.env"
 if [ "$IS_HOST0" = true ]; then
-  printf 'DATABASE_URL=%s\nKEEL_NODE_RPC=%s\nKEEL_INDEXER_LISTEN=127.0.0.1:%s\nKEEL_NETWORK=testnet\nKEEL_EXTERNAL_NETWORK=%s\n' \
-    "${INDEXER_DATABASE_URL:?}" "$RPC" "$IDX_PORT" "$EXT" | root_write 600 "$ETC/indexer.env"
+  # The faucet key: the KEEL_FAUCET_SECRET secret, or one generated on the
+  # box (`/etc/keelchain/faucet.env`, root-only) so the key never leaves it.
+  FAUCET=${KEEL_FAUCET_SECRET:-$(sudo sed -n 's/^KEEL_FAUCET_SECRET=//p' "$ETC/faucet.env" 2>/dev/null || true)}
+  printf 'DATABASE_URL=%s\nKEEL_NODE_RPC=%s\nKEEL_INDEXER_LISTEN=127.0.0.1:%s\nKEEL_NETWORK=testnet\nKEEL_EXTERNAL_NETWORK=%s\nKEEL_FAUCET_SECRET=%s\nKEEL_FAUCET_KEEL=%s\nKEEL_FAUCET_KUSD=%s\nKEEL_FAUCET_COOLDOWN_SECS=%s\nKEEL_FAUCET_IP_PER_DAY=%s\nKEEL_EXPLORER_URL=%s\n' \
+    "${INDEXER_DATABASE_URL:?}" "$RPC" "$IDX_PORT" "$EXT" "$FAUCET" "${KEEL_FAUCET_KEEL:-100}" "${KEEL_FAUCET_KUSD:-100}" "${KEEL_FAUCET_COOLDOWN_SECS:-86400}" "${KEEL_FAUCET_IP_PER_DAY:-5}" "${KEEL_EXPLORER_URL:-https://testnet.keelchain.com}" | root_write 600 "$ETC/indexer.env"
+  unset FAUCET KEEL_FAUCET_SECRET
 fi
 # Bitcoin RPC: host 0 runs bitcoind on loopback and on its WireGuard address;
 # the other hosts reach it over the mesh.

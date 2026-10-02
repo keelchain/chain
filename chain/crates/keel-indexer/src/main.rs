@@ -76,6 +76,7 @@ async fn main() -> Result<()> {
         concurrency: cli.concurrency.max(1),
         batch: cli.batch.max(1),
         backfill_from: cli.backfill_from,
+        faucet: faucet_from_env(),
     };
     let db = Db::connect(&cfg.database_url).await?;
     let node: Node = Arc::new(HttpNodeClient::new(&cfg.node_rpc, &cfg.node_ws)?);
@@ -83,6 +84,7 @@ async fn main() -> Result<()> {
     let indexer = Indexer::new(cfg.clone(), db.clone(), node.clone(), status.clone());
     indexer.init().await.context("indexer init")?;
     let app = Arc::new(AppState {
+        faucet_lock: tokio::sync::Mutex::new(()),
         cfg: cfg.clone(),
         db,
         node,
@@ -94,10 +96,31 @@ async fn main() -> Result<()> {
         .with_context(|| format!("bind {}", cfg.listen))?;
     info!(listen = %cfg.listen, node = %cfg.node_rpc, network = %cfg.network, "explorer API listening");
     let sync = tokio::spawn(indexer.run());
-    let serve = axum::serve(listener, router(app));
+    let serve = axum::serve(
+        listener,
+        router(app).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    );
     tokio::select! {
         r = serve => r.context("api server")?,
         r = sync => r.context("sync task")??,
     }
     Ok(())
 }
+
+/// `KEEL_FAUCET_SECRET` (64 hex) turns the faucet on; the amounts and limits
+/// have defaults a public testnet can live with.
+fn faucet_from_env() -> Option<keel_indexer::FaucetConfig> {
+    let secret = std::env::var("KEEL_FAUCET_SECRET").ok()?;
+    let bytes = hex::decode(secret.trim()).ok()?;
+    let secret: [u8; 32] = bytes.try_into().ok()?;
+    let num = |k: &str, d: i64| std::env::var(k).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(d);
+    Some(keel_indexer::FaucetConfig {
+        secret,
+        keel: num("KEEL_FAUCET_KEEL", 100) as u64,
+        kusd: num("KEEL_FAUCET_KUSD", 100) as u64,
+        cooldown_secs: num("KEEL_FAUCET_COOLDOWN_SECS", 86_400),
+        ip_per_day: num("KEEL_FAUCET_IP_PER_DAY", 5),
+        explorer_url: std::env::var("KEEL_EXPLORER_URL").unwrap_or_else(|_| "https://testnet.keelchain.com".into()),
+    })
+}
+

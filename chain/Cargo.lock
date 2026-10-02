@@ -3478,6 +3478,8 @@ dependencies = [
  "hex",
  "http-body-util",
  "keel-actions",
+ "keel-crypto",
+ "keel-types",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keel testnet faucet</title>
+<meta name="description" content="Free testnet KEEL and KUSD for any Keel account address: one claim per address per day.">
+<link rel="icon" href="../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../keel.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../"><img src="../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav>
+    <a href="../#build">Build</a>
+    <a href="../wallet/">Wallet</a>
+    <a href="../docs/">Docs</a>
+    <a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a>
+    <a class="pill" href="https://testnet.keelchain.com/rpc/v1/status"><span class="dot"></span>testnet live</a>
+  </nav>
+</div></header>
+
+<section class="hero faucet-hero"><div class="wrap grid">
+  <div>
+    <div class="eyebrow">Keelchain · testnet faucet</div>
+    <h1>Test coins, on request.</h1>
+    <p class="lead">Paste a Keel account address and the faucet sends it KEEL for action budgets and offer deposits, and KUSD to trade with. One claim per address a day; nothing here has value.</p>
+    <form id="claim" class="faucet-form" autocomplete="off">
+      <label for="address">Account address</label>
+      <div class="faucet-row">
+        <input id="address" name="address" inputmode="text" spellcheck="false" placeholder="64 hex characters, from Keel Wallet or /v1/auth/me" pattern="[0-9a-fA-F]{64}" required>
+        <button class="btn primary" type="submit" id="go">Send test coins</button>
+      </div>
+      <p class="faucet-hint muted">In Keel Wallet: Settings → Accounts → copy address. From a client's API: the <code>chainAddress</code> on your profile.</p>
+    </form>
+    <div id="result" class="faucet-result" hidden></div>
+    <div class="stats faucet-stats" id="stats">
+      <div class="stat"><b data-k="keel">—</b><span>KEEL per claim</span></div>
+      <div class="stat"><b data-k="kusd">—</b><span>KUSD per claim</span></div>
+      <div class="stat"><b data-k="left">—</b><span>KEEL left in the faucet</span></div>
+      <div class="stat"><b data-k="today">—</b><span>claims today</span></div>
+    </div>
+  </div>
+  <div class="hero-art" aria-hidden="true">
+    <div class="orbit"></div>
+    <svg viewBox="0 0 400 400">
+      <defs><linearGradient id="drop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2DD4BF" stop-opacity=".55"/><stop offset="1" stop-color="#0F2F5B" stop-opacity=".15"/></linearGradient></defs>
+      <g class="wave"><path d="M-40 300 q30 -14 60 0 t60 0 t60 0 t60 0 t60 0 t60 0 t60 0 t60 0"/></g>
+      <g class="wave w2"><path d="M-40 330 q30 -12 60 0 t60 0 t60 0 t60 0 t60 0 t60 0 t60 0 t60 0"/></g>
+      <path class="faucet-drop" d="M200 70 C 160 140, 130 170, 130 215 a70 70 0 0 0 140 0 C 270 170, 240 140, 200 70 Z"/>
+      <path class="keel-line" d="M200 70 C 160 140, 130 170, 130 215 a70 70 0 0 0 140 0 C 270 170, 240 140, 200 70 Z"/>
+      <circle cx="175" cy="205" r="9" fill="#F5C451"/>
+    </svg>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="eyebrow">Recent claims</div>
+  <h2>What the faucet sent, on chain like everything else.</h2>
+  <p class="muted">Every send is an ordinary <code>Transfer</code> from the faucet account. The explorer shows it; so does the wallet.</p>
+  <div class="faucet-table-wrap">
+    <table class="faucet-table" id="claims">
+      <thead><tr><th>When</th><th>Address</th><th>Sent</th><th>Transaction</th></tr></thead>
+      <tbody><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="eyebrow">Rules</div>
+  <h2>Enough to build with, not enough to hoard.</h2>
+  <div class="cards">
+    <div class="card"><div class="ic">1</div><h3>One claim a day</h3><p>Per address, and a handful per network address. The exact numbers are in the stats above; they come from the faucet's own configuration.</p></div>
+    <div class="card"><div class="ic">2</div><h3>Two assets</h3><p>KEEL pays for action budgets and offer deposits; KUSD is the chain's one-to-one dollar, the quote asset of every market and most P2P offers.</p></div>
+    <div class="card"><div class="ic">3</div><h3>No value, ever</h3><p>The testnet resets between releases; balances and claims reset with it. A client's own operator account is funded through onboarding, not here.</p></div>
+    <div class="card"><div class="ic">4</div><h3>Scripted</h3><p><code>POST https://testnet.keelchain.com/api/v1/faucet</code> with <code>{"address":"…"}</code>; <code>GET /v1/faucet</code> for amounts and balances, <code>GET /v1/faucet/claims</code> for history.</p></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <div><img src="../keel-logo-dark.svg" alt="Keelchain" style="height:26px;margin-bottom:12px"><p>A settlement chain for peer-to-peer trading. Built in Rust, open to any client.</p></div>
+  <div><h4>Network</h4><ul>
+    <li><a href="https://testnet.keelchain.com/">Explorer</a></li>
+    <li><a href="../docs/api/">Read API</a></li>
+    <li><a href="../docs/rpc/">Node RPC</a></li>
+    <li><a href="../wallet/">Keel Wallet</a></li>
+  </ul></div>
+  <div><h4>Contact</h4><ul>
+    <li><a href="mailto:support@keelchain.com">support@keelchain.com</a> — questions and issues</li>
+  </ul></div>
+</div></footer>
+
+<script>
+(() => {
+  const API = 'https://testnet.keelchain.com/api';
+  const EXPLORER = 'https://testnet.keelchain.com';
+  const $ = (s) => document.querySelector(s);
+  const set = (k, v) => { const el = document.querySelector(`[data-k="${k}"]`); if (el) el.textContent = v; };
+  const short = (a) => a.slice(0, 8) + '…' + a.slice(-6);
+  const ago = (iso) => {
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    return `${Math.floor(s / 86400)} d ago`;
+  };
+  let info = null;
+  async function loadInfo() {
+    try {
+      const r = await fetch(`${API}/v1/faucet`); info = await r.json();
+      if (!r.ok) throw new Error(info.error?.message || 'faucet off');
+      set('keel', info.amounts.KEEL); set('kusd', info.amounts.KUSD);
+      set('left', Number(info.balances.KEEL).toLocaleString()); set('today', info.claims_today);
+    } catch (e) {
+      const res = $('#result'); res.hidden = false; res.className = 'faucet-result err';
+      res.textContent = `The faucet is not available right now (${e.message}).`;
+      $('#go').disabled = true;
+    }
+  }
+  async function loadClaims() {
+    const body = $('#claims tbody');
+    try {
+      const r = await fetch(`${API}/v1/faucet/claims?limit=12`); const d = await r.json();
+      const rows = (d.claims || []);
+      if (rows.length === 0) { body.innerHTML = '<tr><td colspan="4" class="muted">No claims yet. Be the first.</td></tr>'; return; }
+      body.innerHTML = rows.map((c) => `<tr>
+        <td>${ago(c.claimed_at)}</td>
+        <td><a href="${EXPLORER}/account/${c.address}" class="mono">${short(c.address)}</a></td>
+        <td>${c.amount} ${c.asset}</td>
+        <td><a href="${c.url}" class="mono">${short(c.tx_id)}</a></td>
+      </tr>`).join('');
+    } catch { body.innerHTML = '<tr><td colspan="4" class="muted">History unavailable.</td></tr>'; }
+  }
+  $('#claim').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const address = $('#address').value.trim().toLowerCase();
+    const res = $('#result'); const btn = $('#go');
+    if (!/^[0-9a-f]{64}$/.test(address)) { res.hidden = false; res.className = 'faucet-result err'; res.textContent = 'An address is 64 hex characters.'; return; }
+    btn.disabled = true; btn.textContent = 'Sending…';
+    res.hidden = false; res.className = 'faucet-result wait'; res.textContent = 'Signing two transfers and waiting for the node to admit them…';
+    try {
+      const r = await fetch(`${API}/v1/faucet`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error?.message || `HTTP ${r.status}`);
+      res.className = 'faucet-result ok';
+      res.innerHTML = `<b>Sent.</b> ` + d.sent.map((s) => `${s.amount} ${s.asset} (<a href="${s.url}">${short(s.tx_id)}</a>)`).join(' and ') +
+        ` to <a href="${EXPLORER}/account/${address}" class="mono">${short(address)}</a>. The balance shows once the block is final, a few seconds. Next claim for this address in ${Math.round(d.next_claim_in_secs / 3600)} h.`;
+      loadInfo(); loadClaims();
+    } catch (e) {
+      res.className = 'faucet-result err'; res.textContent = e.message;
+    } finally { btn.disabled = false; btn.textContent = 'Send test coins'; }
+  });
+  const q = new URLSearchParams(location.search).get('address'); if (q) $('#address').value = q;
+  loadInfo(); loadClaims(); setInterval(loadClaims, 30000);
+})();
+</script>
+</body>
+</html>
