@@ -56,7 +56,7 @@ chain state itself.
 
 ## Faucet
 
-`keelchain.com/faucet` sends 100 KEEL and 100 KUSD to any account address,
+`faucet.keelchain.com` sends 100 KEEL and 100 KUSD to any account address,
 once per address a day and a few times per network address. It is an
 ordinary account funded from genesis; its sends are plain transfers on the
 explorer. Scripted: `POST https://testnet.keelchain.com/api/v1/faucet` with

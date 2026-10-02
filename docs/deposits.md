@@ -45,7 +45,7 @@ again returns the same one.
   faucet"; the Bitcoin Core project lists current ones) and send them to the
   `tb1…` address. Credited after **2 confirmations** (`confirmations_btc`),
   about 20 minutes on signet.
-- **KEEL and KUSD:** `keelchain.com/faucet` sends both to any account address.
+- **KEEL and KUSD:** `faucet.keelchain.com` sends both to any account address.
 - **Tron Nile:** get test TRX and USDT from the Nile faucet
   (nileex.io) and send to the `T…` address. Credited after **19
   confirmations**, about one minute.

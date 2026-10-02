@@ -80,6 +80,11 @@ jobs:
           mkdir -p out/site/wallet/downloads out/site/wallet/try
           cp -r site/. out/site/
           cp apps/wallet-extension/dist-store/*.zip out/site/wallet/downloads/
+          # The wallet page links the packages by version; keep it on the
+          # version just built so a bump never leaves the links dangling.
+          V=$(node -p "require('./apps/wallet-extension/manifest.json').version")
+          sed -i -E "s/keel-wallet-[0-9]+\.[0-9]+\.[0-9]+-/keel-wallet-$V-/g; s/(browser extension · v)[0-9]+\.[0-9]+\.[0-9]+/\1$V/" out/site/wallet/index.html
+          ls out/site/wallet/downloads
           cp -r apps/example-client/dist/. out/site/wallet/try/
           cp -r apps/explorer/dist out/explorer
           # The signed Firefox build and its update manifest come from the
