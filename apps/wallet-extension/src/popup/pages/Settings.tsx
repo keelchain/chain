@@ -2,23 +2,13 @@ import { useEffect, useState } from 'react';
 import { call, type UiState } from '../ui';
 import { NETWORKS } from '../../core/networks';
 
-/** The origin of the tab the popup was opened on (activeTab), or null. */
-async function currentOrigin(): Promise<string | null> {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.url) return null;
-    const u = new URL(tab.url);
-    if (!['https:', 'http:'].includes(u.protocol)) return null;
-    return u.origin;
-  } catch {
-    return null;
-  }
-}
+import { currentSite, enableSiteAccess, isBuiltInSite, type CurrentSite } from '../components/SiteAccess';
 
 export function Settings({ state, onState }: { state: UiState; onState: (s: UiState) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [sites, setSites] = useState<string[]>([]);
-  const [here, setHere] = useState<string | null>(null);
+  const [hereSite, setHereSite] = useState<CurrentSite | null>(null);
+  const here = hereSite !== null && !isBuiltInSite(hereSite.origin) ? hereSite.origin : null;
   const [siteInput, setSiteInput] = useState('');
   const [netName, setNetName] = useState('');
   const [netRpc, setNetRpc] = useState('');
@@ -27,16 +17,14 @@ export function Settings({ state, onState }: { state: UiState; onState: (s: UiSt
 
   useEffect(() => {
     void call<{ sites: string[] }>('listSites').then((r) => setSites(r.sites), () => undefined);
-    void currentOrigin().then(setHere);
+    void currentSite().then(setHereSite);
   }, []);
 
   const enableSite = async (origin: string) => {
     setBusy(true);
     try {
       // The permission prompt must come from this click, in the popup.
-      const granted = await chrome.permissions.request({ origins: [`${origin}/*`] });
-      if (!granted) throw new Error('Access to that site was not granted.');
-      const r = await call<{ sites: string[] }>('enableSite', { origin });
+      const r = await enableSiteAccess(origin, hereSite !== null && hereSite.origin === origin ? hereSite.tabId : null);
       setSites(r.sites);
       setSiteInput('');
       setError(null);

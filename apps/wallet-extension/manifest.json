@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Keel Wallet",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "The browser wallet for Keelchain (public testnet, no real funds). Keys stay on your device; every action is approved by you.",
   "icons": {
     "16": "icons/16.png",

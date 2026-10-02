@@ -34,6 +34,9 @@ Dates are UTC.
 - Wallet 1.2.0: the old client alias and client domains are gone; any
   site can be enabled from the wallet; Send and Withdraw from the popup;
   custom networks; unlisted Firefox signing and self-hosted updates.
+- Wallet 1.2.1: the popup offers "Enable on this site" on its home screen
+  when opened on a site that cannot see the wallet yet, and enabling puts
+  the provider on the open page without a reload.
 - SDK 0.1.x: `KeelSocket`, `IndexerClient`, `ready()`, the connect kit
   (`connectWallet`, `loginChallenge`, `verifyLoginChallenge`,
   `requestSession`, `mountConnectButton`), the custody actions.

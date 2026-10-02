@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { call, fetchAccount, type AccountResponse, type UiState } from '../ui';
 import type { DepositAddressInfo } from '../../background/wallet';
 import { Address } from '../components/Address';
+import { SiteAccessBanner } from '../components/SiteAccess';
 import { decimalsOf, formatAmount, sentence } from '../../core/format';
 import { explorerAccountUrl } from '../../core/networks';
 
@@ -76,6 +77,7 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
 
   return (
     <div className="page">
+      <SiteAccessBanner />
       <div className="row">
         <select value={network.id} onChange={(e) => void act('switchNetwork', { id: e.target.value })} title="Network">
           {state.networks.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}

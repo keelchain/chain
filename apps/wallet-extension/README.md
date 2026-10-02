@@ -220,6 +220,11 @@ network is the public Keel testnet (chain id 3).
   background registers the content scripts for it with
   `chrome.scripting.registerContentScripts` (persisted, re-registered on
   update). Removing a site drops the permission. No release per client.
+  Since 1.2.1 the popup's home screen offers the same button whenever it
+  is opened on a site that is not enabled yet, and enabling also puts the
+  provider on the page that is already open, so there is nothing to
+  reload: a new user installs, opens the wallet on the site, clicks once
+  and carries on with the site's sign-up.
 - **Send.** The home page sends a `Transfer` (to a Keel address) or a
   `Withdraw` (to an external address) from the active account, with a
   review step; the wallet signs and submits to the network's RPC and waits

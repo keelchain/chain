@@ -157,6 +157,61 @@ async function registerSite(origin: string): Promise<void> {
   ]);
 }
 
+/** Puts the provider on an already-open page of `origin`; false when the tab moved on or refuses scripts. */
+const injecting = new Map<number, Promise<boolean>>();
+
+function injectNow(tabId: number, origin: string): Promise<boolean> {
+  // One at a time per tab, and never twice: a second content script would
+  // forward every request twice and the user would be asked twice.
+  const run = (injecting.get(tabId) ?? Promise.resolve(false)).then(async () => {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.url === undefined || new URL(tab.url).origin !== origin) return false;
+      const [probe] = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: () => (window as unknown as { keel?: { isKeel?: boolean } }).keel?.isKeel === true,
+      });
+      if (probe?.result === true) return true;
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['inpage.js'], world: 'MAIN' });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  injecting.set(tabId, run);
+  return run;
+}
+
+/** `https://site.example/*` -> `https://site.example`; null for a wildcard host. */
+function originOfPattern(pattern: string): string | null {
+  if (!pattern.endsWith('/*') || pattern.slice(0, -2).includes('*')) return null;
+  try {
+    const u = new URL(pattern.slice(0, -2));
+    return ['https:', 'http:'].includes(u.protocol) ? u.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+// The grant itself enables the site. Some browsers close the popup while
+// their permission prompt is up, so the popup's follow-up call never comes;
+// the background hears the grant either way and finishes the job.
+chrome.permissions.onAdded.addListener((added) => {
+  void (async () => {
+    for (const pattern of added.origins ?? []) {
+      const origin = originOfPattern(pattern);
+      if (origin === null) continue;
+      await registerSite(origin);
+      const sites = await enabledSites();
+      if (!sites.includes(origin)) await chrome.storage.local.set({ [SITES_KEY]: [...sites, origin] });
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (typeof tab?.id === 'number') await injectNow(tab.id, origin);
+    }
+  })().catch(() => undefined);
+});
+
 async function handleSites(method: string, params: unknown): Promise<unknown> {
   const p = (typeof params === 'object' && params !== null ? params : {}) as Record<string, unknown>;
   const origin = typeof p['origin'] === 'string' ? p['origin'] : '';
@@ -175,7 +230,12 @@ async function handleSites(method: string, params: unknown): Promise<unknown> {
     await registerSite(origin);
     if (!sites.includes(origin)) sites.push(origin);
     await chrome.storage.local.set({ [SITES_KEY]: sites });
-    return { sites };
+    // The registration covers the next page load. The page the user is on
+    // right now gets the provider too, so "enable" does not end in "now
+    // reload": the sign-in button they were about to press just works.
+    const tabId = typeof p['tabId'] === 'number' ? p['tabId'] : null;
+    const injected = tabId === null ? false : await injectNow(tabId, origin);
+    return { sites, injected };
   }
   const [contentId, inpageId] = scriptIds(origin);
   await chrome.scripting.unregisterContentScripts({ ids: [contentId, inpageId] }).catch(() => undefined);
