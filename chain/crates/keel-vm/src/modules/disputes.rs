@@ -18,7 +18,7 @@ use keel_types::{mul_div_floor, Address, Amount, Asset};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use super::{fees, staking, tokens};
+use super::{fees, tokens};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Evidence {
@@ -174,9 +174,10 @@ fn rule(
     trade_id: TradeId,
     ruling: Ruling,
 ) -> Result<Vec<Event>, VmError> {
-    // Any bonded arbitrator may rule; the ruling window in params only
-    // matters once arbitrators are assigned per dispute (kept simple).
-    if !staking::is_arbitrator(state, &signer) {
+    // The arbitrator bound to the trade rules it; a trade whose offer
+    // named nobody is ruled by any member of the elected fallback set
+    // (`arbitration::may_rule`). The ruling window in params is unused.
+    if !super::arbitration::may_rule(state, trade_id, &signer) {
         return Err(VmError::Unauthorized);
     }
     if let Ruling::Split { buyer_bps } = ruling {

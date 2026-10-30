@@ -434,6 +434,22 @@ pub enum Event {
         amount: Amount,
         to: String,
     },
+    /// The offer owner named (or with `count` 0 cleared) the arbitrators a
+    /// taker accepts by taking the offer.
+    OfferArbitratorsSet {
+        offer_id: u64,
+        count: u32,
+    },
+    /// The arbitrator who will rule a dispute on this trade: fixed at start
+    /// when the offer named one, when the taker chose, or at `MarkPaid`.
+    TradeArbitratorBound {
+        trade_id: u64,
+        arbitrator: Address,
+    },
+    /// Governance barred an address from ruling anywhere.
+    ArbitratorBanned {
+        member: Address,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

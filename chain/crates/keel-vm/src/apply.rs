@@ -6,8 +6,8 @@
 use crate::{
     context::BlockContext,
     modules::{
-        attest, budgets, clients, custody, disputes, gov, lightning, markets, p2p, sessions,
-        stable, staking, tokens, treasury, vaults,
+        arbitration, attest, budgets, clients, custody, disputes, gov, lightning, markets, p2p,
+        sessions, stable, staking, tokens, treasury, vaults,
     },
     receipt::{Event, Receipt, VmError},
     state::State,
@@ -234,6 +234,9 @@ fn apply_one(
         | Action::ObserveCustodyDeposit { .. }
         | Action::WithdrawCustody(_)
         | Action::SwapCustody(_) => custody::apply(state, ctx, signer, &tx_id, action),
+        Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => {
+            arbitration::apply(state, signer, action)
+        }
         Action::AuthorizeSessionKey {
             key: k,
             scope,

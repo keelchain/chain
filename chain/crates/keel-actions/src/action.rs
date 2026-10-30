@@ -202,6 +202,18 @@ pub enum Action {
     /// against the custodian's own floats, in one ledger posting and with
     /// no external transaction (docs/models.md, "The float swap").
     SwapCustody(CustodySwap),
+    /// The offer owner names the bonded arbitrator(s) a taker accepts by
+    /// taking the offer (docs/how-it-works.md §12); empty clears the list.
+    SetOfferArbitrators {
+        offer_id: OfferId,
+        arbitrators: Vec<Address>,
+    },
+    /// The taker of a trade whose offer named several arbitrators picks
+    /// one before marking the trade paid.
+    ChooseArbitrator {
+        trade_id: TradeId,
+        arbitrator: Address,
+    },
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -320,6 +332,7 @@ impl Action {
             | Action::ObserveCustodyDeposit { .. }
             | Action::WithdrawCustody(_)
             | Action::SwapCustody(_) => "custody",
+            Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
         }
     }
 }
@@ -681,6 +694,10 @@ pub enum ProposalKind {
     /// Appoint (or with `None` revoke) the address allowed to `SetParam`.
     SetParamAdmin {
         admin: Option<Address>,
+    },
+    /// Bar an address from ruling any dispute, named or fallback.
+    BanArbitrator {
+        member: Address,
     },
 }
 

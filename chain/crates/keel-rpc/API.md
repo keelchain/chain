@@ -17,9 +17,9 @@ action's JSON they are 32-element byte arrays (serde form).
 | GET | `/v1/markets/{pair}` | summary: cfg, house quote, last price, best bid/ask, volumes |
 | GET | `/v1/markets/{pair}/book?depth=20` | `{bids:[{price,size,orders}], asks:[…], house, height}` |
 | GET | `/v1/orders/{id}` | OrderRecord |
-| GET | `/v1/offers?asset=&side=&fiat=` | `{offers:[Offer]}` (open offers only) |
-| GET | `/v1/offers/{id}` | Offer |
-| GET | `/v1/trades/{id}` | Trade (+ `dispute` when one exists) |
+| GET | `/v1/offers?asset=&side=&fiat=` | `{offers:[Offer]}` (open offers only, each with `arbitrators[]`) |
+| GET | `/v1/offers/{id}` | Offer, plus `arbitrators[]`: the bonded arbitrators the owner named (`SetOfferArbitrators`; empty = the elected set rules) |
+| GET | `/v1/trades/{id}` | Trade (+ `dispute` when one exists), `arbitrator` (bound to rule it, or null) and `arbitrator_candidates[]` (copied from the offer at start) |
 | GET | `/v1/vaults/{chain}` | `{chain, vault, state}` (vault registrations for the chain; whole vaults sub-state) |
 | GET | `/v1/vaults/{chain}/addresses?from=0&limit=100` | deposit index → owner rows |
 | GET | `/v1/vaults/outbounds?status=` | `{outbounds:[Outbound]}` |

@@ -52,6 +52,8 @@ pub struct State {
     pub clients: clients::ClientsState,
     /// Client-owned custody vaults (schema 3).
     pub custody: custody::CustodyState,
+    /// Per-offer arbitration: named arbitrators, bindings, bans (schema 4).
+    pub arbitration: arbitration::ArbitrationState,
 }
 
 impl State {

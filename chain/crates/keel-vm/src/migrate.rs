@@ -23,7 +23,7 @@ use crate::state::State;
 use borsh::BorshDeserialize;
 
 /// Current snapshot schema.
-pub const SCHEMA: u32 = 3;
+pub const SCHEMA: u32 = 4;
 
 /// Magic prefix of a versioned snapshot.
 pub const MAGIC: &[u8; 4] = b"KEEL";
@@ -53,10 +53,11 @@ pub fn upgrade(schema: u32, payload: &[u8]) -> Option<State> {
     match schema {
         // Schema 0 (headerless) and schema 1 share the same layout; 1 only
         // added the header. Schema 2 appended `State.clients`, schema 3
-        // appended `State.custody`.
+        // appended `State.custody`, schema 4 appended `State.arbitration`.
         0 | 1 => StateV1::try_from_slice(payload).ok().map(State::from),
         2 => StateV2::try_from_slice(payload).ok().map(State::from),
-        3 => State::try_from_slice(payload).ok(),
+        3 => StateV3::try_from_slice(payload).ok().map(State::from),
+        4 => State::try_from_slice(payload).ok(),
         _ => None,
     }
 }
@@ -116,6 +117,65 @@ pub struct StateV2 {
     pub clients: crate::modules::clients::ClientsState,
 }
 
+/// Schema 3: schema 2 plus `custody`.
+#[derive(BorshDeserialize)]
+pub struct StateV3 {
+    pub chain_id: u32,
+    pub height: u64,
+    pub timestamp: u64,
+    pub params: crate::params::Params,
+    pub accounts: std::collections::BTreeMap<keel_types::Address, crate::state::AccountMeta>,
+    pub ledger: keel_ledger::Ledger,
+    pub tokens: crate::modules::tokens::TokensState,
+    pub markets: crate::modules::markets::MarketsState,
+    pub p2p: crate::modules::p2p::P2pState,
+    pub disputes: crate::modules::disputes::DisputesState,
+    pub vaults: crate::modules::vaults::VaultsState,
+    pub stable: crate::modules::stable::StableState,
+    pub staking: crate::modules::staking::StakingState,
+    pub gov: crate::modules::gov::GovState,
+    pub attest: crate::modules::attest::AttestState,
+    pub budgets: crate::modules::budgets::BudgetsState,
+    pub sessions: crate::modules::sessions::SessionsState,
+    pub lightning: crate::modules::lightning::LightningState,
+    pub paused: std::collections::BTreeMap<String, u64>,
+    pub gov_house_operator: Option<keel_types::Address>,
+    pub last_hash: keel_crypto::Hash32,
+    pub clients: crate::modules::clients::ClientsState,
+    pub custody: crate::modules::custody::CustodyState,
+}
+
+impl From<StateV3> for State {
+    fn from(v: StateV3) -> Self {
+        State {
+            chain_id: v.chain_id,
+            height: v.height,
+            timestamp: v.timestamp,
+            params: v.params,
+            accounts: v.accounts,
+            ledger: v.ledger,
+            tokens: v.tokens,
+            markets: v.markets,
+            p2p: v.p2p,
+            disputes: v.disputes,
+            vaults: v.vaults,
+            stable: v.stable,
+            staking: v.staking,
+            gov: v.gov,
+            attest: v.attest,
+            budgets: v.budgets,
+            sessions: v.sessions,
+            lightning: v.lightning,
+            paused: v.paused,
+            gov_house_operator: v.gov_house_operator,
+            last_hash: v.last_hash,
+            clients: v.clients,
+            custody: v.custody,
+            arbitration: Default::default(),
+        }
+    }
+}
+
 impl From<StateV2> for State {
     fn from(v: StateV2) -> Self {
         State {
@@ -142,6 +202,7 @@ impl From<StateV2> for State {
             last_hash: v.last_hash,
             clients: v.clients,
             custody: Default::default(),
+            arbitration: Default::default(),
         }
     }
 }
@@ -172,6 +233,7 @@ impl From<StateV1> for State {
             last_hash: v.last_hash,
             clients: Default::default(),
             custody: Default::default(),
+            arbitration: Default::default(),
         }
     }
 }

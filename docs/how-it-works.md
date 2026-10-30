@@ -540,13 +540,24 @@ trade never needs a user's or the operator's key. Chat and payment details
 stay off chain, end-to-end encrypted, with only hashes committed.
 
 A **dispute** can be opened from Paid by either party (the buyer after a
-one-hour grace). Up to 32 evidence hashes can be attached. Any member of
-the governance-elected, bonded arbitrator set may `RuleDispute` with
+one-hour grace). Up to 32 evidence hashes can be attached. Who rules is
+decided at the offer: the maker names the bonded arbitrator(s) it trusts
+(`SetOfferArbitrators`, typically its exchange's dispute team), and a taker
+accepts them by taking the offer, the way it accepts the price, the payment
+window and the terms. One name is bound to the trade when it starts; with
+several, the taker picks one (`ChooseArbitrator`) before marking the trade
+paid, and the first named applies if it never does. The list is copied onto
+the trade at start, so changing the offer only affects later trades. Naming
+needs only an arbitrator bond (`min_arbitrator_bond`), not an election, so
+an exchange's dispute team can rule its own users' trades the day it bonds.
+An offer that names nobody falls back to the governance-elected arbitrator
+set, which is also what rules when a bound arbitrator has since unbonded.
+The bound arbitrator (or any fallback member) rules with `RuleDispute`:
 WinsSeller, WinsBuyer or a split; the dispute fee comes from the loser's
-share. There is no marketplace override key. Per-dispute assignment and the
-ruling window are not yet enforced (section 17). On the current testnet the
-arbitrator set is the platform's key; on mainnet it is whoever governance
-elects.
+share. Governance can bar an address from ruling anywhere
+(`BanArbitrator`). There is no marketplace override key. The ruling window
+is not yet enforced and there is no appeal stage (section 17). On the
+current testnet the fallback set is the platform's key.
 
 **KYC tiers** enter the chain only as attestations: an attester address
 set by governance signs `Attest { subject, tier, expires_at }`. The only
@@ -743,8 +754,8 @@ to its operator keys.
 - Observer quorum uses the governance-set count; `observer_quorum_bps` is
   not applied.
 - `deposit_daily_cap_usd_micro` is not enforced.
-- Disputes: no per-dispute arbitrator assignment; `ruling_window_secs`
-  unused; any elected arbitrator may rule.
+- Disputes: `ruling_window_secs` unused; no appeal from a named arbitrator
+  to the elected set.
 - `max_open_orders_per_pair` is applied per owner across pairs.
 - No crypto-collateralized stablecoin path; no on-chain swap/AMM.
 - Vault rotation and observer-set changes are manual governance steps, not

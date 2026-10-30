@@ -18,6 +18,13 @@ Dates are UTC.
 - Chain: clients as fee recipients (`SetClientFee`, retail legs on releases,
   fills and withdrawals), usage prices for custody rails, the epoch buyback
   that turns fee income into KEEL, the `KEEL-KUSD` pair at genesis.
+- Chain: per-offer arbitration (schema 4, `State.arbitration`): an offer
+  names bonded arbitrators (`SetOfferArbitrators`), the taker accepts them by
+  taking it or picks one (`ChooseArbitrator`), the bound arbitrator rules;
+  offers naming nobody keep the elected set; `BanArbitrator` proposal;
+  `arbitration.max_named` param; `arbitrators[]` on offers, `arbitrator` and
+  `arbitrator_candidates[]` on trades, `arbitrators_bonded`/`arbitrators_banned`
+  on `/v1/gov/roles`.
 - Custody: the float swap, `SwapCustody`, moves a balance between a
   client's custody and the network vault against the client's own floats in
   one posting, with no external transaction and both reserve checks

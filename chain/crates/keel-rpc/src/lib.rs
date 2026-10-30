@@ -513,6 +513,12 @@ async fn offers(AxumState(node): AxumState<Node>, Query(q): Query<OfferQuery>) -
                     .as_deref()
                     .is_none_or(|f| field_str(&spec, "fiat_currency") == Some(f))
         })
+        .map(|mut o| {
+            if let Some(id) = o.get("id").and_then(Value::as_u64) {
+                o["arbitrators"] = offer_arbitrators_json(&s, id);
+            }
+            o
+        })
         .collect();
     Json(json!({ "offers": list }))
 }
@@ -524,9 +530,19 @@ async fn offer(
     let state = node.state();
     let s = state.lock().expect("state lock");
     let p2p = to_json(&s.p2p);
-    item_by_id(&p2p, "offers", id)
-        .map(Json)
-        .ok_or_else(|| not_found("offer"))
+    let mut o = item_by_id(&p2p, "offers", id).ok_or_else(|| not_found("offer"))?;
+    o["arbitrators"] = offer_arbitrators_json(&s, id);
+    Ok(Json(o))
+}
+
+/// The arbitrators an offer names (`SetOfferArbitrators`), as hex.
+fn offer_arbitrators_json(s: &keel_vm::State, offer_id: u64) -> Value {
+    json!(s
+        .arbitration
+        .offer_arbitrators
+        .get(&offer_id)
+        .map(|v| v.iter().map(|a| a.to_hex()).collect::<Vec<_>>())
+        .unwrap_or_default())
 }
 
 async fn trade(
@@ -541,6 +557,13 @@ async fn trade(
     if let Some(d) = item_by_id(&disputes, "disputes", id) {
         t["dispute"] = d;
     }
+    t["arbitrator"] = json!(s.arbitration.trade_arbitrator.get(&id).map(|a| a.to_hex()));
+    t["arbitrator_candidates"] = json!(s
+        .arbitration
+        .trade_candidates
+        .get(&id)
+        .map(|v| v.iter().map(|a| a.to_hex()).collect::<Vec<_>>())
+        .unwrap_or_default());
     Ok(Json(t))
 }
 
@@ -1085,6 +1108,15 @@ async fn roles(AxumState(node): AxumState<Node>) -> Json<Value> {
         "observers": hex(&s.staking.observers),
         "observer_threshold": s.staking.observer_threshold,
         "arbitrators": hex(&s.staking.arbitrators),
+        // Eligible to be named in an offer: bonded at least the minimum.
+        "arbitrators_bonded": s
+            .staking
+            .arbitrator_bonds
+            .keys()
+            .filter(|a| keel_vm::modules::arbitration::eligible(&s, a))
+            .map(|a| a.to_hex())
+            .collect::<Vec<_>>(),
+        "arbitrators_banned": hex(&s.arbitration.banned),
         "param_admin": s.gov.param_admin.map(|a| a.to_hex()),
         "house_operator": s.gov_house_operator.map(|a| a.to_hex()),
     }))

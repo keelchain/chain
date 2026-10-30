@@ -94,6 +94,23 @@ what your reconciliation ingests. Rebalance the floats with an ordinary
 `WithdrawCustody` to your own network deposit address, or a `Withdraw` to
 your vault's index-0 address.
 
+## Naming your dispute team
+
+Disputes on your users' trades are ruled by whoever the offer names. Bond
+your dispute team's address as an arbitrator (`Bond { role: Arbitrator }`,
+at least `min_arbitrator_bond`; no election needed), then have every offer
+your site creates name it with `SetOfferArbitrators` (one address binds at
+`StartTrade`; several let the taker choose with `ChooseArbitrator` before
+`MarkPaid`, else the first applies). Takers accept the arbitrator by taking
+the offer, so show it next to the price. When your users take other
+makers' offers, filter on `arbitrators[]` of `GET /v1/offers` to decide
+which arbitrators you accept; an offer that names nobody is ruled by the
+chain's elected set. Your team rules with `RuleDispute` on
+`GET /v1/trades/{id}` whose `arbitrator` is its address; the
+`TradeArbitratorBound` event on `account:<arbitrator>` tells it which trades
+it holds. Governance can ban an arbitrator chain-wide; its bond is what it
+has to lose.
+
 ## Idempotency and reconciliation
 
 Every signed action carries the signer's **nonce**; the chain applies each

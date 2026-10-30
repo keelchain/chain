@@ -397,13 +397,15 @@ fn start_trade(
         },
     );
     state.p2p.open_trades.insert(id, deadline);
-    Ok(vec![Event::TradeStarted {
+    let mut events = vec![Event::TradeStarted {
         trade_id: id,
         offer_id: s.offer_id,
         buyer,
         seller,
         amount: s.amount,
-    }])
+    }];
+    events.extend(super::arbitration::on_trade_started(state, id, s.offer_id));
+    Ok(events)
 }
 
 fn trade_of(state: &State, trade_id: TradeId) -> Result<&Trade, VmError> {
@@ -431,7 +433,9 @@ fn mark_paid(
     let t = state.p2p.trades.get_mut(&trade_id).expect("checked");
     t.status = TradeStatus::Paid;
     t.paid_at = Some(now);
-    Ok(vec![Event::TradePaid { trade_id }])
+    let mut events = vec![Event::TradePaid { trade_id }];
+    events.extend(super::arbitration::on_mark_paid(state, trade_id));
+    Ok(events)
 }
 
 fn release_trade(

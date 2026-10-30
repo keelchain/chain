@@ -316,6 +316,30 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 on_behalf_of: Some(Address::tagged(7)),
             }),
         ),
+        (
+            "set_offer_arbitrators",
+            Action::SetOfferArbitrators {
+                offer_id: 4,
+                arbitrators: vec![Address::tagged(5), Address::tagged(6)],
+            },
+        ),
+        (
+            "choose_arbitrator",
+            Action::ChooseArbitrator {
+                trade_id: 3,
+                arbitrator: Address::tagged(6),
+            },
+        ),
+        (
+            "propose_ban_arbitrator",
+            Action::Propose(Proposal {
+                title: "ban".into(),
+                description: "".into(),
+                kind: ProposalKind::BanArbitrator {
+                    member: Address::tagged(6),
+                },
+            }),
+        ),
     ]
 }
 

@@ -139,7 +139,8 @@ Wallet, the client's site asks the wallet to connect, and every action the
 user takes (an offer, a trade, a release, a withdrawal) is signed by the user
 and visible on the explorer. Funds sit in Keel's network vault, signed by the
 observer set; escrow is a restricted account on chain; disputes are ruled by
-bonded arbitrators.
+the bonded arbitrator the offer names, normally the client's own dispute
+team, or by the governance-elected set when the offer names none.
 
 The client holds operator roles (attester for its KYC tiers, treasury for its
 revenue) and scope-limited session keys so that trading does not need a popup

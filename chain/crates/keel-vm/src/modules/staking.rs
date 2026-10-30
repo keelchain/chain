@@ -603,6 +603,13 @@ pub fn is_arbitrator(state: &State, who: &Address) -> bool {
     state.staking.arbitrators.contains(who)
 }
 
+/// Holds at least the minimum arbitrator bond: what an offer needs to name
+/// an arbitrator (`arbitration`). Membership of the fallback set above is
+/// still governance's decision.
+pub fn has_arbitrator_bond(state: &State, who: &Address) -> bool {
+    current_bond(state, who, Role::Arbitrator) >= state.params.min_arbitrator_bond
+}
+
 /// Current arbitrator set.
 pub fn arbitrators(state: &State) -> Vec<Address> {
     state.staking.arbitrators.iter().copied().collect()

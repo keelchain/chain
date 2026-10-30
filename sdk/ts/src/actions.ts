@@ -69,7 +69,8 @@ export type ProposalKind =
   | { SetBtcCheckpoint: { network: number; height: Amount; header: Bytes; period_start_time: number } }
   | { SetEthCheckpoint: { period: Amount; committee_root: Bytes; next_committee_root: Bytes | null; genesis_validators_root: Bytes; fork_version: Bytes; committee_size: number } }
   | { SetTokenContract: { asset: string; contract: Bytes } }
-  | { SetParamAdmin: { admin: Address | null } };
+  | { SetParamAdmin: { admin: Address | null } }
+  | { BanArbitrator: { member: Address } };
 export interface Proposal { title: string; description: string; kind: ProposalKind }
 
 export type Action =
@@ -122,7 +123,11 @@ export type Action =
   | { RequestCustodyAddress: { chain: Chain; custodian: Address } }
   | { ObserveCustodyDeposit: { custodian: Address; observation: DepositObservation } }
   | { WithdrawCustody: Withdraw }
-  | { SwapCustody: CustodySwap };
+  | { SwapCustody: CustodySwap }
+  /** The offer owner names the bonded arbitrators a taker accepts by taking the offer; empty clears. */
+  | { SetOfferArbitrators: { offer_id: Amount; arbitrators: Address[] } }
+  /** The taker picks one of the offer's named arbitrators before marking the trade paid. */
+  | { ChooseArbitrator: { trade_id: Amount; arbitrator: Address } };
 
 /** Move a balance between a client's custody and the network vault against
  *  the custodian's floats; no coins move on any external chain. */
@@ -150,7 +155,7 @@ const ACTION_VARIANTS = [
   "Vote", "ExecuteProposal", "Attest", "SetParam", "LockBudget", "UnlockBudget", "AuthorizeSessionKey", "RevokeSessionKey",
   "RegisterLightningNode", "ObserveLightningDeposit", "ObserveLightningPayout", "FundLightningPool", "AnnounceLightningSweep",
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
-  "SwapCustody",
+  "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -158,7 +163,7 @@ const VOTES = ["Yes", "No", "Abstain", "Veto"] as const;
 const PROPOSAL_KINDS = [
   "ParamChange", "ListPair", "DelistPair", "RegisterAsset", "TreasurySpend", "SoftwareUpgrade", "SetArbitrators",
   "SetAttesters", "SetObservers", "SetStableBasket", "PauseModule", "Text",
-  "SetBtcCheckpoint", "SetEthCheckpoint", "SetTokenContract", "SetParamAdmin",
+  "SetBtcCheckpoint", "SetEthCheckpoint", "SetTokenContract", "SetParamAdmin", "BanArbitrator",
 ] as const;
 
 export function toBytes(v: string | number[] | Uint8Array): Uint8Array {
@@ -225,6 +230,7 @@ function proposalKind(w: Writer, k: ProposalKind): void {
       w.fixed(toBytes(b.genesis_validators_root), 32); w.fixed(toBytes(b.fork_version), 4); w.u32(b.committee_size); break;
     case "SetTokenContract": w.string(b.asset); w.vecU8(toBytes(b.contract)); break;
     case "SetParamAdmin": if (b.admin == null) w.u8(0); else { w.u8(1); address(w, b.admin); } break;
+    case "BanArbitrator": address(w, b.member); break;
   }
 }
 
@@ -322,6 +328,8 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "WithdrawCustody": w.string(b.asset); w.string(b.to); w.u128(b.amount); break;
     case "SwapCustody":
       w.string(b.asset); w.u128(b.amount); w.u8(b.to === "deposit" ? 0 : 1); w.option(b.on_behalf_of, (a) => address(w, a)); break;
+    case "SetOfferArbitrators": w.u64(b.offer_id); w.vec(b.arbitrators as Address[], (a) => address(w, a)); break;
+    case "ChooseArbitrator": w.u64(b.trade_id); address(w, b.arbitrator); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

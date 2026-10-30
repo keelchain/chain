@@ -104,6 +104,9 @@ pub fn set_param(
     if key.starts_with("clients.") {
         return super::clients::set_param(state, key, value);
     }
+    if key.starts_with("arbitration.") {
+        return super::arbitration::set_param(state, key, value);
+    }
     let mut next = state.params.clone();
     if !next.set(key, value) {
         return Err(VmError::Invalid(format!("cannot set {key}")));
@@ -449,6 +452,9 @@ fn execute_kind(
             until_height,
         } => {
             state.paused.insert(module.clone(), *until_height);
+        }
+        ProposalKind::BanArbitrator { member } => {
+            events.extend(super::arbitration::ban(state, *member));
         }
         ProposalKind::Text => {}
     }

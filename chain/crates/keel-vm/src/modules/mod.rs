@@ -6,6 +6,7 @@
 //! state. On error return before touching module state; `apply.rs` rolls
 //! the ledger back to the savepoint.
 
+pub mod arbitration;
 pub mod attest;
 pub mod budgets;
 pub mod clients;

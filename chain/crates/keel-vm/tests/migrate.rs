@@ -92,11 +92,13 @@ fn schema_zero_fixture_loads() {
 fn legacy_body(schema: u32) -> Vec<u8> {
     let state = genesis_state();
     let full = borsh::to_vec(&state).unwrap();
+    let arbitration = borsh::to_vec(&state.arbitration).unwrap();
     let custody = borsh::to_vec(&state.custody).unwrap();
     let clients = borsh::to_vec(&state.clients).unwrap();
     let cut = match schema {
-        0 | 1 => custody.len() + clients.len(),
-        2 => custody.len(),
+        0 | 1 => custody.len() + clients.len() + arbitration.len(),
+        2 => custody.len() + arbitration.len(),
+        3 => arbitration.len(),
         _ => 0,
     };
     let body = full[..full.len() - cut].to_vec();
