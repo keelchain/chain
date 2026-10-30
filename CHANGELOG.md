@@ -18,6 +18,12 @@ Dates are UTC.
 - Chain: clients as fee recipients (`SetClientFee`, retail legs on releases,
   fills and withdrawals), usage prices for custody rails, the epoch buyback
   that turns fee income into KEEL, the `KEEL-KUSD` pair at genesis.
+- Custody: the float swap, `SwapCustody`, moves a balance between a
+  client's custody and the network vault against the client's own floats in
+  one posting, with no external transaction and both reserve checks
+  untouched, so custodial users trade on the chain's book and escrow;
+  `floats[]` on `/v1/custody/{addr}`, the `CustodySwapped` event, the SDK's
+  `swapCustody`/`custody`, `keel send custody swap`.
 - Custody, client-owned vaults: `RegisterCustodyVault`,
   `RequestCustodyAddress`, `ObserveCustodyDeposit`, `WithdrawCustody`; the
   `custody` and `custody_escrow` account types; per-vault reserve checks and

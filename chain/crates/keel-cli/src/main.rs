@@ -257,6 +257,18 @@ enum CustodyCmd {
         to: String,
         amount: Amount,
     },
+    /// Swap a balance between this custody and the network vault against
+    /// the custodian's floats: `--to deposit` enters the chain's market,
+    /// `--to custody` leaves it. No coins move on any external chain.
+    Swap {
+        asset: String,
+        amount: Amount,
+        #[arg(long)]
+        to: String,
+        /// The custodian signs for one of the accounts in its custody.
+        #[arg(long)]
+        on_behalf_of: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -479,6 +491,21 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 amount,
             })
         }
+        ActionCmd::Custody(CustodyCmd::Swap {
+            asset,
+            amount,
+            to,
+            on_behalf_of,
+        }) => Action::SwapCustody(keel_actions::CustodySwap {
+            asset: Asset::new(asset),
+            amount,
+            to: match to.to_ascii_lowercase().as_str() {
+                "deposit" => keel_actions::SwapSide::Deposit,
+                "custody" => keel_actions::SwapSide::Custody,
+                _ => return Err(anyhow!("--to must be deposit or custody")),
+            },
+            on_behalf_of: on_behalf_of.as_deref().map(parse_addr).transpose()?,
+        }),
         ActionCmd::Gov(GovCmd::Propose {
             title,
             kind,

@@ -3,8 +3,9 @@
 #![allow(clippy::unwrap_used)]
 
 use keel_actions::{
-    Action, Chain, DepositObservation, HouseQuote, OfferSpec, PlaceOrder, Proof, Proposal,
-    ProposalKind, SignedAction, StartTrade, Transfer, Withdraw, CHAIN_ID_DEVNET,
+    Action, Chain, CustodySwap, DepositObservation, HouseQuote, OfferSpec, PlaceOrder, Proof,
+    Proposal, ProposalKind, SignedAction, StartTrade, SwapSide, Transfer, Withdraw,
+    CHAIN_ID_DEVNET,
 };
 use keel_crypto::Keypair;
 use keel_types::{Address, Asset, OrderId, OrderType, Side};
@@ -304,6 +305,15 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 asset: Asset::vault("TRON", "USDT"),
                 to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
                 amount: 1_000_000,
+            }),
+        ),
+        (
+            "swap_custody",
+            Action::SwapCustody(CustodySwap {
+                asset: Asset::new("BTC.BTC"),
+                amount: 25_000_000,
+                to: SwapSide::Deposit,
+                on_behalf_of: Some(Address::tagged(7)),
             }),
         ),
     ]

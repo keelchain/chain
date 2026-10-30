@@ -83,6 +83,17 @@ is the client's reserve versus liabilities per asset; the per-network switch
 applies the same way (enable a network once its custody vault is registered
 and `/v1/ready/{chain}` is green for deposits).
 
+To let a custody balance trade on the chain's book or escrow, swap it
+against your own floats with `SwapCustody` (`to: "deposit"`), and swap it
+back (`to: "custody"`) when the user is done: one posting, no external
+transaction, both reserve checks untouched (`models.md`, "The float
+swap"). Keep a `deposit` float of your own for the way in and a custody
+float (index-0 top-ups) for the way out; `GET /v1/custody/{addr}` reports
+both as `floats[]`, and the `CustodySwapped` event on `account:<addr>` is
+what your reconciliation ingests. Rebalance the floats with an ordinary
+`WithdrawCustody` to your own network deposit address, or a `Withdraw` to
+your vault's index-0 address.
+
 ## Idempotency and reconciliation
 
 Every signed action carries the signer's **nonce**; the chain applies each

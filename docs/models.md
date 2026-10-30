@@ -60,7 +60,42 @@ Custody balances are a separate account type (`custody`), never mixed with
 balances backed by the network vault: a custody balance cannot be traded on
 the chain's order book or withdrawn through the network vault, and an account
 belongs to one custodian. That separation is what makes the per-vault reserve
-check exact.
+check exact. The way across is the float swap below.
+
+### The float swap: custody to the market and back, no coins moving
+
+A custodial client can hold a float on both sides: coins in its own vault
+(its `custody` balance, topped up at index 0) and a `deposit` balance in the
+network vault (its own address from `RequestDepositAddress`). A user's
+balance changes model by swapping against those floats in one ledger
+posting, `SwapCustody { asset, amount, to }`:
+
+```
+to deposit   user custody -X   client custody +X
+             client deposit -X user deposit  +X
+to custody   the four legs reversed
+```
+
+Nothing moves on Bitcoin, Ethereum or Tron. The client's vault still backs
+the same total (the user's custody balance became the client's), and the
+network vault still backs the same total of `deposit` balances, so both
+reserve checks are untouched. Once on the `deposit` side the balance trades
+on the chain's book and escrow with everyone else, wallet users included,
+and comes back the same way. The user signs the swap, or the client signs
+it for an account in its custody (`on_behalf_of`); an attested account that
+never asked for a custody address joins the client's custody by swapping
+into it. The swap is refused while either vault is halted for the asset or
+when the client's float on the far side is short.
+
+The client rebalances its floats only when they drift, with the two paths
+that already exist: `WithdrawCustody` paid to its own network deposit
+address moves custody float into network float; `Withdraw` from its
+`deposit` balance paid to its vault's index-0 address moves it back
+(credited as the client's custody, because index 0 is its own top-up
+address). Two-way user flow nets out, so external transactions shrink to the
+net drift and batch like any payout. `GET /v1/custody/{client}` shows both
+floats per asset. A swap is billed as rails usage like a payout
+(`clients.usage_outbound_keel`).
 
 **What Keel does**
 

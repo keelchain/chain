@@ -695,10 +695,30 @@ async fn custody_client(
         .iter()
         .filter(|(_, c)| **c == custodian)
         .count();
+    // The custodian's two floats per bridged asset: what a float swap
+    // (`SwapCustody`) can draw on in each direction.
+    let floats: Vec<Value> = s
+        .tokens
+        .assets
+        .keys()
+        .filter(|a| a.chain().is_some())
+        .map(|a| {
+            json!({
+                "asset": a.to_string(),
+                "custody": keel_vm::modules::custody::balance(&s, custodian, a).to_string(),
+                "deposit": s
+                    .ledger
+                    .balance(&keel_vm::modules::tokens::deposit_key(custodian, a))
+                    .max(0)
+                    .to_string(),
+            })
+        })
+        .collect();
     Ok(Json(json!({
         "custodian": custodian.to_hex(),
         "vaults": vaults,
         "accounts": accounts,
+        "floats": floats,
     })))
 }
 

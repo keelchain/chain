@@ -258,4 +258,52 @@ d=json.load(sys.stdin)
 print(next((b['balance'] for b in d['balances'] if b['asset']=='BTC.BTC' and b['account_type']=='custody'),0))")
   [[ "$b" == "$USER_AFTER" ]] || fail "node $i disagrees on the user's custody balance ($b vs $USER_AFTER)"
 done
+# ---------------------------------------------------------------- the float swap (docs/models.md)
+# The client's network float is its genesis `deposit` balance (seed 0 is a
+# funded devnet account); its custody float is what is left of its gas.
+SWAP_SATS=$((USER_AFTER / 2)); SELL_SATS=$((SWAP_SATS / 2)); BACK_SATS=$((SWAP_SATS - SELL_SATS))
+CLIENT_DEP_BEFORE=$(balance "$CLIENT" BTC.BTC deposit)
+CUSTODY_BEFORE=$(balance "$CLIENT" BTC.BTC custody)
+(( CLIENT_DEP_BEFORE >= SWAP_SATS )) || fail "the client holds no network float ($CLIENT_DEP_BEFORE sats)"
+say "user swaps $SWAP_SATS sats of custody into a network-backed balance against the client's float"
+"$KEEL" --rpc "$RPC0" send --secret "$USER_SECRET" --wait 30 custody swap BTC.BTC "$SWAP_SATS" --to deposit > "$KEEL_DEVNET_DIR/swap.json"
+grep -q '"CustodySwapped"' "$KEEL_DEVNET_DIR/swap.json" || { cat "$KEEL_DEVNET_DIR/swap.json"; fail "swap to deposit not applied"; }
+[[ "$(balance "$USER" BTC.BTC deposit)" == "$SWAP_SATS" ]] || fail "user deposit balance is not $SWAP_SATS after the swap"
+[[ "$(balance "$USER" BTC.BTC custody)" == $((USER_AFTER - SWAP_SATS)) ]] || fail "user custody balance did not drop by the swap"
+[[ "$(balance "$CLIENT" BTC.BTC custody)" == $((CUSTODY_BEFORE + SWAP_SATS)) ]] || fail "client custody float did not take the swap"
+[[ "$(balance "$CLIENT" BTC.BTC deposit)" == $((CLIENT_DEP_BEFORE - SWAP_SATS)) ]] || fail "client network float did not pay the swap"
+read -r RES LIA HALT <<<"$(reserves)"
+[[ "$RES" == "$LIA" && "$HALT" == False ]] || fail "reserve $RES vs liabilities $LIA halted=$HALT after the swap"
+[[ "$(balance "$SYSTEM" BTC.BTC vault_asset)" == "$NET_RESERVE_BEFORE" ]] || fail "the network reserve moved on a swap"
+curl -sf "$RPC0/v1/custody/$CLIENT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+f=next(x for x in d['floats'] if x['asset']=='BTC.BTC')
+assert int(f['custody'])==$((CUSTODY_BEFORE + SWAP_SATS)) and int(f['deposit'])==$((CLIENT_DEP_BEFORE - SWAP_SATS)), f" || fail "/v1/custody floats disagree with the ledger"
+say "the swapped balance trades on the chain's book: the user sells $SELL_SATS sats, validator 1 buys"
+BUYER_SECRET=${OBS_SECRET[1]}
+"$KEEL" --rpc "$RPC0" send --secret "$USER_SECRET" --wait 30 raw "{\"PlaceOrder\":{\"pair\":\"BTC-KUSD\",\"side\":\"sell\",\"order_type\":\"limit\",\"price\":60000000000,\"quantity\":$SELL_SATS,\"quote_budget\":null,\"client_id\":null}}" > "$KEEL_DEVNET_DIR/sell.json"
+grep -qE '"ok": *true' "$KEEL_DEVNET_DIR/sell.json" || { cat "$KEEL_DEVNET_DIR/sell.json"; fail "sell order refused"; }
+"$KEEL" --rpc "$RPC0" send --secret "$BUYER_SECRET" --wait 30 raw "{\"PlaceOrder\":{\"pair\":\"BTC-KUSD\",\"side\":\"buy\",\"order_type\":\"limit\",\"price\":60010000000,\"quantity\":$SELL_SATS,\"quote_budget\":null,\"client_id\":null}}" > "$KEEL_DEVNET_DIR/buy.json"
+grep -qE '"ok": *true' "$KEEL_DEVNET_DIR/buy.json" || { cat "$KEEL_DEVNET_DIR/buy.json"; fail "buy order refused"; }
+wait_for "the fill to settle" 30 bash -c "[[ \$(balance $USER KUSD deposit) -gt 0 ]]"
+[[ "$(balance "$USER" BTC.BTC deposit)" == "$BACK_SATS" ]] || fail "user deposit balance after the sale is not $BACK_SATS"
+say "the client brings the remaining $BACK_SATS sats back into its own vault on the user's behalf"
+"$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 custody swap BTC.BTC "$BACK_SATS" --to custody --on-behalf-of "$USER" > "$KEEL_DEVNET_DIR/swap-back.json"
+grep -q '"CustodySwapped"' "$KEEL_DEVNET_DIR/swap-back.json" || { cat "$KEEL_DEVNET_DIR/swap-back.json"; fail "swap back not applied"; }
+[[ "$(balance "$USER" BTC.BTC deposit)" == 0 ]] || fail "user still holds a network-backed balance"
+[[ "$(balance "$USER" BTC.BTC custody)" == $((USER_AFTER - SELL_SATS)) ]] || fail "user custody balance after the round trip"
+[[ "$(balance "$CLIENT" BTC.BTC custody)" == $((CUSTODY_BEFORE + SELL_SATS)) ]] || fail "client custody float after the round trip"
+read -r RES LIA HALT <<<"$(reserves)"
+[[ "$RES" == "$LIA" && "$HALT" == False ]] || fail "reserve $RES vs liabilities $LIA halted=$HALT after the round trip"
+[[ "$(balance "$SYSTEM" BTC.BTC vault_asset)" == "$NET_RESERVE_BEFORE" ]] || fail "the network reserve moved on the round trip"
+USER_AFTER=$((USER_AFTER - SELL_SATS))
+for i in 1 2 3; do
+  b=$(curl -sf "http://127.0.0.1:$((RPC_BASE+i))/v1/accounts/$USER" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print(next((b['balance'] for b in d['balances'] if b['asset']=='BTC.BTC' and b['account_type']=='custody'),0))")
+  [[ "$b" == "$USER_AFTER" ]] || fail "node $i disagrees on the user's custody balance after the swaps ($b vs $USER_AFTER)"
+done
+say "float swap: $SWAP_SATS sats to the market, $SELL_SATS sold on BTC-KUSD, $BACK_SATS back into custody; no external transaction, reserve == liabilities == $RES"
 say "PASS: $DEPOSIT_SATS sats credited as custody in the client's vault; $WITHDRAW_SATS sats withdrawn through the client's own signer ($OUT_TXID); fee $FEE sats from the client's gas; reserve == liabilities == $RES; network reserve untouched"

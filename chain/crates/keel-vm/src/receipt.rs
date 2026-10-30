@@ -425,6 +425,15 @@ pub enum Event {
         reserve: Amount,
         liabilities: Amount,
     },
+    /// A balance moved between `owner`'s custody and the network vault
+    /// against `custodian`'s floats; `to` is `deposit` or `custody`.
+    CustodySwapped {
+        custodian: Address,
+        owner: Address,
+        asset: Asset,
+        amount: Amount,
+        to: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

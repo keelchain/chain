@@ -232,7 +232,8 @@ fn apply_one(
         Action::RegisterCustodyVault(_)
         | Action::RequestCustodyAddress { .. }
         | Action::ObserveCustodyDeposit { .. }
-        | Action::WithdrawCustody(_) => custody::apply(state, ctx, signer, &tx_id, action),
+        | Action::WithdrawCustody(_)
+        | Action::SwapCustody(_) => custody::apply(state, ctx, signer, &tx_id, action),
         Action::AuthorizeSessionKey {
             key: k,
             scope,

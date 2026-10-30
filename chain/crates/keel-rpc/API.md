@@ -49,7 +49,7 @@ selected per signer in nonce order.
 | Route | What |
 |---|---|
 | `GET /v1/custody` | every client-owned vault: `custodian`, `chain`, `vault` (key, chain code, epoch), `signer_url`, `address` (index 0), `next_deposit_index`, `deposit_owners`, `reserves[]` (`asset`, `reserve`, `liabilities`, `halted`) |
-| `GET /v1/custody/{addr}` | one client's vaults and reserves, plus the number of accounts in its custody |
+| `GET /v1/custody/{addr}` | one client's vaults and reserves, the number of accounts in its custody, and `floats[]` (`asset`, `custody`, `deposit`: the custodian's balance on each side, what `SwapCustody` can draw on) |
 | `GET /v1/custody/{addr}/{chain}/addresses?from&limit&owner` | deposit addresses of that vault with their owners |
 
 Outbound rows and batches under `/v1/vaults/outbounds` carry `custodian`

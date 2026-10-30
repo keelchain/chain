@@ -147,6 +147,9 @@ pub(crate) fn event_addresses(e: &Event) -> Vec<Address> {
         }
         | Event::CustodyWithdrawalQueued {
             custodian, owner, ..
+        }
+        | Event::CustodySwapped {
+            custodian, owner, ..
         } => vec![*owner, *custodian],
         Event::Delegated {
             owner, validator, ..

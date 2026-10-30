@@ -121,7 +121,19 @@ export type Action =
   | { RegisterCustodyVault: CustodyVaultRegistration }
   | { RequestCustodyAddress: { chain: Chain; custodian: Address } }
   | { ObserveCustodyDeposit: { custodian: Address; observation: DepositObservation } }
-  | { WithdrawCustody: Withdraw };
+  | { WithdrawCustody: Withdraw }
+  | { SwapCustody: CustodySwap };
+
+/** Move a balance between a client's custody and the network vault against
+ *  the custodian's floats; no coins move on any external chain. */
+export interface CustodySwap {
+  asset: string;
+  amount: bigint | number;
+  /** "deposit" enters the chain's market, "custody" leaves it. */
+  to: "deposit" | "custody";
+  /** The custodian signing for one of the accounts in its custody. */
+  on_behalf_of?: Address | null;
+}
 
 export interface CustodyVaultRegistration {
   chain: Chain; epoch: Amount; public_key: number[] | Uint8Array | string; chain_code?: Hash32 | null; signer_url: string;
@@ -138,6 +150,7 @@ const ACTION_VARIANTS = [
   "Vote", "ExecuteProposal", "Attest", "SetParam", "LockBudget", "UnlockBudget", "AuthorizeSessionKey", "RevokeSessionKey",
   "RegisterLightningNode", "ObserveLightningDeposit", "ObserveLightningPayout", "FundLightningPool", "AnnounceLightningSweep",
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
+  "SwapCustody",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -307,6 +320,8 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
       break;
     }
     case "WithdrawCustody": w.string(b.asset); w.string(b.to); w.u128(b.amount); break;
+    case "SwapCustody":
+      w.string(b.asset); w.u128(b.amount); w.u8(b.to === "deposit" ? 0 : 1); w.option(b.on_behalf_of, (a) => address(w, a)); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

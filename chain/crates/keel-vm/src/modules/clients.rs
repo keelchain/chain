@@ -273,7 +273,9 @@ pub fn charge_usage_to(
 ) -> Result<Vec<Event>, VmError> {
     let price = match kind {
         "address" => state.clients.params.usage_address_keel,
-        "outbound" => state.clients.params.usage_outbound_keel,
+        // A float swap is rails usage like a payout, priced the same until
+        // it gets its own knob.
+        "outbound" | "swap" => state.clients.params.usage_outbound_keel,
         _ => 0,
     };
     if price == 0 {

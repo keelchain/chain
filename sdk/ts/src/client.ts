@@ -1,6 +1,6 @@
 // HTTP client for the node's /v1 API (see crates/keel-rpc/API.md).
 import { Keypair, stringifyJson, txId, type SignedAction } from "./sign.ts";
-import type { Action } from "./actions.ts";
+import type { Action, CustodySwap } from "./actions.ts";
 
 export interface Receipt {
   index: number; tx_id: string; signer: string; ok: boolean;
@@ -108,6 +108,12 @@ export class RpcClient {
     const got = await this.depositAddress(chain, key.address);
     if (!got) throw new Error("deposit address not assigned");
     return got;
+  }
+  /** A client's custody vaults, reserves versus liabilities, and its two floats per asset. */
+  custody(custodian: string) { return this.req("GET", `/v1/custody/${custodian}`); }
+  /** Swap between custody and the network vault against the custodian's floats (`SwapCustody`); resolves to the tx id. */
+  swapCustody(key: Keypair, swap: CustodySwap, chainId = 1): Promise<string> {
+    return this.send(key, { SwapCustody: swap }, chainId);
   }
   outbounds(status?: string) { return this.req("GET", `/v1/vaults/outbounds${status ? `?status=${status}` : ""}`); }
   proposals() { return this.req("GET", "/v1/gov/proposals"); }

@@ -12,6 +12,8 @@
 //!   confirmed   owner custody_escrow  -> custodian vault_asset
 //!               custodian custody (native) -> custodian vault_asset  (network fee)
 //!   failed      owner custody_escrow  -> owner custody
+//!   swap        owner custody <-> custodian custody, and
+//!               custodian deposit <-> owner deposit   (no coins move)
 //!
 //! Every custody vault is checked at each block against its own reserve:
 //! reserve(custodian, asset) >= custody balances it backs. A breach halts
@@ -29,7 +31,8 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use keel_actions::{
-    Action, Chain, CustodyVaultRegistration, DepositObservation, OutboundId, Withdraw,
+    Action, Chain, CustodySwap, CustodyVaultRegistration, DepositObservation, OutboundId,
+    SwapSide, Withdraw,
 };
 use keel_attest::{Attestation, Quorum};
 use keel_ledger::{AccountKey, Record, TxType};
@@ -142,6 +145,11 @@ pub fn apply(
             events.extend(clients::charge_usage_to(
                 state, custodian, "outbound", tx_id,
             )?);
+            Ok(events)
+        }
+        Action::SwapCustody(s) => {
+            let (custodian, mut events) = swap(state, signer, tx_id, s)?;
+            events.extend(clients::charge_usage_to(state, custodian, "swap", tx_id)?);
             Ok(events)
         }
         _ => Err(VmError::Invalid("not a custody action".into())),
@@ -483,6 +491,104 @@ fn withdraw(
             asset: w.asset.clone(),
             amount: w.amount,
             to: w.to.clone(),
+        }],
+    ))
+}
+
+/// The float swap (docs/models.md): `owner`'s balance changes which vault
+/// backs it by swapping against the custodian's own balance on the other
+/// side. Four legs in one posting, no external transaction, and both
+/// reserve checks unchanged: the custody vault backs the same total (the
+/// owner's custody balance became the custodian's, or the reverse) and so
+/// does the network vault.
+fn swap(
+    state: &mut State,
+    signer: Address,
+    tx_id: &[u8; 32],
+    s: &CustodySwap,
+) -> Result<(Address, Vec<Event>), VmError> {
+    if s.amount == 0 {
+        return Err(VmError::Invalid("amount must be > 0".into()));
+    }
+    let chain = vaults::chain_of(state, &s.asset)?;
+    // Whose balance moves, and which custodian's floats it moves against.
+    let owner = s.on_behalf_of.unwrap_or(signer);
+    let custodian = match state.custody.custodian_of.get(&owner) {
+        Some(c) => *c,
+        None => match s.to {
+            SwapSide::Custody => clients::client_of(state, &owner)
+                .ok_or_else(|| VmError::Invalid("account is in no client's custody".into()))?,
+            SwapSide::Deposit => {
+                return Err(VmError::Invalid("account holds no custody balance".into()))
+            }
+        },
+    };
+    if owner != signer && signer != custodian {
+        return Err(VmError::Unauthorized);
+    }
+    require_member(state, owner, custodian)?;
+    if state.custody.vault(chain, custodian).is_none() {
+        return Err(VmError::NotFound(format!(
+            "custody vault of {} on {}",
+            custodian.to_hex(),
+            chain.as_str()
+        )));
+    }
+    if state.custody.halted.contains(&(custodian, s.asset.clone())) {
+        return Err(VmError::Paused(format!(
+            "custody of {} (reserve below balances)",
+            s.asset
+        )));
+    }
+    if state.vaults.halted.contains(&s.asset) {
+        return Err(VmError::Paused(format!("network vault for {}", s.asset)));
+    }
+    state.custody.custodian_of.entry(owner).or_insert(custodian);
+    let (from_owner, to_owner, from_cust, to_cust, side) = match s.to {
+        SwapSide::Deposit => (
+            custody_key(owner, &s.asset),
+            tokens::deposit_key(owner, &s.asset),
+            tokens::deposit_key(custodian, &s.asset),
+            custody_key(custodian, &s.asset),
+            "deposit",
+        ),
+        SwapSide::Custody => (
+            tokens::deposit_key(owner, &s.asset),
+            custody_key(owner, &s.asset),
+            custody_key(custodian, &s.asset),
+            tokens::deposit_key(custodian, &s.asset),
+            "custody",
+        ),
+    };
+    if state.ledger.balance(&from_owner) < s.amount as i128 {
+        return Err(VmError::NotEnoughFunds);
+    }
+    if state.ledger.balance(&from_cust) < s.amount as i128 {
+        return Err(VmError::Invalid(format!(
+            "custodian float on the {side} side does not cover {} {}",
+            s.amount, s.asset
+        )));
+    }
+    state.ledger.post(
+        &format!("custody:swap:{}", tokens::hex(tx_id)),
+        TxType::VaultMigrate,
+        None,
+        None,
+        vec![
+            Record::debit(from_owner, s.amount),
+            Record::credit(to_cust, s.amount),
+            Record::debit(from_cust, s.amount),
+            Record::credit(to_owner, s.amount),
+        ],
+    )?;
+    Ok((
+        custodian,
+        vec![Event::CustodySwapped {
+            custodian,
+            owner,
+            asset: s.asset.clone(),
+            amount: s.amount,
+            to: side.to_string(),
         }],
     ))
 }

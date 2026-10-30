@@ -198,6 +198,10 @@ pub enum Action {
     },
     /// Withdraw from a custody balance through the custodian's vault.
     WithdrawCustody(Withdraw),
+    /// Move a balance between a client's custody and the network vault
+    /// against the custodian's own floats, in one ledger posting and with
+    /// no external transaction (docs/models.md, "The float swap").
+    SwapCustody(CustodySwap),
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -314,7 +318,8 @@ impl Action {
             Action::RegisterCustodyVault(_)
             | Action::RequestCustodyAddress { .. }
             | Action::ObserveCustodyDeposit { .. }
-            | Action::WithdrawCustody(_) => "custody",
+            | Action::WithdrawCustody(_)
+            | Action::SwapCustody(_) => "custody",
         }
     }
 }
@@ -547,6 +552,37 @@ pub struct CustodyVaultRegistration {
     /// The client's signing service (`keel-tss serve` or a compatible
     /// `POST /sign`), reachable by the observers that build its batches.
     pub signer_url: String,
+}
+
+/// Which side of the custodian's floats a swap moves the balance to.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum SwapSide {
+    /// `custody` -> `deposit`: the account enters the chain's market, its
+    /// coins now backed by the network vault.
+    Deposit,
+    /// `deposit` -> `custody`: back into the client's own vault.
+    Custody,
+}
+
+/// Swap an account's balance between its custodian's vault and the network
+/// vault. The custodian's own balance on the other side covers it:
+///
+/// ```text
+/// to Deposit   owner custody -X, custodian custody +X,
+///              custodian deposit -X, owner deposit +X
+/// to Custody   the four legs reversed
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct CustodySwap {
+    pub asset: Asset,
+    pub amount: Amount,
+    pub to: SwapSide,
+    /// The custodian may sign for a member account (transparent mode);
+    /// `None` means the signer's own balance moves.
+    pub on_behalf_of: Option<Address>,
 }
 
 // ---------------- staking ----------------
