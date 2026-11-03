@@ -11,7 +11,7 @@ use crate::{
     },
     config::Config,
     deposits::{self, DepositContext, EthScanner},
-    fees, outbound,
+    fees, outbound, rpc,
     rpc::{ChainParams, FallbackKeys, HttpSttRpc, SttRpc, Submitter},
     state::StateFile,
     tss::{self, LocalSigner, TssClient},
@@ -350,7 +350,44 @@ impl Daemon {
         }
         // Client vaults: built and broadcast here, signed by the client's
         // own signer (its `keel-tss serve` or a compatible `POST /sign`).
-        for book in &books.custody {
+        // A vault may have several live generations (books); each batch is
+        // paid from one of them: the generation the chain prefers when it
+        // can fund the batch, else the active one. One key per transaction.
+        let mut seen: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
+        for row in rows
+            .iter()
+            .filter(|r| r.custodian.is_some() && r.status == "Batched")
+        {
+            let (Some(custodian), Some(batch_id)) = (row.custodian, row.batch_id) else {
+                continue;
+            };
+            if !seen.insert(batch_id) {
+                continue;
+            }
+            let batch_rows: Vec<rpc::OutboundRow> = rows
+                .iter()
+                .filter(|r| r.batch_id == Some(batch_id))
+                .cloned()
+                .collect();
+            let gens: Vec<&AddressBook> = books
+                .custody
+                .iter()
+                .filter(|b| b.vault.custodian == Some(custodian) && b.chain == row.chain)
+                .collect();
+            let active = gens.iter().copied().find(|b| b.vault.is_active());
+            let preferred = row
+                .gen
+                .and_then(|g| gens.iter().copied().find(|b| b.vault.gen == g));
+            let mut candidates: Vec<&AddressBook> = Vec::new();
+            for b in [preferred, active].into_iter().flatten() {
+                if !candidates.iter().any(|c| c.vault.gen == b.vault.gen) {
+                    candidates.push(b);
+                }
+            }
+            let Some(book) = self.first_funded(&candidates, &batch_rows).await else {
+                tracing::warn!(batch_id, "no custody generation can pay this batch yet");
+                continue;
+            };
             let Some(url) = book.vault.signer_url.as_deref() else {
                 continue;
             };
@@ -362,28 +399,155 @@ impl Daemon {
                 tss: &signer,
                 cfg: &self.cfg.outbound,
             };
+            let rows = &batch_rows[..];
             let r = match book.chain {
                 Chain::Bitcoin => match (&self.nodes.bitcoin, &self.cfg.bitcoin) {
                     (Some(rpc), Some(cfg)) => {
-                        outbound::process_bitcoin(&ctx, rpc.as_ref(), book, cfg, &rows).await
+                        outbound::process_bitcoin(&ctx, rpc.as_ref(), book, cfg, rows).await
                     }
                     _ => continue,
                 },
                 Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
                     (Some(rpc), Some(cfg)) => {
-                        outbound::process_ethereum(&ctx, rpc.as_ref(), book, cfg, &rows).await
+                        outbound::process_ethereum(&ctx, rpc.as_ref(), book, cfg, rows).await
                     }
                     _ => continue,
                 },
                 Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
                     (Some(api), Some(cfg)) => {
-                        outbound::process_tron(&ctx, api.as_ref(), book, cfg, &rows).await
+                        outbound::process_tron(&ctx, api.as_ref(), book, cfg, rows).await
                     }
                     _ => continue,
                 },
             };
             if let Err(e) = r {
                 tracing::warn!(error = %e, chain = book.chain.as_str(), "custody outbound pass failed");
+            }
+        }
+        Ok(())
+    }
+
+    /// The first candidate generation whose coins cover a batch (its
+    /// preferred one, then the active one); the last candidate when none
+    /// can be checked, so a batch is never silently dropped.
+    async fn first_funded<'a>(
+        &self,
+        candidates: &[&'a AddressBook],
+        rows: &[rpc::OutboundRow],
+    ) -> Option<&'a AddressBook> {
+        let needed: u128 = rows.iter().map(|r| r.amount).sum();
+        for (i, book) in candidates.iter().enumerate() {
+            let last = i + 1 == candidates.len();
+            let have = match book.chain {
+                Chain::Bitcoin => match &self.nodes.bitcoin {
+                    Some(rpc) => btc::list_unspent(rpc.as_ref(), 1)
+                        .await
+                        .ok()
+                        .and_then(|u| btc::vault_utxos(&u, book).ok())
+                        .map(|u| u.iter().map(|x| x.value as u128).sum::<u128>()),
+                    None => None,
+                },
+                Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
+                    (Some(rpc), Some(cfg)) => {
+                        let hot = book.address(cfg.hot_index)?;
+                        let asset = rows.first().map(|r| r.asset.as_str()).unwrap_or("ETH.ETH");
+                        if asset == "ETH.ETH" {
+                            crate::chains::eth::balance(rpc.as_ref(), hot).await.ok()
+                        } else {
+                            let symbol = asset.split_once('.').map(|(_, s)| s).unwrap_or(asset);
+                            match cfg.tokens.iter().find(|t| t.symbol == symbol) {
+                                Some(t) => crate::chains::eth::token_balance(
+                                    rpc.as_ref(),
+                                    &t.contract,
+                                    hot,
+                                )
+                                .await
+                                .ok(),
+                                None => None,
+                            }
+                        }
+                    }
+                    _ => None,
+                },
+                Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
+                    (Some(api), Some(cfg)) => {
+                        let hot = book.address(cfg.hot_index)?;
+                        let asset = rows.first().map(|r| r.asset.as_str()).unwrap_or("TRON.TRX");
+                        match crate::chains::tron::account_balances(api.as_ref(), hot).await {
+                            Ok((trx, trc20)) => {
+                                if asset == "TRON.TRX" {
+                                    Some(trx)
+                                } else {
+                                    let symbol =
+                                        asset.split_once('.').map(|(_, s)| s).unwrap_or(asset);
+                                    cfg.tokens.iter().find(|t| t.symbol == symbol).map(|t| {
+                                        trc20
+                                            .iter()
+                                            .find(|(c, _)| c.eq_ignore_ascii_case(&t.contract))
+                                            .map(|(_, n)| *n)
+                                            .unwrap_or(0)
+                                    })
+                                }
+                            }
+                            Err(_) => None,
+                        }
+                    }
+                    _ => None,
+                },
+            };
+            match have {
+                Some(h) if h >= needed => return Some(book),
+                None if last => return Some(book),
+                _ if last => return Some(book),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Custody moves: sweeps of draining generations, consolidation of
+    /// Ethereum/Tron deposit indexes, empty-generation reports.
+    pub async fn moves_once(&self) -> anyhow::Result<()> {
+        let books = self.books.read().await;
+        for from in &books.custody {
+            let Some(url) = from.vault.signer_url.as_deref() else {
+                continue;
+            };
+            let signer = tss::HttpTss::new(url);
+            let ctx = outbound::OutboundContext {
+                submitter: &self.submitter,
+                state: &self.state,
+                params: &books.params,
+                tss: &signer,
+                cfg: &self.cfg.outbound,
+            };
+            let active = books.custody.iter().find(|b| {
+                b.vault.custodian == from.vault.custodian
+                    && b.chain == from.chain
+                    && b.vault.is_active()
+            });
+            let r = match from.chain {
+                Chain::Bitcoin => match (&self.nodes.bitcoin, &self.cfg.bitcoin) {
+                    (Some(rpc), Some(cfg)) => {
+                        crate::moves::bitcoin(&ctx, rpc.as_ref(), from, active, cfg).await
+                    }
+                    _ => continue,
+                },
+                Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
+                    (Some(rpc), Some(cfg)) => {
+                        crate::moves::ethereum(&ctx, rpc.as_ref(), from, active, cfg).await
+                    }
+                    _ => continue,
+                },
+                Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
+                    (Some(api), Some(cfg)) => {
+                        crate::moves::tron(&ctx, api.as_ref(), from, active, cfg).await
+                    }
+                    _ => continue,
+                },
+            };
+            if let Err(e) = r {
+                tracing::warn!(error = %e, chain = from.chain.as_str(), gen = from.vault.gen, "custody move pass failed");
             }
         }
         Ok(())
@@ -460,6 +624,17 @@ impl Daemon {
                 }
             })
         };
+        let moves = {
+            let d = self.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(iv.moves_secs.max(1))).await;
+                    if let Err(e) = d.moves_once().await {
+                        tracing::warn!(error = %e, "custody moves pass failed");
+                    }
+                }
+            })
+        };
         // Lightning (2026-09-10): register, report settled invoices,
         // pay assigned payouts; plus the invoice API for the marketplace.
         let lightning = {
@@ -509,6 +684,7 @@ impl Daemon {
             r = deposits => r?,
             r = outbound => r?,
             r = fees => r?,
+            r = moves => r?,
             r = lightning => r?,
             _ = tokio::signal::ctrl_c() => tracing::info!("stopping"),
         }

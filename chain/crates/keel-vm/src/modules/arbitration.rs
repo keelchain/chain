@@ -201,7 +201,11 @@ fn bind(state: &mut State, trade_id: TradeId, arbitrator: Address) -> Vec<Event>
 
 /// `StartTrade` hook: copy the offer's list onto the trade and bind when
 /// it names exactly one.
-pub(crate) fn on_trade_started(state: &mut State, trade_id: TradeId, offer_id: OfferId) -> Vec<Event> {
+pub(crate) fn on_trade_started(
+    state: &mut State,
+    trade_id: TradeId,
+    offer_id: OfferId,
+) -> Vec<Event> {
     let Some(list) = state.arbitration.offer_arbitrators.get(&offer_id).cloned() else {
         return Vec::new();
     };

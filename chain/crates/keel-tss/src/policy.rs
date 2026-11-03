@@ -5,7 +5,7 @@
 //! this signer trusts; the check runs on the coordinator before it
 //! announces a session and on every joiner before it takes part.
 
-use keel_chains::policy::{verify, OutboundRef, SignContext};
+use keel_chains::policy::{verify_with_pool, OutboundRef, PoolRef, SignContext};
 use keel_tss::ecdsa::{self, KeyShare};
 use std::time::Duration;
 
@@ -37,15 +37,65 @@ impl Policy {
         let ctx = ctx.ok_or_else(|| {
             "signing request carries no context and a policy is configured".to_string()
         })?;
-        let rows = self.outbounds()?;
-        verify(
+        let rows = if ctx.batch_id().is_some() {
+            self.outbounds()?
+        } else {
+            Vec::new()
+        };
+        let pool = match (ctx.needs_pool(), ctx.custodian()) {
+            (true, Some(c)) => Some(self.pool(c, ctx.chain())?),
+            _ => None,
+        };
+        verify_with_pool(
             ctx,
             digest,
             path,
             &self.vault_pubkey,
             &self.chain_code,
             &rows,
+            pool.as_ref(),
         )
+    }
+
+    /// The custody vault's active generation (`GET /v1/custody/{addr}`):
+    /// the only place a sweep may send. It must be a different key from
+    /// the one this signer holds, or the "sweep" would go nowhere.
+    fn pool(&self, custodian: &str, chain: keel_actions::Chain) -> Result<PoolRef, String> {
+        let body: serde_json::Value = ureq::get(format!("{}/v1/custody/{custodian}", self.rpc))
+            .config()
+            .timeout_global(Some(Duration::from_secs(10)))
+            .build()
+            .call()
+            .map_err(|e| format!("policy rpc: {e}"))?
+            .body_mut()
+            .read_json()
+            .map_err(|e| format!("policy rpc body: {e}"))?;
+        let active = body
+            .get("vaults")
+            .and_then(|v| v.as_array())
+            .and_then(|list| {
+                list.iter().find(|e| {
+                    e.get("chain").and_then(|c| c.as_str()) == Some(chain.as_str())
+                        && e.get("status").and_then(|s| s.as_str()) == Some("Active")
+                })
+            })
+            .ok_or_else(|| "policy rpc: no active generation for that custodian".to_string())?;
+        let hex32 = |v: &serde_json::Value| -> Option<Vec<u8>> {
+            v.as_str().and_then(|s| hex::decode(s).ok())
+        };
+        let pk: [u8; 33] = hex32(&active["vault"]["public_key"])
+            .and_then(|b| b.try_into().ok())
+            .ok_or_else(|| "policy rpc: bad active public key".to_string())?;
+        let cc: [u8; 32] = hex32(&active["vault"]["chain_code"])
+            .and_then(|b| b.try_into().ok())
+            .ok_or_else(|| "policy rpc: bad active chain code".to_string())?;
+        if pk == self.vault_pubkey {
+            return Err("the active generation is this very key; nothing to sweep to".into());
+        }
+        Ok(PoolRef {
+            active_pubkey: pk,
+            active_chain_code: cc,
+        })
     }
 
     fn outbounds(&self) -> Result<Vec<OutboundRef>, String> {

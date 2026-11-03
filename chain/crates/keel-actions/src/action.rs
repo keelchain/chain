@@ -214,6 +214,24 @@ pub enum Action {
         trade_id: TradeId,
         arbitrator: Address,
     },
+    /// A custodial client rotates its vault on a chain to a fresh key of
+    /// its own (docs/models.md): new addresses for every account; the old
+    /// generation keeps crediting and paying out until it is retired.
+    RotateCustodyVault(CustodyRotation),
+    /// Drop a scheduled rotation before its activation height.
+    CancelCustodyRotation {
+        chain: Chain,
+    },
+    /// Observer attests a sweep that moved coins from a draining
+    /// generation of a custody vault to its active one.
+    ObserveCustodySweep(SweepObservation),
+    /// An observer reports a draining generation empty (the quorum retires
+    /// it once its grace is over); the custodian may retire it itself then.
+    RetireCustodyGeneration {
+        chain: Chain,
+        custodian: Address,
+        gen: u64,
+    },
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -284,6 +302,7 @@ impl Action {
                 | Action::FundLightningPool { .. }
                 | Action::AnnounceLightningSweep { .. }
                 | Action::ObserveCustodyDeposit { .. }
+                | Action::ObserveCustodySweep(_)
         )
     }
 
@@ -333,6 +352,10 @@ impl Action {
             | Action::WithdrawCustody(_)
             | Action::SwapCustody(_) => "custody",
             Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
+            Action::RotateCustodyVault(_)
+            | Action::CancelCustodyRotation { .. }
+            | Action::ObserveCustodySweep(_)
+            | Action::RetireCustodyGeneration { .. } => "pools",
         }
     }
 }
@@ -565,6 +588,38 @@ pub struct CustodyVaultRegistration {
     /// The client's signing service (`keel-tss serve` or a compatible
     /// `POST /sign`), reachable by the observers that build its batches.
     pub signer_url: String,
+}
+
+/// A fresh key for a custody vault (`RotateCustodyVault`).
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct CustodyRotation {
+    pub chain: Chain,
+    /// Compressed secp256k1 key of the new generation (33 bytes).
+    pub public_key: Vec<u8>,
+    #[serde(with = "crate::hex32")]
+    pub chain_code: [u8; 32],
+    /// The new key's signer; the old generation's signer keeps serving it.
+    pub signer_url: String,
+    /// Whether the observers move the old coins to the new generation's
+    /// own address. Off, the old pool only drains through payouts and
+    /// nothing ever links the two on the external chain.
+    pub sweep: bool,
+    /// Activate at this height instead of at once.
+    pub activate_at: Option<u64>,
+}
+
+/// A sweep transaction an observer saw confirm (`ObserveCustodySweep`).
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct SweepObservation {
+    pub chain: Chain,
+    pub custodian: Address,
+    pub from_gen: u64,
+    #[serde(with = "crate::hex32")]
+    pub tx_hash: [u8; 32],
+    pub asset: Asset,
+    pub amount: Amount,
+    /// Network fee the transaction paid, in the chain's native asset.
+    pub fee: Amount,
 }
 
 /// Which side of the custodian's floats a swap moves the balance to.

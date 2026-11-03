@@ -95,6 +95,14 @@ pub struct Intervals {
     pub deposits_secs: u64,
     pub outbound_secs: u64,
     pub fees_secs: u64,
+    /// Custody moves: sweeps of draining generations, consolidation of
+    /// Ethereum/Tron deposit indexes, empty-generation reports.
+    #[serde(default = "default_moves_secs")]
+    pub moves_secs: u64,
+}
+
+fn default_moves_secs() -> u64 {
+    60
 }
 
 impl Default for Intervals {
@@ -104,6 +112,7 @@ impl Default for Intervals {
             deposits_secs: 20,
             outbound_secs: 15,
             fees_secs: 300,
+            moves_secs: 60,
         }
     }
 }

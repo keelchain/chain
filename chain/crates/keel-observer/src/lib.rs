@@ -19,6 +19,7 @@ pub mod deposits;
 pub mod events;
 pub mod fees;
 pub mod lightning;
+pub mod moves;
 pub mod outbound;
 pub mod rpc;
 pub mod state;

@@ -325,6 +325,12 @@ mod tests {
             owners: BTreeMap::from([(1, Address::tagged(1)), (2, Address::tagged(2))]),
             custodian: None,
             signer_url: None,
+            gen: 0,
+            status: "Active".into(),
+            sweep: false,
+            drain_until: 0,
+            swept_any: false,
+            pending_sweeps: Vec::new(),
         }
     }
 

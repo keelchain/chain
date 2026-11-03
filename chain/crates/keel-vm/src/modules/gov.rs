@@ -107,6 +107,9 @@ pub fn set_param(
     if key.starts_with("arbitration.") {
         return super::arbitration::set_param(state, key, value);
     }
+    if key.starts_with("pools.") {
+        return super::pools::set_param(state, key, value);
+    }
     let mut next = state.params.clone();
     if !next.set(key, value) {
         return Err(VmError::Invalid(format!("cannot set {key}")));

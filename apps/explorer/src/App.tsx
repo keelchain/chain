@@ -16,6 +16,8 @@ import { OfferPage, OffersPage, TradePage } from './pages/Offers';
 import { TxPage, TxsPage } from './pages/Txs';
 import { ValidatorsPage } from './pages/Validators';
 import { VaultPage, VaultsPage } from './pages/Vaults';
+import { DashboardPage } from './pages/Dashboard';
+import { WalletProvider } from './wallet/WalletContext';
 
 export function makeQueryClient(): QueryClient {
   return new QueryClient({
@@ -38,6 +40,7 @@ function NetworkRoutes({ networks, apiFactory }: { networks: Network[]; apiFacto
   if (!network) return <UnknownNetworkPage id={id} />;
   return (
     <NetworkProvider network={network} networks={networks} api={apiFactory?.(network)}>
+      <WalletProvider>
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
@@ -63,9 +66,12 @@ function NetworkRoutes({ networks, apiFactory }: { networks: Network[]; apiFacto
           <Route path="governance/params" element={<ParamsPage />} />
           <Route path="governance/:id" element={<ProposalPage />} />
           <Route path="search" element={<SearchPage />} />
+          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="dashboard/:tab" element={<DashboardPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
+      </WalletProvider>
     </NetworkProvider>
   );
 }

@@ -146,6 +146,7 @@ impl EventsView {
                         created_height: height,
                         tx_hash: None,
                         custodian: None,
+                        gen: None,
                     },
                 );
             }

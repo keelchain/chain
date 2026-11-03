@@ -366,7 +366,13 @@ fn custody_accounts_belong_to_one_client() {
 
 /// A deposit the observers credited to `owner` in `custodian`'s vault,
 /// without the proof dance: reserve -> custody, liabilities up.
-fn fund_custody(state: &mut State, custodian: Address, owner: Address, asset: &Asset, amount: u128) {
+fn fund_custody(
+    state: &mut State,
+    custodian: Address,
+    owner: Address,
+    asset: &Asset,
+    amount: u128,
+) {
     state
         .ledger
         .post(
@@ -458,7 +464,10 @@ fn swap_between_custody_and_the_market() {
         acct(&c.state, alice.addr(), &btc(), "deposit"),
         alice_dep0 + 60_000_000
     );
-    assert_eq!(acct(&c.state, client, &btc(), "deposit"), client_dep0 - 60_000_000);
+    assert_eq!(
+        acct(&c.state, client, &btc(), "deposit"),
+        client_dep0 - 60_000_000
+    );
     // The custody vault backs the same total; so does the network vault.
     assert_eq!(reserve(&c, client, &btc()), 100_000_000);
     assert_eq!(liabilities(&c, client, &btc()), 100_000_000);
@@ -512,7 +521,10 @@ fn swap_between_custody_and_the_market() {
         acct(&c.state, alice.addr(), &btc(), "deposit"),
         alice_dep0 + 10_000_000
     );
-    assert_eq!(acct(&c.state, client, &btc(), "deposit"), client_dep0 - 40_000_000);
+    assert_eq!(
+        acct(&c.state, client, &btc(), "deposit"),
+        client_dep0 - 40_000_000
+    );
     assert_eq!(reserve(&c, client, &btc()), 100_000_000);
     assert_eq!(liabilities(&c, client, &btc()), 100_000_000);
     assert_eq!(c.state.ledger.system_reserves(&btc()), net_reserve);
@@ -556,10 +568,16 @@ fn swap_into_custody_enrols_an_attested_account() {
     let dep0 = acct(&c.state, alice.addr(), &btc(), "deposit");
     let (r, _) = c.block(&[alice.act(swap(btc(), 10_000_000, SwapSide::Custody, None))]);
     ok(&r[0]);
-    assert_eq!(c.state.custody.custodian_of.get(&alice.addr()), Some(&client));
+    assert_eq!(
+        c.state.custody.custodian_of.get(&alice.addr()),
+        Some(&client)
+    );
     assert_eq!(custody::balance(&c.state, alice.addr(), &btc()), 10_000_000);
     assert_eq!(custody::balance(&c.state, client, &btc()), 40_000_000);
-    assert_eq!(acct(&c.state, alice.addr(), &btc(), "deposit"), dep0 - 10_000_000);
+    assert_eq!(
+        acct(&c.state, alice.addr(), &btc(), "deposit"),
+        dep0 - 10_000_000
+    );
     assert_eq!(reserve(&c, client, &btc()), 50_000_000);
     assert_eq!(liabilities(&c, client, &btc()), 50_000_000);
     // Bob was never attested: still nobody's.

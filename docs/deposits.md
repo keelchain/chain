@@ -37,7 +37,9 @@ Under the hood: the account signs `RequestDepositAddress { chain }`; the chain
 records the next free index for that account and chain; anyone can read the
 address at `/v1/vaults/BTC/addresses?owner=<account>` or
 `/v1/vaults/BTC/addresses/<index>`. One index per account per chain; asking
-again returns the same one.
+again returns the same one. A custodial client's users keep their index
+across the client's vault rotations; only the address derived from it
+changes (`models.md`, "Rotating to a fresh pool").
 
 ## 2. Send coins to it
 

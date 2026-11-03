@@ -387,6 +387,61 @@ pub async fn tx_fee_sats(rpc: &dyn BitcoinRpc, txid_hex: &str) -> anyhow::Result
 }
 
 /// Whether `txid` spends any of the book's own addresses: the vault's own
+/// A confirmed transaction the wallet knows, with each input's previous
+/// output (address, value) and the fee it paid: `gettransaction` for its
+/// block, then `getrawtransaction … 2 <blockhash>`, which works on a pruned
+/// node without a transaction index as long as the block is still there.
+/// `None` while unconfirmed or when the block is gone.
+pub async fn tx_prevouts(
+    rpc: &dyn BitcoinRpc,
+    txid_hex: &str,
+) -> anyhow::Result<Option<(Vec<(String, u64)>, u64)>> {
+    let wtx = match rpc
+        .wallet_call("gettransaction", json!([txid_hex, true]))
+        .await
+    {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let Some(block) = wtx.get("blockhash").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let tx = rpc
+        .call("getrawtransaction", json!([txid_hex, 2, block]))
+        .await?;
+    let Some(vins) = tx.get("vin").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    let mut ins = Vec::with_capacity(vins.len());
+    let mut total_in = 0u64;
+    for vin in vins {
+        let addr = vin
+            .pointer("/prevout/scriptPubKey/address")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let Some(value) = vin
+            .pointer("/prevout/value")
+            .and_then(|v| super::json_amount(v, 8))
+        else {
+            return Ok(None);
+        };
+        total_in += value as u64;
+        ins.push((addr, value as u64));
+    }
+    let total_out: u64 = tx
+        .get("vout")
+        .and_then(Value::as_array)
+        .map(|outs| {
+            outs.iter()
+                .filter_map(|o| super::json_amount(&o["value"], 8))
+                .map(|v| v as u64)
+                .sum()
+        })
+        .unwrap_or(0);
+    Ok(Some((ins, total_in.saturating_sub(total_out))))
+}
+
 /// transaction (a payout's change, a consolidation), not a deposit. Uses
 /// `getrawtransaction … 2`, which carries each input's prevout for blocks
 /// the node still has.

@@ -127,7 +127,35 @@ export type Action =
   /** The offer owner names the bonded arbitrators a taker accepts by taking the offer; empty clears. */
   | { SetOfferArbitrators: { offer_id: Amount; arbitrators: Address[] } }
   /** The taker picks one of the offer's named arbitrators before marking the trade paid. */
-  | { ChooseArbitrator: { trade_id: Amount; arbitrator: Address } };
+  | { ChooseArbitrator: { trade_id: Amount; arbitrator: Address } }
+  /** A custodial client rotates its vault on a chain to a fresh key of its own. */
+  | { RotateCustodyVault: CustodyRotation }
+  | { CancelCustodyRotation: { chain: Chain } }
+  | { ObserveCustodySweep: SweepObservation }
+  | { RetireCustodyGeneration: { chain: Chain; custodian: Address; gen: Amount } };
+
+export interface CustodyRotation {
+  chain: Chain;
+  /** Compressed secp256k1 key of the new generation, 33 bytes hex. */
+  public_key: Bytes;
+  chain_code: Hash32;
+  /** The new key's signer; the old generation's signer keeps serving it. */
+  signer_url: string;
+  /** Move the old coins to the new generation (links the two pools on the external chain). */
+  sweep: boolean;
+  /** Activate at this height instead of at once. */
+  activate_at?: Amount | null;
+}
+
+export interface SweepObservation {
+  chain: Chain;
+  custodian: Address;
+  from_gen: Amount;
+  tx_hash: Hash32;
+  asset: string;
+  amount: Amount;
+  fee: Amount;
+}
 
 /** Move a balance between a client's custody and the network vault against
  *  the custodian's floats; no coins move on any external chain. */
@@ -155,7 +183,8 @@ const ACTION_VARIANTS = [
   "Vote", "ExecuteProposal", "Attest", "SetParam", "LockBudget", "UnlockBudget", "AuthorizeSessionKey", "RevokeSessionKey",
   "RegisterLightningNode", "ObserveLightningDeposit", "ObserveLightningPayout", "FundLightningPool", "AnnounceLightningSweep",
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
-  "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator",
+  "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
+  "ObserveCustodySweep", "RetireCustodyGeneration",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -330,6 +359,14 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
       w.string(b.asset); w.u128(b.amount); w.u8(b.to === "deposit" ? 0 : 1); w.option(b.on_behalf_of, (a) => address(w, a)); break;
     case "SetOfferArbitrators": w.u64(b.offer_id); w.vec(b.arbitrators as Address[], (a) => address(w, a)); break;
     case "ChooseArbitrator": w.u64(b.trade_id); address(w, b.arbitrator); break;
+    case "RotateCustodyVault":
+      unitEnum(w, CHAINS, b.chain); w.vecU8(toBytes(b.public_key)); hash(w, b.chain_code); w.string(b.signer_url);
+      w.bool(b.sweep); w.option(b.activate_at, (h) => w.u64(h)); break;
+    case "CancelCustodyRotation": unitEnum(w, CHAINS, b.chain); break;
+    case "ObserveCustodySweep":
+      unitEnum(w, CHAINS, b.chain); address(w, b.custodian); w.u64(b.from_gen); hash(w, b.tx_hash); w.string(b.asset);
+      w.u128(b.amount); w.u128(b.fee); break;
+    case "RetireCustodyGeneration": unitEnum(w, CHAINS, b.chain); address(w, b.custodian); w.u64(b.gen); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

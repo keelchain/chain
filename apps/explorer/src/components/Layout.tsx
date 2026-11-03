@@ -5,6 +5,7 @@ import { resolveSearch } from '../lib/search';
 import { applyTheme, nextTheme, readTheme, type ThemeChoice } from '../lib/theme';
 import { useHref, useNetwork } from '../network/NetworkContext';
 import { isMockEnabled } from '../network/networks';
+import { ConnectControl } from './Connect';
 
 const NAV: { to: string; label: string }[] = [
   { to: '/blocks', label: 'Blocks' },
@@ -117,6 +118,7 @@ export function Header() {
           <SearchBox />
           <NetworkSwitcher />
           <ThemeToggle />
+          <ConnectControl />
         </div>
       </div>
     </header>

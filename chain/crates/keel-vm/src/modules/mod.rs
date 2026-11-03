@@ -17,6 +17,7 @@ pub mod gov;
 pub mod lightning;
 pub mod markets;
 pub mod p2p;
+pub mod pools;
 pub mod sessions;
 pub mod stable;
 pub mod staking;

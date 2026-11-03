@@ -758,8 +758,9 @@ to its operator keys.
   to the elected set.
 - `max_open_orders_per_pair` is applied per owner across pairs.
 - No crypto-collateralized stablecoin path; no on-chain swap/AMM.
-- Vault rotation and observer-set changes are manual governance steps, not
-  an automatic per-epoch rekey.
+- Network vault rotation and observer-set changes are manual governance
+  steps, not an automatic per-epoch rekey (custody vaults rotate on their
+  own with `RotateCustodyVault`, `docs/models.md`).
 - Validator disk: mainnet needs pruning and BLS certificates before a public
   validator set; a node keeps full journals today.
 - Mainnet items not started: external audits, key ceremony, public

@@ -217,6 +217,10 @@ pub fn router(node: Node) -> Router {
         .route("/v1/custody", get(custody_list))
         .route("/v1/custody/{addr}", get(custody_client))
         .route(
+            "/v1/custody/{addr}/{chain}/addresses/lookup",
+            get(custody_address_lookup),
+        )
+        .route(
             "/v1/custody/{addr}/{chain}/addresses",
             get(custody_addresses),
         )
@@ -631,22 +635,23 @@ async fn vault(
 /// One custody vault in the shape of `/v1/vaults/{chain}` (`vault`,
 /// `next_deposit_index`, `deposit_owners`), plus `custodian` and
 /// `signer_url`, so the observers derive its address book the same way.
-fn custody_entry(
+/// One entry per live generation of a client's vault on a chain: the
+/// active one first (the key `custody.vaults` carries), then the draining
+/// ones the observers keep watching. Every entry carries the whole
+/// deposit-index map, since an index means the same account under every
+/// generation; only the key, and so the addresses, differ.
+fn custody_entries(
     s: &keel_vm::State,
     v: &keel_vm::modules::custody::CustodyVault,
     network: keel_chains::Network,
-) -> Value {
+) -> Vec<Value> {
+    use keel_vm::modules::pools;
     let owners: serde_json::Map<String, Value> = s
         .custody
         .deposit_owner
         .range((v.chain, v.custodian, 0)..=(v.chain, v.custodian, u64::MAX))
         .map(|((_, _, i), a)| (i.to_string(), Value::String(a.to_hex())))
         .collect();
-    let pk: Option<[u8; 33]> = v.public_key.as_slice().try_into().ok();
-    let own_address = match (pk, v.chain_code) {
-        (Some(pk), Some(cc)) => keel_chains::deposit_address(v.chain, network, &pk, &cc, 0).ok(),
-        _ => None,
-    };
     let reserves: Vec<Value> = s
         .custody
         .liabilities
@@ -661,24 +666,81 @@ fn custody_entry(
             })
         })
         .collect();
-    json!({
-        "custodian": v.custodian.to_hex(),
-        "chain": v.chain.as_str(),
-        "vault": {
-            "chain": v.chain.as_str(),
-            "epoch": v.epoch,
-            "public_key": hex::encode(&v.public_key),
-            "chain_code": v.chain_code.map(hex::encode),
-            "signers": Vec::<String>::new(),
-            "threshold": 1,
-            "registered_height": v.registered_height,
-        },
-        "signer_url": v.signer_url,
-        "address": own_address,
-        "next_deposit_index": s.custody.next_deposit_index.get(&(v.chain, v.custodian)).copied().unwrap_or(1),
-        "deposit_owners": owners,
-        "reserves": reserves,
-    })
+    let next = s
+        .custody
+        .next_deposit_index
+        .get(&(v.chain, v.custodian))
+        .copied()
+        .unwrap_or(1);
+    let mut gens = pools::live(s, v.chain, v.custodian);
+    gens.sort_by_key(|g| {
+        (
+            g.status != pools::GenStatus::Active,
+            std::cmp::Reverse(g.gen),
+        )
+    });
+    let pending: Vec<Value> = pools::pending_sweeps(s, v.chain, v.custodian)
+        .into_iter()
+        .map(|(o, votes)| {
+            json!({
+                "from_gen": o.from_gen,
+                "tx_hash": hex::encode(o.tx_hash),
+                "asset": o.asset.to_string(),
+                "amount": o.amount.to_string(),
+                "fee": o.fee.to_string(),
+                "votes": votes,
+            })
+        })
+        .collect();
+    gens.iter()
+        .map(|g| {
+            let pk: Option<[u8; 33]> = g.public_key.as_slice().try_into().ok();
+            let own_address = pk.and_then(|pk| {
+                keel_chains::deposit_address(v.chain, network, &pk, &g.chain_code, 0).ok()
+            });
+            json!({
+                "custodian": v.custodian.to_hex(),
+                "chain": v.chain.as_str(),
+                "gen": g.gen,
+                "status": g.status.as_str(),
+                "sweep": g.sweep,
+                "opened_height": g.opened_height,
+                "drain_until": g.drain_until,
+                "swept": g.swept.iter().map(|(a, n)| json!({"asset": a.to_string(), "amount": n.to_string()})).collect::<Vec<_>>(),
+                "reported_empty": g.reported_empty,
+                "pending_sweeps": pending,
+                "vault": {
+                    "chain": v.chain.as_str(),
+                    "epoch": if g.status == pools::GenStatus::Active { v.epoch } else { g.gen },
+                    "public_key": hex::encode(&g.public_key),
+                    "chain_code": Some(hex::encode(g.chain_code)),
+                    "signers": Vec::<String>::new(),
+                    "threshold": 1,
+                    "registered_height": g.opened_height,
+                },
+                "signer_url": g.signer_url,
+                "address": own_address,
+                "next_deposit_index": next,
+                "deposit_owners": owners,
+                "reserves": reserves,
+            })
+        })
+        .collect()
+}
+
+fn rotation_json(s: &keel_vm::State, chain: keel_actions::Chain, custodian: Address) -> Value {
+    match keel_vm::modules::pools::rotation(s, chain, custodian) {
+        Some(r) => json!({
+            "chain": chain.as_str(),
+            "gen": r.gen,
+            "public_key": hex::encode(&r.public_key),
+            "chain_code": hex::encode(r.chain_code),
+            "signer_url": r.signer_url,
+            "activate_at": r.activate_at,
+            "sweep": r.sweep,
+        }),
+        None => Value::Null,
+    }
 }
 
 /// Every client-owned custody vault (the observers watch all of them).
@@ -690,7 +752,7 @@ async fn custody_list(AxumState(node): AxumState<Node>) -> Json<Value> {
         .custody
         .vaults
         .values()
-        .map(|v| custody_entry(&s, v, network))
+        .flat_map(|v| custody_entries(&s, v, network))
         .collect();
     Json(json!({ "vaults": vaults }))
 }
@@ -710,7 +772,15 @@ async fn custody_client(
         .vaults
         .values()
         .filter(|v| v.custodian == custodian)
-        .map(|v| custody_entry(&s, v, network))
+        .flat_map(|v| custody_entries(&s, v, network))
+        .collect();
+    let rotations: Vec<Value> = s
+        .custody
+        .vaults
+        .values()
+        .filter(|v| v.custodian == custodian)
+        .map(|v| rotation_json(&s, v.chain, custodian))
+        .filter(|r| !r.is_null())
         .collect();
     let accounts = s
         .custody
@@ -740,6 +810,7 @@ async fn custody_client(
     Ok(Json(json!({
         "custodian": custodian.to_hex(),
         "vaults": vaults,
+        "rotations": rotations,
         "accounts": accounts,
         "floats": floats,
     })))
@@ -756,27 +827,30 @@ async fn custody_addresses(
     let network = node.external_network();
     let state = node.state();
     let s = state.lock().expect("state lock");
-    let v = s.custody.vault(chain, custodian).ok_or_else(|| {
+    // The active generation by default, any live one with `?gen=`.
+    let gens = keel_vm::modules::pools::live(&s, chain, custodian);
+    let g = match q.gen {
+        Some(n) => gens.iter().find(|g| g.gen == n),
+        None => gens
+            .iter()
+            .find(|g| g.status == keel_vm::modules::pools::GenStatus::Active),
+    }
+    .ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
-            "no custody vault on this chain",
+            "no custody vault (or no such live generation) on this chain",
         )
     })?;
-    let pk: [u8; 33] = v.public_key.as_slice().try_into().map_err(|_| {
+    let pk: [u8; 33] = g.public_key.as_slice().try_into().map_err(|_| {
         err(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
             "vault key is not usable",
         )
     })?;
-    let cc = v.chain_code.ok_or_else(|| {
-        err(
-            StatusCode::NOT_FOUND,
-            "NOT_FOUND",
-            "vault has no chain code",
-        )
-    })?;
+    let cc = g.chain_code;
+    let gen = g.gen;
     let from = q.from.unwrap_or(0);
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
     let owner = q.owner.as_deref().map(parse_address).transpose()?;
@@ -786,14 +860,49 @@ async fn custody_addresses(
         .range((chain, custodian, from)..=(chain, custodian, u64::MAX))
         .filter(|(_, a)| owner.is_none_or(|o| **a == o))
         .take(limit)
-        .map(|((_, _, i), a)| json!({ "index": i, "owner": a.to_hex(), "address": keel_chains::deposit_address(chain, network, &pk, &cc, *i).ok() }))
+        .map(|((_, _, i), a)| json!({ "index": i, "owner": a.to_hex(), "gen": gen, "address": keel_chains::deposit_address(chain, network, &pk, &cc, *i).ok() }))
         .collect();
     Ok(Json(json!({
         "custodian": custodian.to_hex(),
         "chain": chain.as_str(),
+        "gen": gen,
         "next_deposit_index": s.custody.next_deposit_index.get(&(chain, custodian)).copied().unwrap_or(1),
         "addresses": rows,
     })))
+}
+
+/// Reverse lookup of a custody deposit address across every live
+/// generation of the client's vault on that chain.
+async fn custody_address_lookup(
+    AxumState(node): AxumState<Node>,
+    Path((addr, chain)): Path<(String, String)>,
+    Query(q): Query<LookupQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    let custodian = parse_address(&addr)?;
+    let chain = parse_chain(&chain)?;
+    let network = node.external_network();
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let wanted = q.address.trim();
+    for g in keel_vm::modules::pools::live(&s, chain, custodian) {
+        let Ok(pk) = <[u8; 33]>::try_from(g.public_key.as_slice()) else {
+            continue;
+        };
+        let hit = s
+            .custody
+            .deposit_owner
+            .range((chain, custodian, 0)..=(chain, custodian, u64::MAX))
+            .find_map(|((_, _, i), owner)| {
+                let a = keel_chains::deposit_address(chain, network, &pk, &g.chain_code, *i).ok()?;
+                a.eq_ignore_ascii_case(wanted).then(|| {
+                    json!({ "custodian": custodian.to_hex(), "chain": chain.as_str(), "gen": g.gen, "status": g.status.as_str(), "index": i, "owner": owner.to_hex(), "address": a })
+                })
+            });
+        if let Some(h) = hit {
+            return Ok(Json(h));
+        }
+    }
+    Err(not_found("custody deposit address"))
 }
 
 #[derive(Deserialize)]
@@ -802,6 +911,8 @@ struct FromQuery {
     limit: Option<usize>,
     /// Only this account's deposit indexes (64 hex).
     owner: Option<String>,
+    /// A custody vault's generation (default: the active one).
+    gen: Option<u64>,
 }
 
 /// Deposit indexes of a chain from `from`, with their owners.
@@ -1072,6 +1183,8 @@ async fn outbounds(AxumState(node): AxumState<Node>, Query(q): Query<StatusQuery
         .map(|o| {
             let mut v = outbound_json(o);
             v["custodian"] = json!(s.custody.outbound_vault.get(&o.id).map(Address::to_hex));
+            // The custody generation its batch should be paid from.
+            v["gen"] = json!(o.batch_id.and_then(|b| s.pools.batch_gen.get(&b).copied()));
             v
         })
         .collect();
@@ -1079,7 +1192,7 @@ async fn outbounds(AxumState(node): AxumState<Node>, Query(q): Query<StatusQuery
         .vaults
         .batches
         .values()
-        .map(|b| json!({ "id": b.id, "chain": b.chain.as_str(), "outbound_ids": b.outbound_ids, "created_height": b.created_height, "custodian": s.custody.batch_vault.get(&b.id).map(Address::to_hex) }))
+        .map(|b| json!({ "id": b.id, "chain": b.chain.as_str(), "outbound_ids": b.outbound_ids, "created_height": b.created_height, "custodian": s.custody.batch_vault.get(&b.id).map(Address::to_hex), "gen": s.pools.batch_gen.get(&b.id).copied() }))
         .collect();
     Json(json!({ "outbounds": list, "batches": batches }))
 }

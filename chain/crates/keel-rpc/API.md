@@ -48,9 +48,10 @@ selected per signer in nonce order.
 
 | Route | What |
 |---|---|
-| `GET /v1/custody` | every client-owned vault: `custodian`, `chain`, `vault` (key, chain code, epoch), `signer_url`, `address` (index 0), `next_deposit_index`, `deposit_owners`, `reserves[]` (`asset`, `reserve`, `liabilities`, `halted`) |
-| `GET /v1/custody/{addr}` | one client's vaults and reserves, the number of accounts in its custody, and `floats[]` (`asset`, `custody`, `deposit`: the custodian's balance on each side, what `SwapCustody` can draw on) |
-| `GET /v1/custody/{addr}/{chain}/addresses?from&limit&owner` | deposit addresses of that vault with their owners |
+| `GET /v1/custody` | one entry per **live generation** of every client-owned vault (active first): `custodian`, `chain`, `gen`, `status` (`Active`/`Draining`), `sweep`, `drain_until`, `swept[]`, `pending_sweeps[]` (sweeps reported by one observer that the others verify on their own nodes and vote on: `from_gen`, `tx_hash`, `asset`, `amount`, `fee`, `votes`), `vault` (that generation's key, chain code, epoch), `signer_url`, `address` (its index 0), `next_deposit_index`, `deposit_owners`, `reserves[]` (`asset`, `reserve`, `liabilities`, `halted`) |
+| `GET /v1/custody/{addr}` | one client's live generations and reserves, `rotations[]` pending (`RotateCustodyVault` with `activate_at`), the number of accounts in its custody, and `floats[]` (`asset`, `custody`, `deposit`: the custodian's balance on each side, what `SwapCustody` can draw on) |
+| `GET /v1/custody/{addr}/{chain}/addresses?from&limit&owner&gen` | deposit addresses of that vault with their owners, from the active generation's key (`gen` picks a draining one); rows carry `gen` |
+| `GET /v1/custody/{addr}/{chain}/addresses/lookup?address=` | which index, owner and generation a custody address belongs to, across every live generation |
 
 Outbound rows and batches under `/v1/vaults/outbounds` carry `custodian`
 (null for the network vault).

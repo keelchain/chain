@@ -93,7 +93,12 @@ pub async fn info(State(app): State<App>) -> ApiResult {
     let cfg = faucet(&app)?;
     let key = Keypair::from_secret(cfg.secret);
     let address = key.address().to_hex();
-    let account = app.node.get(&format!("/v1/accounts/{address}")).await.ok().flatten();
+    let account = app
+        .node
+        .get(&format!("/v1/accounts/{address}"))
+        .await
+        .ok()
+        .flatten();
     let balance_of = |asset: &str| -> String {
         account
             .as_ref()
@@ -171,8 +176,9 @@ pub async fn claim(
 ) -> ApiResult {
     let cfg = faucet(&app)?.clone();
     let address = body.address.trim().to_ascii_lowercase();
-    let to = Address::from_hex(&address)
-        .ok_or_else(|| ApiError::bad_request("address must be 64 hex characters (a Keel account address)"))?;
+    let to = Address::from_hex(&address).ok_or_else(|| {
+        ApiError::bad_request("address must be 64 hex characters (a Keel account address)")
+    })?;
     let key = Keypair::from_secret(cfg.secret);
     if to == key.address() {
         return Err(ApiError::bad_request("that is the faucet's own address"));
@@ -232,7 +238,13 @@ pub async fn claim(
             memo: Some("faucet".into()),
         });
         let signed = SignedAction::sign(&key, nonce, chain_id, action);
-        let answer = app.node.post("/v1/actions", &serde_json::to_value(&signed).map_err(|e| ApiError::internal(e.to_string()))?).await?;
+        let answer = app
+            .node
+            .post(
+                "/v1/actions",
+                &serde_json::to_value(&signed).map_err(|e| ApiError::internal(e.to_string()))?,
+            )
+            .await?;
         if answer["admitted"] != true {
             let why = answer["error"].as_str().unwrap_or("refused").to_string();
             tracing::warn!(%why, %asset, "faucet transfer refused");
@@ -254,7 +266,9 @@ pub async fn claim(
         sent.push(json!({ "asset": asset, "amount": coins.to_string(), "tx_id": tx_id, "url": explorer_tx(&cfg, &tx_id) }));
         nonce += 1;
     }
-    Ok(Json(json!({ "address": address, "sent": sent, "next_claim_in_secs": cfg.cooldown_secs })))
+    Ok(Json(
+        json!({ "address": address, "sent": sent, "next_claim_in_secs": cfg.cooldown_secs }),
+    ))
 }
 
 /// A `TIMESTAMPTZ` as RFC 3339 without pulling a date crate into the API.

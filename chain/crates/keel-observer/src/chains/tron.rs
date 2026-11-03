@@ -101,6 +101,36 @@ pub fn parse_block(v: &Value) -> anyhow::Result<NowBlock> {
     })
 }
 
+/// `GET /v1/accounts/{addr}`: TRX balance in sun and TRC-20 balances by
+/// contract (base58), as TronGrid reports them.
+pub async fn account_balances(
+    api: &dyn TronApi,
+    addr: &str,
+) -> anyhow::Result<(u128, std::collections::BTreeMap<String, u128>)> {
+    let v = api.get(&format!("/v1/accounts/{addr}")).await?;
+    let Some(acct) = v
+        .get("data")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first())
+    else {
+        return Ok((0, Default::default()));
+    };
+    let trx = super::json_quantity(&acct["balance"]).unwrap_or(0);
+    let mut tokens = std::collections::BTreeMap::new();
+    if let Some(list) = acct.get("trc20").and_then(Value::as_array) {
+        for entry in list {
+            if let Some(obj) = entry.as_object() {
+                for (contract, amount) in obj {
+                    if let Some(n) = super::json_quantity(amount) {
+                        tokens.insert(contract.clone(), n);
+                    }
+                }
+            }
+        }
+    }
+    Ok((trx, tokens))
+}
+
 pub async fn now_block(api: &dyn TronApi) -> anyhow::Result<NowBlock> {
     parse_block(&api.get("/wallet/getnowblock").await?)
 }
@@ -236,6 +266,22 @@ pub fn parse_tx_info(v: &Value) -> Option<TxInfo> {
         fee_sun: v["fee"].as_u64().unwrap_or(0),
         logs,
     })
+}
+
+/// The transfer a transaction carries, from `/wallet/gettransactionbyid`:
+/// (owner, destination, amount, is_native). `None` when unknown.
+pub async fn transaction_parts(
+    api: &dyn TronApi,
+    txid_hex: &str,
+) -> anyhow::Result<Option<(Vec<u8>, [u8; 21], u128, bool)>> {
+    let v = api
+        .post("/wallet/gettransactionbyid", json!({ "value": txid_hex }))
+        .await?;
+    let Some(raw_hex) = v.get("raw_data_hex").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let raw = hex::decode(raw_hex)?;
+    Ok(keel_chains::policy::tron_transfer_from_bytes(&raw).ok())
 }
 
 pub async fn tx_info(api: &dyn TronApi, txid_hex: &str) -> anyhow::Result<Option<TxInfo>> {

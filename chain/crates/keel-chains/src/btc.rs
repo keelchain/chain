@@ -54,6 +54,42 @@ pub(crate) fn p2wpkh_script(pubkey: &[u8; 33]) -> Result<ScriptBuf, Error> {
     Ok(ScriptBuf::new_p2wpkh(&pk.wpubkey_hash()))
 }
 
+/// Build a sweep: every coin in `utxos` to one output at `to`, the fee
+/// taken from the total. One output, no change, so a signer can tell it
+/// from a payout (`policy::SignContext::BtcSweep`).
+pub fn build_sweep(
+    utxos: &[Utxo],
+    to: &str,
+    fee_rate_sat_vb: u64,
+    network: crate::Network,
+) -> Result<UnsignedBtc, Error> {
+    if utxos.is_empty() {
+        return Err(Error::Tx("nothing to sweep".into()));
+    }
+    let total: u64 = utxos.iter().map(|u| u.value).sum();
+    let fee = (VB_BASE + VB_INPUT * utxos.len() as u64 + VB_OUTPUT) * fee_rate_sat_vb;
+    let out = total
+        .checked_sub(fee)
+        .filter(|o| *o >= DUST)
+        .ok_or(Error::InsufficientFunds {
+            need: fee + DUST,
+            have: total,
+        })?;
+    let unsigned = build_batch(
+        utxos,
+        &[(to.to_string(), out)],
+        to,
+        fee_rate_sat_vb,
+        network,
+    )?;
+    if unsigned.tx.output.len() != 1 || unsigned.selected.len() != utxos.len() {
+        return Err(Error::Tx(
+            "sweep did not select every coin into one output".into(),
+        ));
+    }
+    Ok(unsigned)
+}
+
 /// Build a batch payout. Coin selection is largest-first; change below dust
 /// is folded into the fee.
 pub fn build_batch(

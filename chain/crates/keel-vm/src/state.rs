@@ -54,6 +54,8 @@ pub struct State {
     pub custody: custody::CustodyState,
     /// Per-offer arbitration: named arbitrators, bindings, bans (schema 4).
     pub arbitration: arbitration::ArbitrationState,
+    /// Custody vault generations and rotations (schema 5).
+    pub pools: pools::PoolsState,
 }
 
 impl State {

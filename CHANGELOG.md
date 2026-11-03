@@ -18,6 +18,26 @@ Dates are UTC.
 - Chain: clients as fee recipients (`SetClientFee`, retail legs on releases,
   fills and withdrawals), usage prices for custody rails, the epoch buyback
   that turns fee income into KEEL, the `KEEL-KUSD` pair at genesis.
+- Custody: fresh-pool rotation (schema 5, `State.pools`): `RotateCustodyVault`
+  opens a new generation of a client's vault with a key of its own, the old
+  one drains (watched, credited, paying payouts one key per transaction)
+  until its grace is over and the observers report it empty; `sweep` moves
+  the old coins to the new key (`ObserveCustodySweep`, fee charged to the
+  client) or leaves the pools unlinked; `CancelCustodyRotation`,
+  `RetireCustodyGeneration`; `pools.grace_blocks`, `pools.usage_rotation_keel`;
+  `/v1/custody` lists live generations, `?gen=` and `addresses/lookup`;
+  `gen` on batches. Registering over an existing vault is refused.
+- Observer: one address book per live custody generation, batches paid
+  from the generation the chain prefers with fallback to the active key,
+  sweeps on Bitcoin, Ethereum and Tron, Ethereum/Tron consolidation of
+  deposit indexes into the hot address with gas funding, empty-generation
+  reports; a sweep one observer broadcast is verified by every other
+  observer on its own node (the chain lists the observations collecting
+  votes) so the quorum is reached on every chain; `intervals.moves_secs`.
+  Signer policy: `BtcSweep`, `EthSweep`,
+  `EthConsolidate`, `EthGasFund`, `TronSweep`, `TronConsolidate`,
+  `TronGasFund` contexts; a sweep may only pay the active generation's own
+  address (`keel-tss` fetches it from the node).
 - Chain: per-offer arbitration (schema 4, `State.arbitration`): an offer
   names bonded arbitrators (`SetOfferArbitrators`), the taker accepts them by
   taking it or picks one (`ChooseArbitrator`), the bound arbitrator rules;

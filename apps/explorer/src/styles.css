@@ -959,3 +959,69 @@ pre.json {
     padding: 2px 12px 8px;
   }
 }
+
+/* ---- dashboard + wallet (header Connect control) ---- */
+.wallet-menu {
+  position: relative;
+}
+.wallet-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  z-index: 20;
+}
+.wallet-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 4px;
+}
+.dashboard {
+  display: grid;
+  gap: 14px;
+}
+.form {
+  display: grid;
+  gap: 10px;
+  max-width: 640px;
+}
+.field {
+  display: grid;
+  gap: 4px;
+}
+.field-label {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.input {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 7px 9px;
+  min-width: 0;
+}
+.input:focus {
+  outline: 2px solid var(--accent-bg);
+  border-color: var(--accent);
+}
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+.receipt {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}

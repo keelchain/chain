@@ -223,6 +223,24 @@ pub struct ReceiptStatus {
     pub fee_paid: u128,
 }
 
+/// A transaction by hash: (from, to, value), `None` when unknown.
+pub async fn transaction_by_hash(
+    rpc: &dyn EthRpc,
+    tx_hash: &str,
+) -> anyhow::Result<Option<([u8; 20], [u8; 20], u128, Vec<u8>)>> {
+    let v = rpc
+        .call("eth_getTransactionByHash", json!([tx_hash]))
+        .await?;
+    if v.is_null() {
+        return Ok(None);
+    }
+    let from = json_hex20(&v["from"]).ok_or_else(|| anyhow::anyhow!("tx.from"))?;
+    let to = json_hex20(&v["to"]).ok_or_else(|| anyhow::anyhow!("tx.to"))?;
+    let value = json_quantity(&v["value"]).unwrap_or(0);
+    let input = json_hex(&v["input"]).unwrap_or_default();
+    Ok(Some((from, to, value, input)))
+}
+
 /// `eth_getTransactionReceipt`: `None` while pending.
 pub async fn receipt_status(
     rpc: &dyn EthRpc,
@@ -1003,6 +1021,12 @@ mod tests {
             owners: BTreeMap::new(),
             custodian: None,
             signer_url: None,
+            gen: 0,
+            status: "Active".into(),
+            sweep: false,
+            drain_until: 0,
+            swept_any: false,
+            pending_sweeps: Vec::new(),
         };
         let book = AddressBook::build(vault, keel_chains::Network::Regtest).unwrap();
         let expect_topic =

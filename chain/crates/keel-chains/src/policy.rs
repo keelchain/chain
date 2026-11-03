@@ -64,23 +64,141 @@ pub enum SignContext {
         /// `raw_data` protobuf, hex.
         raw_data: String,
     },
+    /// A sweep of a draining custody generation (this key) to the active
+    /// generation's own address (the `PoolRef` the signer fetches from the
+    /// chain): one input of this key, one output, nothing else.
+    BtcSweep {
+        custodian: String,
+        from_gen: u64,
+        raw_tx: String,
+        input: u32,
+        prevout_value: u64,
+        prevout_pubkey: String,
+        network: Network,
+    },
+    /// Native or ERC-20 transfer from this key to the active generation's
+    /// hot address.
+    EthSweep {
+        custodian: String,
+        from_gen: u64,
+        chain_id: u64,
+        nonce: u64,
+        max_priority_fee_per_gas: u128,
+        max_fee_per_gas: u128,
+        gas_limit: u64,
+        to: String,
+        value: u128,
+        data: String,
+    },
+    /// Consolidation of a deposit index into a hot address: this key's own
+    /// index 0, or the active generation's when `sweep`.
+    EthConsolidate {
+        custodian: String,
+        index: u64,
+        sweep: bool,
+        chain_id: u64,
+        nonce: u64,
+        max_priority_fee_per_gas: u128,
+        max_fee_per_gas: u128,
+        gas_limit: u64,
+        to: String,
+        value: u128,
+        data: String,
+    },
+    /// Native gas sent from this key's hot address to one of its deposit
+    /// indexes so that index can be consolidated; capped.
+    EthGasFund {
+        custodian: String,
+        index: u64,
+        chain_id: u64,
+        nonce: u64,
+        max_priority_fee_per_gas: u128,
+        max_fee_per_gas: u128,
+        gas_limit: u64,
+        to: String,
+        value: u128,
+    },
+    TronSweep {
+        custodian: String,
+        from_gen: u64,
+        raw_data: String,
+    },
+    TronConsolidate {
+        custodian: String,
+        index: u64,
+        sweep: bool,
+        raw_data: String,
+    },
+    TronGasFund {
+        custodian: String,
+        index: u64,
+        raw_data: String,
+    },
 }
 
+/// The active generation of a custody vault, as the signer fetches it from
+/// the chain (`GET /v1/custody/{custodian}`): where a sweep may send.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PoolRef {
+    pub active_pubkey: [u8; 33],
+    pub active_chain_code: [u8; 32],
+}
+
+/// Most native value one gas-funding transfer may carry.
+pub const ETH_GAS_FUND_CAP_WEI: u128 = 10_000_000_000_000_000; // 0.01 ETH
+pub const TRON_GAS_FUND_CAP_SUN: u128 = 50_000_000; // 50 TRX
+
 impl SignContext {
-    pub fn batch_id(&self) -> u64 {
+    /// The batch a payout context pays; `None` for sweeps, consolidations
+    /// and gas funding, which pay no outbound row.
+    pub fn batch_id(&self) -> Option<u64> {
         match self {
             SignContext::Btc { batch_id, .. }
             | SignContext::Eth { batch_id, .. }
-            | SignContext::Tron { batch_id, .. } => *batch_id,
+            | SignContext::Tron { batch_id, .. } => Some(*batch_id),
+            _ => None,
         }
     }
 
     pub fn chain(&self) -> Chain {
         match self {
-            SignContext::Btc { .. } => Chain::Bitcoin,
-            SignContext::Eth { .. } => Chain::Ethereum,
-            SignContext::Tron { .. } => Chain::Tron,
+            SignContext::Btc { .. } | SignContext::BtcSweep { .. } => Chain::Bitcoin,
+            SignContext::Eth { .. }
+            | SignContext::EthSweep { .. }
+            | SignContext::EthConsolidate { .. }
+            | SignContext::EthGasFund { .. } => Chain::Ethereum,
+            SignContext::Tron { .. }
+            | SignContext::TronSweep { .. }
+            | SignContext::TronConsolidate { .. }
+            | SignContext::TronGasFund { .. } => Chain::Tron,
         }
+    }
+
+    /// The custody vault a sweep / consolidation / gas-fund context is for.
+    pub fn custodian(&self) -> Option<&str> {
+        match self {
+            SignContext::BtcSweep { custodian, .. }
+            | SignContext::EthSweep { custodian, .. }
+            | SignContext::EthConsolidate { custodian, .. }
+            | SignContext::EthGasFund { custodian, .. }
+            | SignContext::TronSweep { custodian, .. }
+            | SignContext::TronConsolidate { custodian, .. }
+            | SignContext::TronGasFund { custodian, .. } => Some(custodian),
+            _ => None,
+        }
+    }
+
+    /// Whether the destination is the *active* generation of the pool
+    /// (a sweep, or a consolidation with `sweep`), which needs a `PoolRef`.
+    pub fn needs_pool(&self) -> bool {
+        matches!(
+            self,
+            SignContext::BtcSweep { .. }
+                | SignContext::EthSweep { .. }
+                | SignContext::TronSweep { .. }
+                | SignContext::EthConsolidate { sweep: true, .. }
+                | SignContext::TronConsolidate { sweep: true, .. }
+        )
     }
 }
 
@@ -99,14 +217,15 @@ fn open_rows<'a>(
     rows: &'a [OutboundRef],
     ctx: &SignContext,
 ) -> Result<Vec<&'a OutboundRef>, String> {
+    let batch = ctx.batch_id().ok_or("not a payout context")?;
     let list: Vec<&OutboundRef> = rows
         .iter()
-        .filter(|r| r.chain == ctx.chain() && r.batch_id == Some(ctx.batch_id()))
+        .filter(|r| r.chain == ctx.chain() && r.batch_id == Some(batch))
         .collect();
     if list.is_empty() {
         return Err(format!(
             "batch {} has no outbound on {}",
-            ctx.batch_id(),
+            batch,
             ctx.chain().as_str()
         ));
     }
@@ -122,6 +241,7 @@ fn open_rows<'a>(
 /// Check that signing `digest` with the vault child at `path` is exactly
 /// what `ctx` describes, and that the transaction pays open outbounds of
 /// its batch. `rows` is the node's outbound list (any chain, any batch).
+/// Sweeps and consolidations need [`verify_with_pool`].
 pub fn verify(
     ctx: &SignContext,
     digest: &[u8; 32],
@@ -130,7 +250,338 @@ pub fn verify(
     chain_code: &[u8; 32],
     rows: &[OutboundRef],
 ) -> Result<(), String> {
+    verify_with_pool(ctx, digest, path, vault_pubkey, chain_code, rows, None)
+}
+
+/// [`verify`] plus the custody-vault moves: a sweep to the pool's active
+/// generation (`pool`), a consolidation into a hot address, gas funding of
+/// a deposit index. Those pay no outbound row; what they may pay is fixed
+/// by the keys instead.
+pub fn verify_with_pool(
+    ctx: &SignContext,
+    digest: &[u8; 32],
+    path: &[u32],
+    vault_pubkey: &[u8; 33],
+    chain_code: &[u8; 32],
+    rows: &[OutboundRef],
+    pool: Option<&PoolRef>,
+) -> Result<(), String> {
+    if ctx.batch_id().is_some() {
+        return verify_batch(ctx, digest, path, vault_pubkey, chain_code, rows);
+    }
+    if ctx.needs_pool() && pool.is_none() {
+        return Err("sweep needs the pool's active generation".into());
+    }
+    let key = hd::child_pubkey(vault_pubkey, chain_code, path)
+        .map_err(|e| format!("signing path: {e}"))?
+        .public_key;
+    let own_hot = hd::child_pubkey(vault_pubkey, chain_code, &hd::deposit_path(ctx.chain(), 0))
+        .map_err(|e| e.to_string())?
+        .public_key;
+    let active_hot = |p: &PoolRef| -> Result<[u8; 33], String> {
+        Ok(hd::child_pubkey(
+            &p.active_pubkey,
+            &p.active_chain_code,
+            &hd::deposit_path(ctx.chain(), 0),
+        )
+        .map_err(|e| e.to_string())?
+        .public_key)
+    };
+    match ctx {
+        SignContext::BtcSweep {
+            raw_tx,
+            input,
+            prevout_value,
+            prevout_pubkey,
+            ..
+        } => {
+            let prev: [u8; 33] = hex::decode(prevout_pubkey)
+                .map_err(|e| format!("prevout pubkey: {e}"))?
+                .try_into()
+                .map_err(|_| "prevout pubkey: not 33 bytes".to_string())?;
+            if prev != key {
+                return Err("the signing path does not derive the spent output's key".into());
+            }
+            let raw = hex::decode(raw_tx).map_err(|e| format!("raw tx: {e}"))?;
+            let tx: Transaction =
+                consensus::deserialize(&raw).map_err(|e| format!("raw tx: {e}"))?;
+            let i = *input as usize;
+            if i >= tx.input.len() {
+                return Err(format!(
+                    "input {i} out of range ({} inputs)",
+                    tx.input.len()
+                ));
+            }
+            let spk = btc::p2wpkh_script(&prev).map_err(|e| e.to_string())?;
+            let want = SighashCache::new(&tx)
+                .p2wpkh_signature_hash(
+                    i,
+                    &spk,
+                    Amount::from_sat(*prevout_value),
+                    EcdsaSighashType::All,
+                )
+                .map_err(|e| e.to_string())?
+                .to_byte_array();
+            if want != *digest {
+                return Err("digest is not the sighash of the described input".into());
+            }
+            let dest = btc::p2wpkh_script(&active_hot(pool.ok_or("no pool")?)?)
+                .map_err(|e| e.to_string())?;
+            if tx.output.len() != 1 || tx.output[0].script_pubkey != dest {
+                return Err(
+                    "a sweep pays exactly one output: the active generation's own address".into(),
+                );
+            }
+            Ok(())
+        }
+        SignContext::EthSweep {
+            chain_id,
+            nonce,
+            max_priority_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to,
+            value,
+            data,
+            ..
+        }
+        | SignContext::EthConsolidate {
+            chain_id,
+            nonce,
+            max_priority_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to,
+            value,
+            data,
+            ..
+        } => {
+            let (dest, _amount) = eth_tx_destination(
+                digest,
+                *chain_id,
+                *nonce,
+                *max_priority_fee_per_gas,
+                *max_fee_per_gas,
+                *gas_limit,
+                to,
+                *value,
+                data,
+            )?;
+            let expected = if ctx.needs_pool() {
+                active_hot(pool.ok_or("no pool")?)?
+            } else {
+                own_hot
+            };
+            let expected =
+                address::eth_decode(&address::eth_address(&expected).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            if dest != expected {
+                return Err("destination is not the hot address this move may pay".into());
+            }
+            Ok(())
+        }
+        SignContext::EthGasFund {
+            index,
+            chain_id,
+            nonce,
+            max_priority_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to,
+            value,
+            ..
+        } => {
+            if key != own_hot {
+                return Err("gas is funded from the hot address only".into());
+            }
+            if *value > ETH_GAS_FUND_CAP_WEI {
+                return Err("gas funding above the cap".into());
+            }
+            let (dest, _) = eth_tx_destination(
+                digest,
+                *chain_id,
+                *nonce,
+                *max_priority_fee_per_gas,
+                *max_fee_per_gas,
+                *gas_limit,
+                to,
+                *value,
+                "",
+            )?;
+            let child = hd::child_pubkey(
+                vault_pubkey,
+                chain_code,
+                &hd::deposit_path(Chain::Ethereum, *index),
+            )
+            .map_err(|e| e.to_string())?
+            .public_key;
+            let expected =
+                address::eth_decode(&address::eth_address(&child).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            if dest != expected {
+                return Err("gas funding may only pay this key's own deposit index".into());
+            }
+            Ok(())
+        }
+        SignContext::TronSweep { raw_data, .. }
+        | SignContext::TronConsolidate { raw_data, .. }
+        | SignContext::TronGasFund { raw_data, .. } => {
+            let (owner, dest, amount, native) = tron_tx_parts(digest, raw_data)?;
+            let owner_want =
+                address::tron_decode(&address::tron_address(&key).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            if owner.as_slice() != owner_want {
+                return Err("the signing path does not derive the transaction's owner".into());
+            }
+            let expected_key = match ctx {
+                SignContext::TronGasFund { index, .. } => {
+                    if key != own_hot {
+                        return Err("gas is funded from the hot address only".into());
+                    }
+                    if !native || amount > TRON_GAS_FUND_CAP_SUN {
+                        return Err("gas funding must be a capped TRX transfer".into());
+                    }
+                    hd::child_pubkey(
+                        vault_pubkey,
+                        chain_code,
+                        &hd::deposit_path(Chain::Tron, *index),
+                    )
+                    .map_err(|e| e.to_string())?
+                    .public_key
+                }
+                _ if ctx.needs_pool() => active_hot(pool.ok_or("no pool")?)?,
+                _ => own_hot,
+            };
+            let expected = address::tron_decode(
+                &address::tron_address(&expected_key).map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+            if dest != expected {
+                return Err("destination is not the address this move may pay".into());
+            }
+            Ok(())
+        }
+        _ => Err("unexpected context".into()),
+    }
+}
+
+/// Check an EIP-1559 description against `digest` and return the
+/// transfer's (recipient, amount): the `to` of a native transfer or the
+/// recipient inside an ERC-20 `transfer`.
+#[allow(clippy::too_many_arguments)]
+fn eth_tx_destination(
+    digest: &[u8; 32],
+    chain_id: u64,
+    nonce: u64,
+    max_priority_fee_per_gas: u128,
+    max_fee_per_gas: u128,
+    gas_limit: u64,
+    to: &str,
+    value: u128,
+    data: &str,
+) -> Result<([u8; 20], u128), String> {
+    let to20 = address::eth_decode(to).map_err(|e| format!("to: {e}"))?;
+    let data = hex::decode(data.trim_start_matches("0x")).map_err(|e| format!("data: {e}"))?;
+    let tx = Eip1559Tx {
+        chain_id,
+        nonce,
+        max_priority_fee_per_gas,
+        max_fee_per_gas,
+        gas_limit,
+        to: to20,
+        value,
+        data: data.clone(),
+    };
+    if tx.signing_hash() != *digest {
+        return Err("digest is not the signing hash of the described transaction".into());
+    }
+    if data.is_empty() {
+        Ok((to20, value))
+    } else {
+        if value != 0 {
+            return Err("token transfer with a native value".into());
+        }
+        parse_erc20_transfer(&data)
+    }
+}
+
+/// Check a Tron raw transaction against `digest` and return
+/// (owner, destination, amount, is_native).
+fn tron_tx_parts(
+    digest: &[u8; 32],
+    raw_data: &str,
+) -> Result<(Vec<u8>, [u8; 21], u128, bool), String> {
+    let raw = hex::decode(raw_data).map_err(|e| format!("raw data: {e}"))?;
+    let want: [u8; 32] = sha2::Sha256::digest_bytes(&raw);
+    if want != *digest {
+        return Err("digest is not the id of the described transaction".into());
+    }
+    let decoded = tron::Raw::decode(raw.as_slice()).map_err(|e| format!("raw data: {e}"))?;
+    if decoded.encode_to_vec() != raw {
+        return Err("raw data is not canonically encoded".into());
+    }
+    tron_transfer_parts(&decoded)
+}
+
+/// [`tron_transfer_parts`] of raw `raw_data` bytes.
+pub fn tron_transfer_from_bytes(raw: &[u8]) -> Result<(Vec<u8>, [u8; 21], u128, bool), String> {
+    let decoded = tron::Raw::decode(raw).map_err(|e| format!("raw data: {e}"))?;
+    tron_transfer_parts(&decoded)
+}
+
+/// The single transfer a Tron raw transaction carries: (owner,
+/// destination, amount, is_native); a TRC-20 `transfer` call is unpacked.
+pub fn tron_transfer_parts(decoded: &tron::Raw) -> Result<(Vec<u8>, [u8; 21], u128, bool), String> {
+    let contract = decoded
+        .contract
+        .first()
+        .ok_or("transaction has no contract")?;
+    if decoded.contract.len() != 1 {
+        return Err("transaction has more than one contract".into());
+    }
+    let param = contract
+        .parameter
+        .as_ref()
+        .ok_or("contract has no parameter")?;
+    match contract.r#type {
+        tron::CONTRACT_TYPE_TRANSFER => {
+            let c = tron::TransferContract::decode(param.value.as_slice())
+                .map_err(|e| e.to_string())?;
+            let dest: [u8; 21] = c
+                .to_address
+                .clone()
+                .try_into()
+                .map_err(|_| "to address is not 21 bytes".to_string())?;
+            if c.amount < 0 {
+                return Err("negative amount".into());
+            }
+            Ok((c.owner_address.clone(), dest, c.amount as u128, true))
+        }
+        tron::CONTRACT_TYPE_TRIGGER => {
+            let c = tron::TriggerSmartContract::decode(param.value.as_slice())
+                .map_err(|e| e.to_string())?;
+            if c.call_value != 0 {
+                return Err("token transfer with a native value".into());
+            }
+            let (to20, amount) = parse_erc20_transfer(&c.data)?;
+            let mut dest = [0x41u8; 21];
+            dest[1..].copy_from_slice(&to20);
+            Ok((c.owner_address.clone(), dest, amount, false))
+        }
+        other => Err(format!("unsupported contract type {other}")),
+    }
+}
+
+fn verify_batch(
+    ctx: &SignContext,
+    digest: &[u8; 32],
+    path: &[u32],
+    vault_pubkey: &[u8; 33],
+    chain_code: &[u8; 32],
+    rows: &[OutboundRef],
+) -> Result<(), String> {
     let rows = open_rows(rows, ctx)?;
+    let batch = ctx.batch_id().unwrap_or(0);
     let key = hd::child_pubkey(vault_pubkey, chain_code, path)
         .map_err(|e| format!("signing path: {e}"))?
         .public_key;
@@ -206,7 +657,7 @@ pub fn verify(
                         return Err(format!(
                             "output of {} sat pays nothing in batch {}",
                             out.value.to_sat(),
-                            ctx.batch_id()
+                            batch
                         ))
                     }
                 }
@@ -255,7 +706,7 @@ pub fn verify(
                 .iter()
                 .any(|r| r.amount == amount && address::eth_decode(&r.to).is_ok_and(|a| a == dest));
             if !paid {
-                return Err(format!("transfer pays nothing in batch {}", ctx.batch_id()));
+                return Err(format!("transfer pays nothing in batch {batch}"));
             }
             Ok(())
         }
@@ -318,10 +769,11 @@ pub fn verify(
                 r.amount == amount && address::tron_decode(&r.to).is_ok_and(|a| a == dest)
             });
             if !paid {
-                return Err(format!("transfer pays nothing in batch {}", ctx.batch_id()));
+                return Err(format!("transfer pays nothing in batch {batch}"));
             }
             Ok(())
         }
+        _ => Err("not a payout context".into()),
     }
 }
 
@@ -584,5 +1036,319 @@ mod tests {
         verify(&ctx, &raw.txid(), &path, &VAULT, &CC, &rows).unwrap();
         let rows = vec![row(2, Chain::Tron, &dest_addr, 2_000_001, 6)];
         assert!(verify(&ctx, &raw.txid(), &path, &VAULT, &CC, &rows).is_err());
+    }
+
+    /// The active generation of the pool in the sweep tests: another key.
+    const ACTIVE: [u8; 33] = [
+        0x03, 0x1b, 0x84, 0xc5, 0x56, 0x7b, 0x12, 0x64, 0x40, 0x99, 0x5d, 0x3e, 0xd5, 0xaa, 0xba,
+        0x05, 0x65, 0xd7, 0x1e, 0x18, 0x34, 0x60, 0x48, 0x19, 0xff, 0x9c, 0x17, 0xf5, 0xe9, 0xd5,
+        0xdd, 0x07, 0x8f,
+    ];
+    const ACC: [u8; 32] = [4u8; 32];
+
+    fn pool() -> PoolRef {
+        PoolRef {
+            active_pubkey: ACTIVE,
+            active_chain_code: ACC,
+        }
+    }
+
+    fn active_hot(chain: Chain) -> [u8; 33] {
+        hd::child_pubkey(&ACTIVE, &ACC, &hd::deposit_path(chain, 0))
+            .unwrap()
+            .public_key
+    }
+
+    #[test]
+    fn bitcoin_sweep_pays_only_the_active_generation() {
+        let net = Network::Regtest;
+        let spent_key = child(Chain::Bitcoin, 5);
+        let path = hd::deposit_path(Chain::Bitcoin, 5);
+        let mk = |dest_key: [u8; 33], extra: bool| {
+            let mut output = vec![TxOut {
+                value: Amount::from_sat(99_000),
+                script_pubkey: btc::p2wpkh_script(&dest_key).unwrap(),
+            }];
+            if extra {
+                output.push(TxOut {
+                    value: Amount::from_sat(1),
+                    script_pubkey: btc::p2wpkh_script(&child(Chain::Bitcoin, 0)).unwrap(),
+                });
+            }
+            let tx = Transaction {
+                version: Version::TWO,
+                lock_time: LockTime::ZERO,
+                input: vec![TxIn {
+                    previous_output: OutPoint {
+                        txid: Txid::from_byte_array([1u8; 32]),
+                        vout: 0,
+                    },
+                    script_sig: ScriptBuf::new(),
+                    sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    witness: Witness::new(),
+                }],
+                output,
+            };
+            let spk = btc::p2wpkh_script(&spent_key).unwrap();
+            let digest = SighashCache::new(&tx)
+                .p2wpkh_signature_hash(0, &spk, Amount::from_sat(100_000), EcdsaSighashType::All)
+                .unwrap()
+                .to_byte_array();
+            let ctx = SignContext::BtcSweep {
+                custodian: "00".repeat(32),
+                from_gen: 0,
+                raw_tx: hex::encode(consensus::serialize(&tx)),
+                input: 0,
+                prevout_value: 100_000,
+                prevout_pubkey: hex::encode(spent_key),
+                network: net,
+            };
+            (ctx, digest)
+        };
+        let (ctx, digest) = mk(active_hot(Chain::Bitcoin), false);
+        verify_with_pool(&ctx, &digest, &path, &VAULT, &CC, &[], Some(&pool())).unwrap();
+        // Without the pool the signer cannot know where a sweep may go.
+        assert!(verify(&ctx, &digest, &path, &VAULT, &CC, &[]).is_err());
+        // To this key's own hot address: not a sweep.
+        let (ctx, digest) = mk(child(Chain::Bitcoin, 0), false);
+        assert!(verify_with_pool(&ctx, &digest, &path, &VAULT, &CC, &[], Some(&pool())).is_err());
+        // A second output, even a tiny one back to ourselves.
+        let (ctx, digest) = mk(active_hot(Chain::Bitcoin), true);
+        assert!(verify_with_pool(&ctx, &digest, &path, &VAULT, &CC, &[], Some(&pool())).is_err());
+    }
+
+    #[test]
+    fn ethereum_moves_are_bound_to_hot_addresses_and_gas_is_capped() {
+        let eth20 = |k: [u8; 33]| address::eth_decode(&address::eth_address(&k).unwrap()).unwrap();
+        let ctx_of = |tx: &Eip1559Tx, kind: &str| {
+            let common = (
+                tx.chain_id,
+                tx.nonce,
+                tx.max_priority_fee_per_gas,
+                tx.max_fee_per_gas,
+                tx.gas_limit,
+                format!("0x{}", hex::encode(tx.to)),
+                tx.value,
+                hex::encode(&tx.data),
+            );
+            match kind {
+                "sweep" => SignContext::EthSweep {
+                    custodian: "00".repeat(32),
+                    from_gen: 0,
+                    chain_id: common.0,
+                    nonce: common.1,
+                    max_priority_fee_per_gas: common.2,
+                    max_fee_per_gas: common.3,
+                    gas_limit: common.4,
+                    to: common.5,
+                    value: common.6,
+                    data: common.7,
+                },
+                "consolidate" => SignContext::EthConsolidate {
+                    custodian: "00".repeat(32),
+                    index: 4,
+                    sweep: false,
+                    chain_id: common.0,
+                    nonce: common.1,
+                    max_priority_fee_per_gas: common.2,
+                    max_fee_per_gas: common.3,
+                    gas_limit: common.4,
+                    to: common.5,
+                    value: common.6,
+                    data: common.7,
+                },
+                _ => SignContext::EthGasFund {
+                    custodian: "00".repeat(32),
+                    index: 4,
+                    chain_id: common.0,
+                    nonce: common.1,
+                    max_priority_fee_per_gas: common.2,
+                    max_fee_per_gas: common.3,
+                    gas_limit: common.4,
+                    to: common.5,
+                    value: common.6,
+                },
+            }
+        };
+        let hot_path = hd::deposit_path(Chain::Ethereum, 0);
+        // Sweep: tokens from our hot address to the active hot address.
+        let tx = Eip1559Tx::erc20_transfer(
+            1,
+            1,
+            [0x11u8; 20],
+            eth20(active_hot(Chain::Ethereum)),
+            5,
+            30,
+            2,
+        );
+        let ctx = ctx_of(&tx, "sweep");
+        verify_with_pool(
+            &ctx,
+            &tx.signing_hash(),
+            &hot_path,
+            &VAULT,
+            &CC,
+            &[],
+            Some(&pool()),
+        )
+        .unwrap();
+        let bad = Eip1559Tx::erc20_transfer(
+            1,
+            1,
+            [0x11u8; 20],
+            eth20(child(Chain::Ethereum, 7)),
+            5,
+            30,
+            2,
+        );
+        let ctx = ctx_of(&bad, "sweep");
+        assert!(verify_with_pool(
+            &ctx,
+            &bad.signing_hash(),
+            &hot_path,
+            &VAULT,
+            &CC,
+            &[],
+            Some(&pool())
+        )
+        .is_err());
+        // Consolidation: index 4 to our own hot address, and nowhere else.
+        let tx = Eip1559Tx::erc20_transfer(
+            1,
+            2,
+            [0x11u8; 20],
+            eth20(child(Chain::Ethereum, 0)),
+            5,
+            30,
+            2,
+        );
+        let ctx = ctx_of(&tx, "consolidate");
+        let path4 = hd::deposit_path(Chain::Ethereum, 4);
+        verify(&ctx, &tx.signing_hash(), &path4, &VAULT, &CC, &[]).unwrap();
+        let bad = Eip1559Tx::erc20_transfer(
+            1,
+            2,
+            [0x11u8; 20],
+            eth20(active_hot(Chain::Ethereum)),
+            5,
+            30,
+            2,
+        );
+        let ctx = ctx_of(&bad, "consolidate");
+        assert!(verify(&ctx, &bad.signing_hash(), &path4, &VAULT, &CC, &[]).is_err());
+        // Gas funding: from the hot address to our own index 4, capped.
+        let tx = Eip1559Tx::native_transfer(1, 3, eth20(child(Chain::Ethereum, 4)), 1_000, 30, 2);
+        let ctx = ctx_of(&tx, "gas");
+        verify(&ctx, &tx.signing_hash(), &hot_path, &VAULT, &CC, &[]).unwrap();
+        assert!(
+            verify(&ctx, &tx.signing_hash(), &path4, &VAULT, &CC, &[]).is_err(),
+            "not from hot"
+        );
+        let big = Eip1559Tx::native_transfer(
+            1,
+            3,
+            eth20(child(Chain::Ethereum, 4)),
+            ETH_GAS_FUND_CAP_WEI + 1,
+            30,
+            2,
+        );
+        let ctx = ctx_of(&big, "gas");
+        assert!(verify(&ctx, &big.signing_hash(), &hot_path, &VAULT, &CC, &[]).is_err());
+        let stranger =
+            Eip1559Tx::native_transfer(1, 3, eth20(active_hot(Chain::Ethereum)), 1_000, 30, 2);
+        let ctx = ctx_of(&stranger, "gas");
+        assert!(verify(&ctx, &stranger.signing_hash(), &hot_path, &VAULT, &CC, &[]).is_err());
+    }
+
+    #[test]
+    fn tron_sweep_and_gas_funding_are_bound() {
+        let b = TronTxBuilder {
+            ref_block_bytes: [1, 2],
+            ref_block_hash: [3u8; 8],
+            timestamp_ms: 1_000,
+            expiration_ms: 61_000,
+            fee_limit_sun: 100,
+        };
+        let t21 = |k: [u8; 33]| address::tron_decode(&address::tron_address(&k).unwrap()).unwrap();
+        let owner = t21(child(Chain::Tron, 0));
+        let hot_path = hd::deposit_path(Chain::Tron, 0);
+        let raw = b.transfer(&owner, &t21(active_hot(Chain::Tron)), 7_000_000);
+        let ctx = SignContext::TronSweep {
+            custodian: "00".repeat(32),
+            from_gen: 0,
+            raw_data: hex::encode(raw.to_bytes()),
+        };
+        verify_with_pool(
+            &ctx,
+            &raw.txid(),
+            &hot_path,
+            &VAULT,
+            &CC,
+            &[],
+            Some(&pool()),
+        )
+        .unwrap();
+        assert!(
+            verify(&ctx, &raw.txid(), &hot_path, &VAULT, &CC, &[]).is_err(),
+            "no pool"
+        );
+        let raw = b.transfer(&owner, &t21(child(Chain::Tron, 9)), 7_000_000);
+        let ctx = SignContext::TronSweep {
+            custodian: "00".repeat(32),
+            from_gen: 0,
+            raw_data: hex::encode(raw.to_bytes()),
+        };
+        assert!(verify_with_pool(
+            &ctx,
+            &raw.txid(),
+            &hot_path,
+            &VAULT,
+            &CC,
+            &[],
+            Some(&pool())
+        )
+        .is_err());
+        // Gas: hot to our own index 3, within the cap; a TRC-20 is not gas.
+        let raw = b.transfer(&owner, &t21(child(Chain::Tron, 3)), 1_000_000);
+        let ctx = SignContext::TronGasFund {
+            custodian: "00".repeat(32),
+            index: 3,
+            raw_data: hex::encode(raw.to_bytes()),
+        };
+        verify(&ctx, &raw.txid(), &hot_path, &VAULT, &CC, &[]).unwrap();
+        let raw = b.transfer(
+            &owner,
+            &t21(child(Chain::Tron, 3)),
+            TRON_GAS_FUND_CAP_SUN as u64 + 1,
+        );
+        let ctx = SignContext::TronGasFund {
+            custodian: "00".repeat(32),
+            index: 3,
+            raw_data: hex::encode(raw.to_bytes()),
+        };
+        assert!(verify(&ctx, &raw.txid(), &hot_path, &VAULT, &CC, &[]).is_err());
+        // Consolidation: index 3 into our own hot, signed by index 3.
+        let owner3 = t21(child(Chain::Tron, 3));
+        let token = address::tron_decode("TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf").unwrap();
+        let raw = b.trc20_transfer(&owner3, &token, &t21(child(Chain::Tron, 0)), 2_000_000);
+        let ctx = SignContext::TronConsolidate {
+            custodian: "00".repeat(32),
+            index: 3,
+            sweep: false,
+            raw_data: hex::encode(raw.to_bytes()),
+        };
+        verify(
+            &ctx,
+            &raw.txid(),
+            &hd::deposit_path(Chain::Tron, 3),
+            &VAULT,
+            &CC,
+            &[],
+        )
+        .unwrap();
+        assert!(
+            verify(&ctx, &raw.txid(), &hot_path, &VAULT, &CC, &[]).is_err(),
+            "wrong owner"
+        );
     }
 }

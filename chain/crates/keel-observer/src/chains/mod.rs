@@ -95,9 +95,10 @@ impl AddressBook {
     /// Distinguishes a client vault's records from the network vault's in
     /// the observer's own state file ("" for the network vault).
     pub fn key_prefix(&self) -> String {
-        match self.vault.custodian {
-            Some(c) => format!("{}:", &c.to_hex()[..16]),
-            None => String::new(),
+        match (self.vault.custodian, self.vault.gen) {
+            (Some(c), 0) => format!("{}:", &c.to_hex()[..16]),
+            (Some(c), g) => format!("{}:g{g}:", &c.to_hex()[..16]),
+            (None, _) => String::new(),
         }
     }
 
@@ -242,6 +243,12 @@ mod tests {
             owners: BTreeMap::from([(1, keel_types::Address::tagged(1))]),
             custodian: None,
             signer_url: None,
+            gen: 0,
+            status: "Active".into(),
+            sweep: false,
+            drain_until: 0,
+            swept_any: false,
+            pending_sweeps: Vec::new(),
         };
         let book = AddressBook::build(vault, Network::Regtest).unwrap();
         assert_eq!(book.len(), 3);

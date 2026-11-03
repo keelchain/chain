@@ -1,6 +1,6 @@
 // HTTP client for the node's /v1 API (see crates/keel-rpc/API.md).
 import { Keypair, stringifyJson, txId, type SignedAction } from "./sign.ts";
-import type { Action, CustodySwap } from "./actions.ts";
+import type { Action, CustodyRotation, CustodySwap } from "./actions.ts";
 
 export interface Receipt {
   index: number; tx_id: string; signer: string; ok: boolean;
@@ -109,11 +109,32 @@ export class RpcClient {
     if (!got) throw new Error("deposit address not assigned");
     return got;
   }
+  /** A client's record: attester, fees and caps, earned, usage paid, attested accounts. */
+  client(address: string) { return this.req("GET", `/v1/clients/${address}`); }
   /** A client's custody vaults, reserves versus liabilities, and its two floats per asset. */
   custody(custodian: string) { return this.req("GET", `/v1/custody/${custodian}`); }
   /** Swap between custody and the network vault against the custodian's floats (`SwapCustody`); resolves to the tx id. */
   swapCustody(key: Keypair, swap: CustodySwap, chainId = 1): Promise<string> {
     return this.send(key, { SwapCustody: swap }, chainId);
+  }
+  /** A custody vault's deposit addresses on `chain` ("BTC" | "ETH" | "TRON"); `gen` selects a draining generation. */
+  custodyAddresses(custodian: string, chain: string, q: { from?: number; limit?: number; owner?: string; gen?: number } = {}) {
+    const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString();
+    return this.req("GET", `/v1/custody/${custodian}/${chain}/addresses${qs ? `?${qs}` : ""}`);
+  }
+  /** Which account and generation a custody deposit address belongs to. */
+  custodyLookup(custodian: string, chain: string, address: string) {
+    return this.req("GET", `/v1/custody/${custodian}/${chain}/addresses/lookup?address=${encodeURIComponent(address)}`);
+  }
+  /** Rotate a custody vault to a fresh key of the client's own (`RotateCustodyVault`); resolves to the tx id. */
+  rotateCustodyVault(key: Keypair, rotation: CustodyRotation, chainId = 1): Promise<string> {
+    return this.send(key, { RotateCustodyVault: rotation }, chainId);
+  }
+  cancelCustodyRotation(key: Keypair, chain: "Bitcoin" | "Ethereum" | "Tron", chainId = 1): Promise<string> {
+    return this.send(key, { CancelCustodyRotation: { chain } }, chainId);
+  }
+  retireCustodyGeneration(key: Keypair, chain: "Bitcoin" | "Ethereum" | "Tron", custodian: string, gen: number, chainId = 1): Promise<string> {
+    return this.send(key, { RetireCustodyGeneration: { chain, custodian, gen } }, chainId);
   }
   outbounds(status?: string) { return this.req("GET", `/v1/vaults/outbounds${status ? `?status=${status}` : ""}`); }
   proposals() { return this.req("GET", "/v1/gov/proposals"); }

@@ -31,8 +31,8 @@ use crate::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use keel_actions::{
-    Action, Chain, CustodySwap, CustodyVaultRegistration, DepositObservation, OutboundId,
-    SwapSide, Withdraw,
+    Action, Chain, CustodySwap, CustodyVaultRegistration, DepositObservation, OutboundId, SwapSide,
+    Withdraw,
 };
 use keel_attest::{Attestation, Quorum};
 use keel_ledger::{AccountKey, Record, TxType};
@@ -173,19 +173,15 @@ fn register(
             "a custody vault needs a chain code".into(),
         ));
     }
-    let url_ok = (r.signer_url.starts_with("http://") || r.signer_url.starts_with("https://"))
-        && r.signer_url.len() <= 256
-        && r.signer_url.chars().all(|c| c.is_ascii_graphic());
-    if !url_ok {
+    if !valid_signer_url(&r.signer_url) {
         return Err(VmError::Invalid("signer_url must be an http(s) URL".into()));
     }
-    if let Some(v) = state.custody.vault(r.chain, signer) {
-        if r.epoch <= v.epoch {
-            return Err(VmError::Invalid(format!(
-                "vault epoch must exceed {}",
-                v.epoch
-            )));
-        }
+    if state.custody.vault(r.chain, signer).is_some() {
+        // Once registered, a vault changes key only through a rotation,
+        // which keeps the old generation watched (`pools`).
+        return Err(VmError::Invalid(
+            "vault already registered; rotate to a fresh key with RotateCustodyVault".into(),
+        ));
     }
     state.custody.vaults.insert(
         (r.chain, signer),
@@ -204,6 +200,46 @@ fn register(
         chain: r.chain.as_str().into(),
         epoch: r.epoch,
     }])
+}
+
+pub(crate) fn valid_signer_url(url: &str) -> bool {
+    (url.starts_with("http://") || url.starts_with("https://"))
+        && url.len() <= 256
+        && url.chars().all(|c| c.is_ascii_graphic())
+}
+
+/// A network fee the custodian's vault paid (a payout, a sweep): from its
+/// own native custody balance (its gas tank) or, failing that, booked as
+/// its expense until its next top-up settles it.
+pub(crate) fn charge_network_fee(
+    state: &mut State,
+    custodian: Address,
+    native: &Asset,
+    fee_paid: Amount,
+    group: &str,
+) -> Result<(), VmError> {
+    let from_custody = balance(state, custodian, native) >= fee_paid;
+    let debit = if from_custody {
+        custody_key(custodian, native)
+    } else {
+        // Tracked from now on so the reserve check sees the hole.
+        add_liability(state, custodian, native, 0);
+        expense_key(custodian, native)
+    };
+    state.ledger.post(
+        &format!("{group}:fee"),
+        TxType::SendoutComplete,
+        Some(group),
+        None,
+        vec![
+            Record::debit(debit, fee_paid),
+            Record::credit(reserve_key(custodian, native), fee_paid),
+        ],
+    )?;
+    if from_custody {
+        sub_liability(state, custodian, native, fee_paid);
+    }
+    Ok(())
 }
 
 fn require_member(state: &State, signer: Address, custodian: Address) -> Result<(), VmError> {
@@ -620,28 +656,7 @@ pub(crate) fn settle_outbound(
         )?;
         sub_liability(state, custodian, &ob.asset, ob.amount);
         if fee_paid > 0 {
-            let native = &ob.fee_asset;
-            let from_custody = balance(state, custodian, native) >= fee_paid;
-            let debit = if from_custody {
-                custody_key(custodian, native)
-            } else {
-                // Tracked from now on so the reserve check sees the hole.
-                add_liability(state, custodian, native, 0);
-                expense_key(custodian, native)
-            };
-            state.ledger.post(
-                &format!("{group}:fee"),
-                TxType::SendoutComplete,
-                Some(&group),
-                None,
-                vec![
-                    Record::debit(debit, fee_paid),
-                    Record::credit(reserve_key(custodian, native), fee_paid),
-                ],
-            )?;
-            if from_custody {
-                sub_liability(state, custodian, native, fee_paid);
-            }
+            charge_network_fee(state, custodian, &ob.fee_asset, fee_paid, &group)?;
         }
         let out = state.vaults.outbounds.get_mut(&ob.id).expect("exists");
         out.status = OutboundStatus::Confirmed;
@@ -711,6 +726,8 @@ pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
                 },
             );
             state.custody.batch_vault.insert(batch_id, custodian);
+            let gen = super::pools::batch_generation(state, chain, custodian);
+            state.pools.batch_gen.insert(batch_id, gen);
         }
     }
     // Reserve check per custody vault and asset. A vault halts when its

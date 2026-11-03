@@ -94,6 +94,19 @@ what your reconciliation ingests. Rebalance the floats with an ordinary
 `WithdrawCustody` to your own network deposit address, or a `Withdraw` to
 your vault's index-0 address.
 
+To move your platform to a fresh vault (a labelled pool, a rebrand), start a
+second signer for a new key and `RotateCustodyVault` (`models.md`,
+"Rotating to a fresh pool"). Nothing on your side changes except the
+addresses you show: fetch a user's deposit address from
+`GET /v1/custody/{you}/{chain}/addresses?owner=` **at deposit time**, never
+from a cache older than the session, and subscribe to `PoolRotated` on
+`account:<you>` to refresh what is on screen. Old addresses keep
+crediting during the grace, so a user mid-deposit is safe; a reverse lookup
+of any live generation's address is
+`GET /v1/custody/{you}/{chain}/addresses/lookup?address=`. Keep the old
+signer reachable until `GET /v1/custody/{you}` shows that generation
+`Retired`.
+
 ## Naming your dispute team
 
 Disputes on your users' trades are ruled by whoever the offer names. Bond

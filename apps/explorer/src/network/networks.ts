@@ -7,6 +7,16 @@ export interface Network {
   id: string;
   name: string;
   api: string;
+  /** Node RPC base (`/rpc` next to the indexer's `/api` when omitted). */
+  rpc?: string;
+}
+
+/** The node RPC the dashboard signs against: `rpc` when configured, else
+ *  the indexer URL with its `/api` suffix swapped for `/rpc`. */
+export function rpcUrlFor(n: Network): string {
+  if (n.rpc) return n.rpc;
+  if (n.api.endsWith('/api')) return `${n.api.slice(0, -4)}/rpc`;
+  return n.api.replace(/\/$/, '') + '/rpc';
 }
 
 export const NETWORK_STORAGE_KEY = 'keel-explorer-network';
@@ -24,10 +34,10 @@ export function parseNetworks(raw: string | undefined): Network[] {
     const out: Network[] = [];
     for (const item of parsed) {
       if (typeof item !== 'object' || item === null) continue;
-      const { id, name, api } = item as Record<string, unknown>;
+      const { id, name, api, rpc } = item as Record<string, unknown>;
       if (typeof id !== 'string' || !/^[a-z0-9-]+$/.test(id)) continue;
       if (typeof api !== 'string') continue;
-      out.push({ id, name: typeof name === 'string' ? name : id, api });
+      out.push({ id, name: typeof name === 'string' ? name : id, api, ...(typeof rpc === 'string' ? { rpc } : {}) });
     }
     return out.length ? out : DEFAULT_NETWORKS;
   } catch {

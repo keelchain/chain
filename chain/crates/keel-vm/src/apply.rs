@@ -7,7 +7,7 @@ use crate::{
     context::BlockContext,
     modules::{
         arbitration, attest, budgets, clients, custody, disputes, gov, lightning, markets, p2p,
-        sessions, stable, staking, tokens, treasury, vaults,
+        pools, sessions, stable, staking, tokens, treasury, vaults,
     },
     receipt::{Event, Receipt, VmError},
     state::State,
@@ -94,6 +94,7 @@ pub fn apply_block(
     end.extend(markets::end_block(state, ctx));
     end.extend(p2p::end_block(state, ctx));
     end.extend(disputes::end_block(state, ctx));
+    end.extend(pools::end_block(state, ctx));
     end.extend(vaults::end_block(state, ctx));
     end.extend(custody::end_block(state, ctx));
     end.extend(stable::end_block(state, ctx));
@@ -236,6 +237,12 @@ fn apply_one(
         | Action::SwapCustody(_) => custody::apply(state, ctx, signer, &tx_id, action),
         Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => {
             arbitration::apply(state, signer, action)
+        }
+        Action::RotateCustodyVault(_)
+        | Action::CancelCustodyRotation { .. }
+        | Action::ObserveCustodySweep(_)
+        | Action::RetireCustodyGeneration { .. } => {
+            pools::apply(state, ctx, signer, &tx_id, action)
         }
         Action::AuthorizeSessionKey {
             key: k,

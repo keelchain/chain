@@ -67,6 +67,34 @@ jobs:
         if: failure()
         run: tail -n 80 /tmp/keel-client-vault/*.log /tmp/keel-client-vault/observers/*.log 2>/dev/null || true
 
+  rotate-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+          key: e2e-release
+      - name: Build release binaries
+        working-directory: chain
+        run: cargo build --release --locked -p keel-node -p keel-cli -p keel-observer
+      - name: Cache Bitcoin Core
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: bitcoin-core-${{ runner.os }}-v1
+      - name: Custody fresh-pool rotation e2e
+        env:
+          NO_BUILD: "1"
+        run: infra/dev/rotate-e2e.sh
+      - name: Logs on failure
+        if: failure()
+        run: tail -n 80 /tmp/keel-rotate/*.log /tmp/keel-rotate/observers/*.log 2>/dev/null || true
+
   throughput:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

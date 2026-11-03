@@ -450,6 +450,42 @@ pub enum Event {
     ArbitratorBanned {
         member: Address,
     },
+    /// A custody vault's rotation to a fresh key is scheduled.
+    PoolRotationScheduled {
+        chain: String,
+        custodian: Address,
+        gen: u64,
+        activate_at: u64,
+    },
+    /// A fresh generation is active; `previous` drains until `drain_until`.
+    PoolRotated {
+        chain: String,
+        custodian: Address,
+        gen: u64,
+        previous: u64,
+        drain_until: u64,
+    },
+    PoolRotationCancelled {
+        chain: String,
+        custodian: Address,
+        gen: u64,
+    },
+    /// The observers moved coins out of a draining generation.
+    PoolSwept {
+        chain: String,
+        custodian: Address,
+        from_gen: u64,
+        asset: Asset,
+        amount: Amount,
+        fee: Amount,
+        tx_hash: String,
+    },
+    /// A draining generation is no longer watched or paid from.
+    PoolGenerationRetired {
+        chain: String,
+        custodian: Address,
+        gen: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

@@ -57,6 +57,37 @@ pub struct VaultView {
     /// signer answers (`/v1/custody`).
     pub custodian: Option<Address>,
     pub signer_url: Option<String>,
+    /// Generation of a custody vault (0 for the network vault and for a
+    /// vault never rotated), its status, whether a draining one is swept
+    /// to the active one, and the height its grace ends.
+    pub gen: u64,
+    pub status: String,
+    pub sweep: bool,
+    pub drain_until: u64,
+    /// The chain already recorded a sweep out of this generation.
+    pub swept_any: bool,
+    /// Sweep observations of this vault still collecting observer votes.
+    pub pending_sweeps: Vec<PendingSweep>,
+}
+
+/// A sweep another observer reported, for this one to verify and vote on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingSweep {
+    pub from_gen: u64,
+    pub tx_hash_hex: String,
+    pub asset: String,
+    pub amount: u128,
+    pub fee: u128,
+}
+
+impl VaultView {
+    pub fn is_active(&self) -> bool {
+        self.status == "Active"
+    }
+
+    pub fn is_draining(&self) -> bool {
+        self.status == "Draining"
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +108,9 @@ pub struct OutboundRow {
     /// The custody vault this outbound is drawn from (`None` = network).
     #[serde(default)]
     pub custodian: Option<Address>,
+    /// The custody generation its batch should be paid from.
+    #[serde(default)]
+    pub gen: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -169,6 +203,35 @@ pub fn parse_vault(chain: Chain, v: &Value) -> anyhow::Result<Option<VaultView>>
             .get("signer_url")
             .and_then(Value::as_str)
             .map(str::to_string),
+        gen: v.get("gen").and_then(u64_of).unwrap_or(0),
+        status: v
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("Active")
+            .to_string(),
+        sweep: v.get("sweep").and_then(Value::as_bool).unwrap_or(false),
+        drain_until: v.get("drain_until").and_then(u64_of).unwrap_or(0),
+        swept_any: v
+            .get("swept")
+            .and_then(Value::as_array)
+            .is_some_and(|a| !a.is_empty()),
+        pending_sweeps: v
+            .get("pending_sweeps")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .filter_map(|p| {
+                        Some(PendingSweep {
+                            from_gen: u64_of(&p["from_gen"])?,
+                            tx_hash_hex: p["tx_hash"].as_str()?.to_string(),
+                            asset: p["asset"].as_str()?.to_string(),
+                            amount: amount_of(&p["amount"])?,
+                            fee: amount_of(&p["fee"]).unwrap_or(0),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     }))
 }
 
@@ -238,6 +301,7 @@ pub fn parse_outbounds(v: &Value) -> anyhow::Result<Vec<OutboundRow>> {
                 .get("custodian")
                 .and_then(Value::as_str)
                 .and_then(Address::from_hex),
+            gen: o.get("gen").and_then(u64_of),
         });
     }
     Ok(out)
@@ -438,6 +502,12 @@ impl SttRpc for HttpSttRpc {
             owners: view.owners.get(&chain).cloned().unwrap_or_default(),
             custodian: None,
             signer_url: None,
+            gen: 0,
+            status: "Active".into(),
+            sweep: false,
+            drain_until: 0,
+            swept_any: false,
+            pending_sweeps: Vec::new(),
         }))
     }
 

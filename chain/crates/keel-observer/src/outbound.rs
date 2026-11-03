@@ -44,7 +44,7 @@ pub fn takeover_delay(vault: &VaultView, me: &Address, batch_id: u64) -> Option<
 }
 
 impl OutboundContext<'_> {
-    fn may_build(&self, vault: &VaultView, batch_id: u64) -> bool {
+    pub(crate) fn may_build(&self, vault: &VaultView, batch_id: u64) -> bool {
         if !self.cfg.enabled {
             return false;
         }
@@ -90,6 +90,7 @@ impl OutboundContext<'_> {
                         fee_hint: fee_each,
                         ours,
                         raw: raw.clone(),
+                        amount: None,
                     },
                 );
             }
@@ -616,6 +617,12 @@ mod tests {
             owners: BTreeMap::new(),
             custodian: None,
             signer_url: None,
+            gen: 0,
+            status: "Active".into(),
+            sweep: false,
+            drain_until: 0,
+            swept_any: false,
+            pending_sweeps: Vec::new(),
         };
         let network = if chain == Chain::Bitcoin {
             Network::Regtest

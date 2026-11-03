@@ -43,7 +43,10 @@ const T0: u64 = 1_700_000_000;
 /// alice makes offers, bob takes them; arb1/arb2 hold bonds, elected is a
 /// member of the fallback set, carol holds nothing.
 fn setup() -> (State, Vec<Actor>) {
-    let actors: Vec<Actor> = [11u64, 12, 13, 14, 15, 16].into_iter().map(Actor::new).collect();
+    let actors: Vec<Actor> = [11u64, 12, 13, 14, 15, 16]
+        .into_iter()
+        .map(Actor::new)
+        .collect();
     let funded: Vec<Address> = actors.iter().map(Actor::addr).collect();
     let validator = Keypair::from_seed(100);
     let g = Genesis::devnet(
@@ -197,7 +200,9 @@ fn rule(state: &mut State, who: &mut Actor, trade_id: u64, h: &mut u64) -> keel_
 #[test]
 fn named_arbitrator_rules_and_the_fallback_set_is_refused() {
     let (mut state, mut a) = setup();
-    let [alice, bob, arb1, _arb2, elected, carol] = &mut a[..] else { unreachable!() };
+    let [alice, bob, arb1, _arb2, elected, carol] = &mut a[..] else {
+        unreachable!()
+    };
     let mut h = 1;
     bond_arbitrator(&mut state, arb1, h);
     staking::set_arbitrators(&mut state, &[elected.addr()]);
@@ -244,15 +249,21 @@ fn named_arbitrator_rules_and_the_fallback_set_is_refused() {
     );
     assert!(matches!(r[3].error, Some(VmError::Invalid(_))), "duplicate");
     ok(&r[4]);
-    assert!(r[4]
-        .events
-        .iter()
-        .any(|e| matches!(e, Event::OfferArbitratorsSet { offer_id: 0, count: 1 })));
+    assert!(r[4].events.iter().any(|e| matches!(
+        e,
+        Event::OfferArbitratorsSet {
+            offer_id: 0,
+            count: 1
+        }
+    )));
 
     // One name binds at start; the fallback member may not rule it.
     let (trade_id, bound) = trade_to_dispute(&mut state, bob, 0, &mut h);
     assert_eq!(bound, arb1.addr());
-    assert_eq!(state.arbitration.trade_arbitrator.get(&trade_id), Some(&arb1.addr()));
+    assert_eq!(
+        state.arbitration.trade_arbitrator.get(&trade_id),
+        Some(&arb1.addr())
+    );
     let r = rule(&mut state, elected, trade_id, &mut h);
     assert!(matches!(r.error, Some(VmError::Unauthorized)));
     let r = rule(&mut state, carol, trade_id, &mut h);
@@ -276,7 +287,10 @@ fn named_arbitrator_rules_and_the_fallback_set_is_refused() {
     let (trade_id, bound) = trade_to_dispute(&mut state, bob, 0, &mut h);
     assert_eq!(bound, Address::SYSTEM, "nothing bound");
     let r = rule(&mut state, arb1, trade_id, &mut h);
-    assert!(matches!(r.error, Some(VmError::Unauthorized)), "bonded but not elected");
+    assert!(
+        matches!(r.error, Some(VmError::Unauthorized)),
+        "bonded but not elected"
+    );
     let r = rule(&mut state, elected, trade_id, &mut h);
     ok(&r);
     assert!(state.ledger.audit().mismatches.is_empty());
@@ -285,7 +299,9 @@ fn named_arbitrator_rules_and_the_fallback_set_is_refused() {
 #[test]
 fn taker_chooses_among_several_or_the_first_applies_at_mark_paid() {
     let (mut state, mut a) = setup();
-    let [alice, bob, arb1, arb2, elected, carol] = &mut a[..] else { unreachable!() };
+    let [alice, bob, arb1, arb2, elected, carol] = &mut a[..] else {
+        unreachable!()
+    };
     let mut h = 1;
     bond_arbitrator(&mut state, arb1, h);
     bond_arbitrator(&mut state, arb2, h);
@@ -343,12 +359,21 @@ fn taker_chooses_among_several_or_the_first_applies_at_mark_paid() {
             }),
         ],
     );
-    assert!(matches!(r[0].error, Some(VmError::Unauthorized)), "stranger");
-    assert!(matches!(r[1].error, Some(VmError::Unauthorized)), "maker is not the taker");
+    assert!(
+        matches!(r[0].error, Some(VmError::Unauthorized)),
+        "stranger"
+    );
+    assert!(
+        matches!(r[1].error, Some(VmError::Unauthorized)),
+        "maker is not the taker"
+    );
     assert!(matches!(r[2].error, Some(VmError::Invalid(_))), "not named");
     ok(&r[3]);
     assert_eq!(bound_to(&r[3]), Some(arb2.addr()));
-    assert!(matches!(r[4].error, Some(VmError::Invalid(_))), "already bound");
+    assert!(
+        matches!(r[4].error, Some(VmError::Invalid(_))),
+        "already bound"
+    );
     // Choosing after MarkPaid is too late.
     h += 1;
     let (r, _) = apply_block(
@@ -386,7 +411,10 @@ fn taker_chooses_among_several_or_the_first_applies_at_mark_paid() {
             arbitrator: arb2.addr(),
         })],
     );
-    assert!(matches!(r[0].error, Some(VmError::Invalid(_))), "paid trades are fixed");
+    assert!(
+        matches!(r[0].error, Some(VmError::Invalid(_))),
+        "paid trades are fixed"
+    );
 
     // The param admin caps how many an offer may name.
     state.gov.param_admin = Some(alice.addr());
@@ -410,16 +438,27 @@ fn taker_chooses_among_several_or_the_first_applies_at_mark_paid() {
         ],
     );
     ok(&r[0]);
-    assert!(matches!(r[1].error, Some(VmError::Invalid(_))), "over the cap");
-    assert!(matches!(r[2].error, Some(VmError::Invalid(_))), "cap must be >= 1");
-    assert_eq!(arbitration::get_param(&state, "arbitration.max_named"), Some(1));
+    assert!(
+        matches!(r[1].error, Some(VmError::Invalid(_))),
+        "over the cap"
+    );
+    assert!(
+        matches!(r[2].error, Some(VmError::Invalid(_))),
+        "cap must be >= 1"
+    );
+    assert_eq!(
+        arbitration::get_param(&state, "arbitration.max_named"),
+        Some(1)
+    );
     assert!(state.ledger.audit().mismatches.is_empty());
 }
 
 #[test]
 fn a_banned_or_unbonded_arbitrator_loses_the_trade_to_the_fallback_set() {
     let (mut state, mut a) = setup();
-    let [alice, bob, arb1, _arb2, elected, _carol] = &mut a[..] else { unreachable!() };
+    let [alice, bob, arb1, _arb2, elected, _carol] = &mut a[..] else {
+        unreachable!()
+    };
     let mut h = 1;
     bond_arbitrator(&mut state, arb1, h);
     staking::set_arbitrators(&mut state, &[elected.addr()]);

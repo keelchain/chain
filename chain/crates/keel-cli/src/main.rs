@@ -269,6 +269,34 @@ enum CustodyCmd {
         #[arg(long)]
         on_behalf_of: Option<String>,
     },
+    /// Rotate this client's vault on a chain to a fresh key of its own: the
+    /// new key, its chain code and the URL of the signer serving it (the
+    /// old signer keeps serving the draining generation).
+    Rotate {
+        chain: String,
+        #[arg(long)]
+        public_key: String,
+        #[arg(long)]
+        chain_code: String,
+        #[arg(long)]
+        signer_url: String,
+        /// Let the observers move the old coins to the new generation
+        /// (links the two pools on the external chain).
+        #[arg(long)]
+        sweep: bool,
+        /// Activate at this height instead of at once.
+        #[arg(long)]
+        activate_at: Option<u64>,
+    },
+    /// Drop a scheduled rotation before it activates.
+    CancelRotation { chain: String },
+    /// Retire a draining generation once its grace is over (the custodian
+    /// itself, or an observer reporting it empty).
+    Retire {
+        chain: String,
+        custodian: String,
+        gen: u64,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -491,6 +519,38 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 amount,
             })
         }
+        ActionCmd::Custody(CustodyCmd::Rotate {
+            chain,
+            public_key,
+            chain_code,
+            signer_url,
+            sweep,
+            activate_at,
+        }) => Action::RotateCustodyVault(keel_actions::CustodyRotation {
+            chain: keel_actions::Chain::parse(&chain)
+                .ok_or_else(|| anyhow!("chain must be BTC, ETH or TRON"))?,
+            public_key: hex::decode(public_key.trim())?,
+            chain_code: hex::decode(chain_code.trim())?
+                .try_into()
+                .map_err(|_| anyhow!("chain code must be 32 bytes of hex"))?,
+            signer_url,
+            sweep,
+            activate_at,
+        }),
+        ActionCmd::Custody(CustodyCmd::CancelRotation { chain }) => Action::CancelCustodyRotation {
+            chain: keel_actions::Chain::parse(&chain)
+                .ok_or_else(|| anyhow!("chain must be BTC, ETH or TRON"))?,
+        },
+        ActionCmd::Custody(CustodyCmd::Retire {
+            chain,
+            custodian,
+            gen,
+        }) => Action::RetireCustodyGeneration {
+            chain: keel_actions::Chain::parse(&chain)
+                .ok_or_else(|| anyhow!("chain must be BTC, ETH or TRON"))?,
+            custodian: parse_addr(&custodian)?,
+            gen,
+        },
         ActionCmd::Custody(CustodyCmd::Swap {
             asset,
             amount,

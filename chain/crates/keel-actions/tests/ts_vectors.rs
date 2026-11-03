@@ -3,9 +3,9 @@
 #![allow(clippy::unwrap_used)]
 
 use keel_actions::{
-    Action, Chain, CustodySwap, DepositObservation, HouseQuote, OfferSpec, PlaceOrder, Proof,
-    Proposal, ProposalKind, SignedAction, StartTrade, SwapSide, Transfer, Withdraw,
-    CHAIN_ID_DEVNET,
+    Action, Chain, CustodyRotation, CustodySwap, DepositObservation, HouseQuote, OfferSpec,
+    PlaceOrder, Proof, Proposal, ProposalKind, SignedAction, StartTrade, SwapSide,
+    SweepObservation, Transfer, Withdraw, CHAIN_ID_DEVNET,
 };
 use keel_crypto::Keypair;
 use keel_types::{Address, Asset, OrderId, OrderType, Side};
@@ -339,6 +339,43 @@ fn vectors() -> Vec<(&'static str, Action)> {
                     member: Address::tagged(6),
                 },
             }),
+        ),
+        (
+            "rotate_custody_vault",
+            Action::RotateCustodyVault(CustodyRotation {
+                chain: Chain::Bitcoin,
+                public_key: vec![3u8; 33],
+                chain_code: [8u8; 32],
+                signer_url: "https://signer-b.example.com".into(),
+                sweep: true,
+                activate_at: Some(1_000),
+            }),
+        ),
+        (
+            "cancel_custody_rotation",
+            Action::CancelCustodyRotation {
+                chain: Chain::Bitcoin,
+            },
+        ),
+        (
+            "observe_custody_sweep",
+            Action::ObserveCustodySweep(SweepObservation {
+                chain: Chain::Bitcoin,
+                custodian: Address::tagged(7),
+                from_gen: 0,
+                tx_hash: [5u8; 32],
+                asset: Asset::new("BTC.BTC"),
+                amount: 90_000,
+                fee: 1_000,
+            }),
+        ),
+        (
+            "retire_custody_generation",
+            Action::RetireCustodyGeneration {
+                chain: Chain::Bitcoin,
+                custodian: Address::tagged(7),
+                gen: 0,
+            },
         ),
     ]
 }

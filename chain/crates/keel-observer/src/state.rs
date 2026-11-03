@@ -30,6 +30,9 @@ pub struct OutboundTx {
     /// Raw signed transaction (hex) when we built it, for rebroadcast.
     #[serde(default)]
     pub raw: Option<String>,
+    /// For a custody move: what it carried, in the asset's smallest units.
+    #[serde(default)]
+    pub amount: Option<u128>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -47,6 +50,10 @@ pub struct StateData {
     /// leader timeout).
     #[serde(default)]
     pub first_seen: BTreeMap<u64, u64>,
+    /// In-flight custody moves (sweeps, consolidations, gas funding) by
+    /// book prefix plus a label, e.g. `"<custodian>:g1:sweep:BTC"`.
+    #[serde(default)]
+    pub moves: BTreeMap<String, OutboundTx>,
 }
 
 pub struct StateFile {
@@ -155,6 +162,7 @@ mod tests {
                     fee_hint: 5,
                     ours: true,
                     raw: None,
+                    amount: None,
                 },
             );
         })

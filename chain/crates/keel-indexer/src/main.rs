@@ -113,14 +113,19 @@ fn faucet_from_env() -> Option<keel_indexer::FaucetConfig> {
     let secret = std::env::var("KEEL_FAUCET_SECRET").ok()?;
     let bytes = hex::decode(secret.trim()).ok()?;
     let secret: [u8; 32] = bytes.try_into().ok()?;
-    let num = |k: &str, d: i64| std::env::var(k).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(d);
+    let num = |k: &str, d: i64| {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(d)
+    };
     Some(keel_indexer::FaucetConfig {
         secret,
         keel: num("KEEL_FAUCET_KEEL", 100) as u64,
         kusd: num("KEEL_FAUCET_KUSD", 100) as u64,
         cooldown_secs: num("KEEL_FAUCET_COOLDOWN_SECS", 86_400),
         ip_per_day: num("KEEL_FAUCET_IP_PER_DAY", 5),
-        explorer_url: std::env::var("KEEL_EXPLORER_URL").unwrap_or_else(|_| "https://testnet.keelchain.com".into()),
+        explorer_url: std::env::var("KEEL_EXPLORER_URL")
+            .unwrap_or_else(|_| "https://testnet.keelchain.com".into()),
     })
 }
-

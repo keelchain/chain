@@ -87,6 +87,37 @@ never asked for a custody address joins the client's custody by swapping
 into it. The swap is refused while either vault is halted for the asset or
 when the client's float on the far side is short.
 
+### Rotating to a fresh pool
+
+A custodial client that is labelled, sanctioned or rebranding can move its
+whole platform to a fresh vault on a chain without touching a single Keel
+account: `RotateCustodyVault { chain, public_key, chain_code, signer_url,
+sweep, activate_at }`. The client makes the new key on a signer of its own
+(a second `keel-tss serve`, or its KMS behind a second `POST /sign` URL;
+the old signer keeps serving the old key), and registers it. From the
+block it activates, or at `activate_at`:
+
+- every account gets a **new deposit address** on that chain, derived from
+  the new key at its unchanged index (the index is what the chain stores;
+  `GET /v1/custody/{client}/{chain}/addresses` hands out the active key's
+  addresses, `?gen=` an older generation's);
+- the old key becomes a **draining generation**: still watched, a deposit
+  to an old address still credits the same account, and withdrawals keep
+  being paid from it, one key per transaction, until it is empty;
+- after `pools.grace_blocks` the observers report it empty and the chain
+  retires it (the client may retire it itself after the grace), and
+  nothing watches those addresses any more.
+
+`sweep` decides whether the old coins move: on, the observers sweep the
+old generation to the new key's own address (attested on chain as
+`PoolSwept`, the network fee charged to the client's gas like a payout);
+off, nothing ever links the two pools on the external chain and the old
+one simply pays withdrawals until it is dry, which is the right choice
+when the old addresses are the problem. A pending rotation can be dropped
+with `CancelCustodyRotation`; `GET /v1/custody/{client}` lists every live
+generation (`gen`, `status`, `sweep`, `drain_until`, `swept`) and any
+pending rotation. A rotation is billed as `pools.usage_rotation_keel`.
+
 The client rebalances its floats only when they drift, with the two paths
 that already exist: `WithdrawCustody` paid to its own network deposit
 address moves custody float into network float; `Withdraw` from its

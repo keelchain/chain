@@ -276,6 +276,7 @@ pub fn charge_usage_to(
         // A float swap is rails usage like a payout, priced the same until
         // it gets its own knob.
         "outbound" | "swap" => state.clients.params.usage_outbound_keel,
+        "rotation" => state.pools.params.usage_rotation_keel,
         _ => 0,
     };
     if price == 0 {
