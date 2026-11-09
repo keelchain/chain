@@ -4,7 +4,7 @@ import { call, fetchAccount, type AccountResponse, type UiState } from '../ui';
 import type { DepositAddressInfo, SelfAddresses } from '../../background/wallet';
 import { Address } from '../components/Address';
 import { SiteAccessBanner } from '../components/SiteAccess';
-import { decimalsOf, formatAmount, sentence } from '../../core/format';
+import { accountTypeLabel, decimalsOf, formatAmount } from '../../core/format';
 import { explorerAccountUrl } from '../../core/networks';
 import { DEPOSIT_CHAINS, externalName } from '../external';
 
@@ -97,7 +97,7 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
               {account.balances.map((b, i) => (
                 <tr key={i}>
                   <td>{b.asset}</td>
-                  <td className="muted">{sentence(b.account_type)}</td>
+                  <td className="muted">{accountTypeLabel(b.account_type)}</td>
                   <td className="num">{formatAmount(b.balance, decimalsOf(b.asset))}</td>
                 </tr>
               ))}

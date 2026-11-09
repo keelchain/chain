@@ -169,7 +169,7 @@ label.check input, label.small input { width: auto; }
   color: #e8eff8;
   background: linear-gradient(135deg, #081c36 0%, #0f2f5b 60%, #143a6b 100%);
 }
-.brand img { width: 27px; height: 24px; filter: brightness(0) invert(1); }
+.brand img { width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18); }
 .tabs {
   display: flex;
   gap: 2px;

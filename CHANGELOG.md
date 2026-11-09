@@ -28,6 +28,9 @@ Dates are UTC.
   Nile on the testnet). SDK: `externalNetworks`, `fetchIncoming`,
   `depositProgress`. The explorer's Bitcoin links for the testnet now point
   at signet, not testnet4. The indexer lists each deposit address once.
+- Wallet: balances name what each ledger account means ("Available",
+  "Withdrawal in flight", "In trade escrow", "In open orders") instead
+  of the ledger's own account names such as `sendout_escrow`.
 - Wallet: the unlocked session survives the browser evicting the service
   worker (mirrored in `chrome.storage.session`, memory only, cleared on
   browser exit), so the password is asked when the auto-lock timer says,

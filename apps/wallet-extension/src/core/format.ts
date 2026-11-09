@@ -82,3 +82,25 @@ export function formatDate(unixSeconds: number): string {
   if (Number.isNaN(d.getTime())) return String(unixSeconds);
   return d.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+
+/** What a ledger account type means to the person holding it. */
+const ACCOUNT_TYPE_LABELS: Record<string, string> = {
+  deposit: 'Available',
+  order_lock: 'In open orders',
+  escrow: 'In trade escrow',
+  offer_deposit: 'Offer deposits (refundable)',
+  sendout_escrow: 'Withdrawal in flight',
+  held: 'Held (large deposit, delayed)',
+  screening_hold: 'Held for screening',
+  custody: 'In your exchange\'s custody',
+  custody_escrow: 'Leaving custody (withdrawal in flight)',
+  stake_bond: 'Validator bond',
+  observer_bond: 'Observer bond',
+  arbitrator_bond: 'Arbitrator bond',
+  delegation: 'Delegated',
+  unbonding: 'Unbonding',
+};
+
+export function accountTypeLabel(type: string): string {
+  return ACCOUNT_TYPE_LABELS[type] ?? sentence(type);
+}
