@@ -33,6 +33,10 @@ Dates are UTC.
   registration and rotation, named arbitrators, retail fees) instead of a
   generic field list, with a warning on the ones that move funds or
   change what backs them.
+- Dev: `sync-e2e.sh` compared the follower's tip hash from one status call
+  with the validator's block at a height read a moment earlier, so a block
+  arriving in between failed the run; it now compares the same block on
+  both nodes.
 - Dev: `infra/dev/devnet.sh stop`, `kill` and `restart` wait for the nodes
   to exit and release their p2p, metrics and RPC ports, and `start` refuses
   busy ports instead of launching validators that cannot bind (the CI e2e

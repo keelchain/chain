@@ -43,8 +43,10 @@ say "waiting for the follower to catch up"
 TARGET=$(( $(height "$RPC0") + 4 ))
 wait_height "$RPC4" "$TARGET" 400
 
+# Compare the same block on both nodes: the follower's tip moves between two
+# status calls, so its height and hash must come from one block record.
 H=$(height "$RPC4")
-F=$(curl -sf "$RPC4/v1/status" | python3 -c 'import sys,json;print(json.load(sys.stdin)["state_hash"])')
+F=$(curl -sf "$RPC4/v1/blocks/$H" | python3 -c 'import sys,json;print(json.load(sys.stdin)["state_hash"])')
 V=$(curl -sf "$RPC0/v1/blocks/$H" | python3 -c 'import sys,json;print(json.load(sys.stdin)["state_hash"])')
 [[ "$F" == "$V" ]] || { say "hash mismatch at $H: follower=$F validator=$V"; exit 1; }
 say "follower at $H agrees with validator 0 ($F)"
