@@ -8,6 +8,11 @@ Dates are UTC.
 - Docs: the whitepaper (draft v0.2) covers client custody, the float swap,
   fresh-pool rotation and per-offer arbitration; how-it-works 9, 11 and 15
   point at the swap; models.md walks a trade between the two models.
+- Dev: `infra/dev/devnet.sh stop`, `kill` and `restart` wait for the nodes
+  to exit and release their p2p, metrics and RPC ports, and `start` refuses
+  busy ports instead of launching validators that cannot bind (the CI e2e
+  job runs the devnets back to back and the failover check raced the
+  state-sync nodes' shutdown).
 - Node: versioned snapshots with a migration path (schema 3), follower nodes
   (`--role follower`, `--extra-peers`), state sync from a peer's snapshot
   (`--sync-from`, `--sync-verify`, `/v1/sync/*`), journal segments with
