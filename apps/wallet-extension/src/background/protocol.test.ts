@@ -3,14 +3,14 @@
  * in-memory transport, a fake content bridge and the real Wallet controller
  * (memory store, fake timer, scripted approvals).
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, test } from 'vitest';
 import { Keypair, verify, txId, type SignedAction as SdkSignedAction } from '@keelchain/sdk';
 import { createProvider, type Transport } from '../inpage/provider';
 import { CHANNEL, toProviderError, type ContentToInpage, type InpageToContent, type ProviderEvent, type ProviderResponse } from '../core/protocol';
 import { MemoryStore } from '../core/storage';
 import { Approvals } from './approvals';
 import { Session, type Timer } from './session';
-import { Wallet } from './wallet';
+import { Wallet, type UiState } from './wallet';
 import { VECTOR } from '../core/keys.test';
 import type { KeelProvider, ProviderError } from '../inpage/types';
 
@@ -319,4 +319,19 @@ describe('provider protocol', () => {
     await setup(bad);
     expect((await rejection(bad.provider.getAccount())).code).toBe('INVALID_REQUEST');
   });
+});
+
+test('the popup gets the wallet state back from lock and unlock, never a bare acknowledgement', async () => {
+  const h = harness();
+  await setup(h);
+  const unlocked = (await h.wallet.handleUi('getState', {})) as UiState;
+  expect(unlocked.locked).toBe(false);
+  const afterLock = (await h.wallet.handleUi('lock', {})) as UiState;
+  expect(afterLock.hasVault).toBe(true);
+  expect(afterLock.locked).toBe(true);
+  expect(afterLock.pending).toEqual([]);
+  expect(h.session.unlocked).toBe(false);
+  const afterUnlock = (await h.wallet.handleUi('unlock', { password: PASSWORD })) as UiState;
+  expect(afterUnlock.locked).toBe(false);
+  expect(afterUnlock.address).toBe(unlocked.address);
 });

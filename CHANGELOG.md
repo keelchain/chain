@@ -16,6 +16,9 @@ Dates are UTC.
   Nile on the testnet). SDK: `externalNetworks`, `fetchIncoming`,
   `depositProgress`. The explorer's Bitcoin links for the testnet now point
   at signet, not testnet4. The indexer lists each deposit address once.
+- Wallet: the Lock button handed the popup a bare acknowledgement instead
+  of the wallet state, so the popup rendered the onboarding screen until
+  its next poll; lock now returns the locked state.
 - Wallet: the approval popup describes the custody, client-fee and
   arbitration actions in words (swap, custody withdrawal, vault
   registration and rotation, named arbitrators, retail fees) instead of a

@@ -79,7 +79,11 @@ function Deposits({ rpc, networkId, address, refreshKey }: { rpc: string; networ
           {rows.map((p) => (
             <li key={`${p.chain}:${p.tx_hash}`}>
               <span className="small">
-                <a href={externalTxUrl(nets[p.chain as ExternalChain], p.tx_hash)} target="_blank" rel="noreferrer" title={p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</a>
+                {nets[p.chain as ExternalChain] ? (
+                  <a href={externalTxUrl(nets[p.chain as ExternalChain], p.tx_hash)} target="_blank" rel="noreferrer" title={p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</a>
+                ) : (
+                  <span title={p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</span>
+                )}
                 <br />
                 <span className="muted">{stageLabel(p)}</span>
               </span>

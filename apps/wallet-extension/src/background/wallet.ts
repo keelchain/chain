@@ -290,8 +290,9 @@ export class Wallet {
       case 'unlock':
         return this.unlock(String(p['password'] ?? ''));
       case 'lock':
+        // The popup renders whatever this returns, so hand back the state.
         this.deps.session.lock();
-        return { ok: true };
+        return this.uiState();
       case 'touch':
         this.deps.session.touch();
         return { ok: true };
