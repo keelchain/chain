@@ -8,6 +8,19 @@ Dates are UTC.
 - Docs: the whitepaper (draft v0.2) covers client custody, the float swap,
   fresh-pool rotation and per-offer arbitration; how-it-works 9, 11 and 15
   point at the swap; models.md walks a trade between the two models.
+- Deposits in flight: the wallet's home screen and the explorer's account
+  page (*Deposits* tab) show each incoming deposit from the moment the
+  external network sees it (looked up on mempool.space or TronGrid from the
+  browser) through its confirmations, the observers' votes and the credit,
+  with the network named on every deposit address (Bitcoin signet and Tron
+  Nile on the testnet). SDK: `externalNetworks`, `fetchIncoming`,
+  `depositProgress`. The explorer's Bitcoin links for the testnet now point
+  at signet, not testnet4. The indexer lists each deposit address once.
+- Wallet: the approval popup describes the custody, client-fee and
+  arbitration actions in words (swap, custody withdrawal, vault
+  registration and rotation, named arbitrators, retail fees) instead of a
+  generic field list, with a warning on the ones that move funds or
+  change what backs them.
 - Dev: `infra/dev/devnet.sh stop`, `kill` and `restart` wait for the nodes
   to exit and release their p2p, metrics and RPC ports, and `start` refuses
   busy ports instead of launching validators that cannot bind (the CI e2e

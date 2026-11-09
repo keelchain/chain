@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useAccount, useAccountOffers, useAccountOrders, useAccountTrades, useAccountTransfers, useAccountTxs } from '../api/hooks';
+import { useQuery } from '@tanstack/react-query';
+import { depositProgress, externalNetworks, externalAddressUrl, fetchIncoming, isProcessing, stageLabel, type DepositProgress, type ExternalChain } from '@keelchain/sdk';
+import { useAccount, useAccountDeposits, useAccountOffers, useAccountOrders, useAccountTrades, useAccountTransfers, useAccountTxs, useParams as useChainParams } from '../api/hooks';
 import { OffersTable, TradesTable, TransfersTable, TxsTable } from '../components/tables';
-import { Amount, Badge, BlockLink, Card, ErrorState, ExternalLink, Hex, KV, Loading, Meter, Pager, StatTile, StatusBadge, Tabs, TxLink, PairLink, Price } from '../components/ui';
+import { Amount, Badge, BlockLink, Card, CopyButton, ErrorState, ExternalLink, Hex, KV, Loading, Meter, Pager, StatTile, StatusBadge, Tabs, TimeAgo, TxLink, PairLink, Price } from '../components/ui';
 import { formatInt, formatPercent, splitPair } from '../lib/format';
 import { chainName } from '../lib/links';
-import { useHref } from '../network/NetworkContext';
+import { useHref, useNetwork } from '../network/NetworkContext';
 
-type Tab = 'txs' | 'transfers' | 'orders' | 'offers' | 'trades';
+type Tab = 'txs' | 'transfers' | 'deposits' | 'orders' | 'offers' | 'trades';
 
 const ACCOUNT_TYPE_HELP: Record<string, string> = {
   available: 'Spendable balance',
@@ -153,6 +155,7 @@ export function AccountPage() {
           tabs={[
             { id: 'txs', label: 'Transactions' },
             { id: 'transfers', label: 'Transfers' },
+            { id: 'deposits', label: 'Deposits' },
             { id: 'orders', label: 'Orders' },
             { id: 'offers', label: 'Offers' },
             { id: 'trades', label: 'Trades' },
@@ -162,6 +165,7 @@ export function AccountPage() {
         />
         {tab === 'txs' && <AccountTxs address={address} />}
         {tab === 'transfers' && <AccountTransfers address={address} />}
+        {tab === 'deposits' && <AccountDeposits address={address} depositAddresses={a.deposit_addresses} />}
         {tab === 'orders' && <AccountOrders address={address} />}
         {tab === 'offers' && <AccountOffers address={address} />}
         {tab === 'trades' && <AccountTrades address={address} />}
@@ -197,6 +201,120 @@ function AccountTransfers({ address }: { address: string }) {
       <TransfersTable transfers={rows} self={address} />
       <Pager hasMore={!!q.data?.next_cursor} loading={q.isFetching} onMore={() => { setAcc(rows); setCursor(q.data?.next_cursor ?? undefined); }} />
     </>
+  );
+}
+
+const REQUIRED_PARAM: Record<string, string> = { BTC: 'confirmations_btc', ETH: 'confirmations_eth', TRON: 'confirmations_tron' };
+const STAGE_TONE: Record<DepositProgress['stage'], 'good' | 'warn' | 'bad' | 'neutral' | 'accent'> = {
+  seen: 'warn',
+  confirming: 'warn',
+  observing: 'accent',
+  held: 'accent',
+  credited: 'good',
+  rejected: 'bad',
+};
+
+/**
+ * Deposits in flight and landed, per external chain: the deposit address with
+ * the network it lives on, what that network shows arriving (looked up on its
+ * public API from the browser), and the chain's own deposit rows.
+ */
+function AccountDeposits({ address, depositAddresses }: { address: string; depositAddresses: { chain: string; index: number; address: string | null }[] }) {
+  const { network } = useNetwork();
+  const nets = externalNetworks(network.id);
+  const params = useChainParams();
+  const seen = new Set<string>();
+  const rows: { chain: string; index: number; address: string }[] = [];
+  for (const d of depositAddresses) {
+    if (!d.address || seen.has(d.chain)) continue;
+    seen.add(d.chain);
+    rows.push({ chain: d.chain, index: d.index, address: d.address });
+  }
+  if (!rows.length) {
+    return (
+      <div className="card-body stack">
+        <div className="empty">This account has no deposit address yet. One is assigned by a signed RequestDepositAddress, which Keel Wallet sends from its Receive card.</div>
+      </div>
+    );
+  }
+  return (
+    <div className="card-body stack">
+      <div className="notice info small">
+        Deposits arrive on {rows.map((r) => nets[r.chain as ExternalChain]?.name ?? r.chain).join(' and ')}. Coins sent on another network, such as Bitcoin testnet3 or Tron Shasta, never reach these addresses and do not appear here.
+      </div>
+      {rows.map((r) => {
+        const required = Number(params.data?.params[REQUIRED_PARAM[r.chain] ?? ''] ?? 0) || (r.chain === 'BTC' ? 2 : r.chain === 'TRON' ? 19 : 12);
+        return <ChainDeposits key={r.chain} owner={address} chain={r.chain} depositAddress={r.address} index={r.index} net={nets[r.chain as ExternalChain]} required={required} />;
+      })}
+    </div>
+  );
+}
+
+function ChainDeposits({ owner, chain, depositAddress, index, net, required }: { owner: string; chain: string; depositAddress: string; index: number; net: ReturnType<typeof externalNetworks>[ExternalChain] | undefined; required: number }) {
+  const onChain = useAccountDeposits(owner, chain);
+  const incoming = useQuery({
+    queryKey: ['incoming', net?.name, depositAddress],
+    queryFn: () => (net ? fetchIncoming(net, depositAddress) : Promise.resolve(null)),
+    enabled: !!net?.api,
+    refetchInterval: 30_000,
+    retry: 1,
+  });
+  const list = depositProgress(incoming.data ?? null, onChain.data?.deposits ?? [], required);
+  const processing = list.filter((p) => isProcessing(p.stage)).length;
+  return (
+    <Card
+      title={
+        <span>
+          {net?.name ?? chainName(chain)}
+          {processing > 0 && <> <Badge tone="warn">{processing} processing</Badge></>}
+        </span>
+      }
+      flush
+    >
+      <div className="card-body stack">
+        <KV
+          rows={[
+            ['Deposit address', <span className="hex" title={depositAddress}>{net ? <a href={externalAddressUrl(net, depositAddress)} target="_blank" rel="noreferrer noopener">{depositAddress} ↗</a> : depositAddress}<CopyButton text={depositAddress} /></span>],
+            ['Index', formatInt(index)],
+            ['Credited after', `${required} confirmations on ${net?.name ?? chainName(chain)}`],
+          ]}
+        />
+        {incoming.isError && <div className="notice small">Could not reach {net?.name} to look for incoming transactions. The chain's own records below are unaffected.</div>}
+        {net && !net.api && <div className="muted small">Incoming transactions on {net.name} are not looked up; the chain's records appear once the observers report them.</div>}
+      </div>
+      {onChain.isLoading || (incoming.isLoading && incoming.fetchStatus !== 'idle') ? (
+        <Loading rows={2} />
+      ) : list.length === 0 ? (
+        <div className="empty">Nothing incoming and nothing credited yet.</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>External tx</th>
+                <th>Asset</th>
+                <th className="num">Amount</th>
+                <th>Stage</th>
+                <th>Seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((p) => (
+                <tr key={p.tx_hash}>
+                  <td><ExternalLink chain={p.chain} value={p.tx_hash} what="tx" /></td>
+                  <td>{p.asset}</td>
+                  <td className="num"><Amount value={p.amount} asset={p.asset} /></td>
+                  <td>
+                    <Badge tone={STAGE_TONE[p.stage]}>{p.stage}</Badge> <span className="small text-2">{stageLabel(p)}</span>
+                  </td>
+                  <td>{p.time ? <TimeAgo ts={p.time * 1000} /> : <span className="muted">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 

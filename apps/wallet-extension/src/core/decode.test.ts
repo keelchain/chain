@@ -10,6 +10,47 @@ function field(d: ReturnType<typeof decodeAction>, name: string) {
 }
 
 describe('decodeAction', () => {
+  it('SwapCustody into the market, with the backing warning', () => {
+    const d = decodeAction({ SwapCustody: { asset: 'BTC.BTC', amount: '250000', to: 'deposit', on_behalf_of: null } });
+    expect(d.label).toBe('Swap custody');
+    expect(d.summary).toBe('Move 0.0025 BTC.BTC from custody into the market');
+    expect(field(d, 'Direction')).toMatchObject({ k: 'badge', value: 'Into the market' });
+    expect(d.warning).toMatch(/only what backs it changes/);
+    const back = decodeAction({ SwapCustody: { asset: 'BTC.BTC', amount: 250000, to: 'custody', on_behalf_of: ADDR } });
+    expect(back.summary).toBe(`Return 0.0025 BTC.BTC from the market into custody for ${ADDR.slice(0, 8)}…`);
+    expect(field(back, 'On behalf of')).toEqual({ k: 'address', value: ADDR });
+  });
+
+  it('WithdrawCustody warns like Withdraw', () => {
+    const d = decodeAction({ WithdrawCustody: { asset: 'BTC.BTC', to: 'bcrt1qexample', amount: '100000' } });
+    expect(d.summary).toBe('Withdraw 0.001 BTC.BTC from custody to bcrt1qexample');
+    expect(field(d, 'Destination')).toEqual({ k: 'external', chain: 'BTC', value: 'bcrt1qexample' });
+    expect(d.warning).toMatch(/custodian/);
+  });
+
+  it('RotateCustodyVault now and at a height', () => {
+    const now = decodeAction({ RotateCustodyVault: { chain: 'BTC', public_key: '02ab', chain_code: 'cc', signer_url: 'https://signer.example/sign', sweep: false, activate_at: null } });
+    expect(now.summary).toBe('Rotate your BTC vault to a fresh key now');
+    expect(field(now, 'Sweep old coins')).toEqual({ k: 'bool', value: false });
+    expect(now.warning).toMatch(/new key/);
+    const later = decodeAction({ RotateCustodyVault: { chain: 'ETH', public_key: '02ab', chain_code: 'cc', signer_url: 'https://signer.example/sign', sweep: true, activate_at: 5000 } });
+    expect(later.summary).toBe('Rotate your ETH vault to a fresh key at height 5000, sweeping the old coins');
+    expect(field(later, 'Activate at height')).toEqual({ k: 'number', value: '5000' });
+  });
+
+  it('SetOfferArbitrators lists the names and reads clearing', () => {
+    const d = decodeAction({ SetOfferArbitrators: { offer_id: 9, arbitrators: [ADDR, ADDR] } });
+    expect(d.summary).toBe('Name 2 arbitrators on offer #9');
+    expect(field(d, 'Arbitrator 2')).toEqual({ k: 'address', value: ADDR });
+    expect(decodeAction({ SetOfferArbitrators: { offer_id: 9, arbitrators: [] } }).summary).toBe('Clear the arbitrators on offer #9');
+    expect(decodeAction({ ChooseArbitrator: { trade_id: 4, arbitrator: ADDR } }).summary).toBe('Choose the arbitrator for trade #4');
+  });
+
+  it('SetClientFee shows percentages', () => {
+    const d = decodeAction({ SetClientFee: { p2p_bps: 50, taker_bps: 10, withdraw_bps: 25 } });
+    expect(d.summary).toBe('Set retail fees: P2P 0.50%, taker 0.10%, withdraw 0.25%');
+  });
+
   it('Transfer with KEEL decimals', () => {
     const d = decodeAction({ Transfer: { to: ADDR, asset: 'KEEL', amount: '1500000', memo: 'rent' } });
     expect(d.kind).toBe('Transfer');

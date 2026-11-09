@@ -1,6 +1,7 @@
 /** Popup ↔ background client. */
 import { fromWire, toWire, type RuntimeUiMessage } from '../core/protocol';
 import type { UiState } from '../background/wallet';
+import type { ChainDepositRow } from '@keelchain/sdk';
 
 export type { UiState };
 
@@ -24,6 +25,31 @@ export interface AccountResponse {
   nonce: number;
   balances: Balance[];
   tier?: number;
+}
+
+/** The account's deposit address on one chain, or null when none was assigned yet. */
+export async function fetchDepositAddress(rpc: string, address: string, chain: string): Promise<{ index: number; address: string } | null> {
+  const res = await fetch(`${rpc.replace(/\/$/, '')}/v1/vaults/${chain}/addresses?owner=${address}`);
+  if (!res.ok) return null;
+  const j = (await res.json()) as { addresses?: { index: number; address: string | null }[] };
+  const row = j.addresses?.[0];
+  return row && row.address ? { index: row.index, address: row.address } : null;
+}
+
+/** The chain's deposit rows for this owner: pending (observers voting) and credited. */
+export async function fetchChainDeposits(rpc: string, address: string): Promise<ChainDepositRow[]> {
+  const res = await fetch(`${rpc.replace(/\/$/, '')}/v1/vaults/deposits?owner=${address}`);
+  if (!res.ok) return [];
+  const j = (await res.json()) as { deposits?: ChainDepositRow[] };
+  return Array.isArray(j.deposits) ? j.deposits : [];
+}
+
+/** Governance parameters, for the confirmation depth per chain. */
+export async function fetchParams(rpc: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${rpc.replace(/\/$/, '')}/v1/params`);
+  if (!res.ok) return {};
+  const j = (await res.json()) as Record<string, unknown>;
+  return typeof j === 'object' && j !== null ? j : {};
 }
 
 /** GET <rpc>/v1/accounts/<addr>; an unknown account (404) is an empty one. */

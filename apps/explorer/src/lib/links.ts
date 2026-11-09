@@ -4,7 +4,8 @@ export type ExternalChain = 'BTC' | 'ETH' | 'TRON';
 
 const HOSTS: Record<string, Record<ExternalChain, string>> = {
   mainnet: { BTC: 'https://mempool.space', ETH: 'https://etherscan.io', TRON: 'https://tronscan.org/#' },
-  testnet: { BTC: 'https://mempool.space/testnet4', ETH: 'https://sepolia.etherscan.io', TRON: 'https://nile.tronscan.org/#' },
+  // The testnet bridges Bitcoin signet (not testnet3/4) and Tron Nile.
+  testnet: { BTC: 'https://mempool.space/signet', ETH: 'https://sepolia.etherscan.io', TRON: 'https://nile.tronscan.org/#' },
 };
 
 function host(chain: string, network: string): string | null {

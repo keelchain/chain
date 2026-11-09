@@ -169,8 +169,8 @@ export class HttpExplorerApi implements ExplorerApi {
   vaults() {
     return this.get<Vault[]>('/v1/vaults');
   }
-  vaultDeposits(chain: string, status?: string) {
-    return this.get<DepositsPage>(`/v1/vaults/${encodeURIComponent(chain)}/deposits${buildQuery({ status })}`);
+  vaultDeposits(chain: string, status?: string, owner?: string) {
+    return this.get<DepositsPage>(`/v1/vaults/${encodeURIComponent(chain)}/deposits${buildQuery({ status, owner })}`);
   }
   outbounds(status?: string) {
     return this.get<OutboundsPage>(`/v1/vaults/outbounds${buildQuery({ status })}`);

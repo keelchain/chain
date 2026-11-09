@@ -1568,10 +1568,13 @@ export class MockExplorerApi implements ExplorerApi {
     return this.delay(() => this.vaultsList);
   }
 
-  vaultDeposits(chain: string, status?: string): Promise<DepositsPage> {
+  vaultDeposits(chain: string, status?: string, owner?: string): Promise<DepositsPage> {
     return this.delay(() => {
       if (!CHAINS.includes(chain as (typeof CHAINS)[number])) this.notFound('vault');
-      return { deposits: this.depositsList.filter((d) => d.chain === chain && (status ? d.status === status : true)), next_cursor: null };
+      return {
+        deposits: this.depositsList.filter((d) => d.chain === chain && (status ? d.status === status : true) && (owner ? d.owner === owner : true)),
+        next_cursor: null,
+      };
     });
   }
 

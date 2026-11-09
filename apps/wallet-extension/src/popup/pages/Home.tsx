@@ -1,10 +1,97 @@
 import { useEffect, useState } from 'react';
-import { call, fetchAccount, type AccountResponse, type UiState } from '../ui';
+import { depositProgress, externalNetworks, externalTxUrl, fetchIncoming, isProcessing, stageLabel, type DepositProgress, type ExternalChain } from '@keelchain/sdk';
+import { call, fetchAccount, fetchChainDeposits, fetchDepositAddress, fetchParams, type AccountResponse, type UiState } from '../ui';
 import type { DepositAddressInfo } from '../../background/wallet';
 import { Address } from '../components/Address';
 import { SiteAccessBanner } from '../components/SiteAccess';
 import { decimalsOf, formatAmount, sentence } from '../../core/format';
 import { explorerAccountUrl } from '../../core/networks';
+
+const DEPOSIT_CHAINS: ExternalChain[] = ['BTC', 'TRON'];
+const REQUIRED_PARAM: Record<ExternalChain, string> = { BTC: 'confirmations_btc', ETH: 'confirmations_eth', TRON: 'confirmations_tron' };
+const REQUIRED_DEFAULT: Record<ExternalChain, number> = { BTC: 2, ETH: 12, TRON: 19 };
+
+/** Name of the external network an id maps to: the testnet bridges signet and Nile. */
+function externalName(networkId: string, chain: ExternalChain): string {
+  return externalNetworks(networkId === 'mainnet' ? 'mainnet' : 'testnet')[chain].name;
+}
+
+/**
+ * Deposits in flight and landed for the active account: the chain's own rows
+ * (observers voting, credited) merged with what the external networks show
+ * arriving at the deposit addresses, looked up on their public APIs from the
+ * popup. Refreshes every 30 seconds while the popup is open.
+ */
+function Deposits({ rpc, networkId, address, refreshKey }: { rpc: string; networkId: string; address: string; refreshKey: number }) {
+  const [rows, setRows] = useState<DepositProgress[] | null>(null);
+  const [unreachable, setUnreachable] = useState<string[]>([]);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const nets = externalNetworks(networkId === 'mainnet' ? 'mainnet' : 'testnet');
+    (async () => {
+      const [chainRows, params, addresses] = await Promise.all([
+        fetchChainDeposits(rpc, address).catch(() => []),
+        fetchParams(rpc).catch(() => ({}) as Record<string, unknown>),
+        Promise.all(DEPOSIT_CHAINS.map((c) => fetchDepositAddress(rpc, address, c).catch(() => null))),
+      ]);
+      const failed: string[] = [];
+      const all: DepositProgress[] = [];
+      for (const [i, chain] of DEPOSIT_CHAINS.entries()) {
+        const dep = addresses[i];
+        const net = nets[chain];
+        const required = Number(params[REQUIRED_PARAM[chain]] ?? 0) || REQUIRED_DEFAULT[chain];
+        let incoming = null;
+        if (dep && net.api) {
+          try {
+            incoming = await fetchIncoming(net, dep.address);
+          } catch {
+            failed.push(net.name);
+          }
+        }
+        all.push(...depositProgress(incoming, chainRows.filter((r) => r.chain === chain), required));
+      }
+      if (!cancelled) {
+        setRows(all);
+        setUnreachable(failed);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rpc, networkId, address, refreshKey, tick]);
+  const processing = (rows ?? []).filter((p) => isProcessing(p.stage)).length;
+  const nets = externalNetworks(networkId === 'mainnet' ? 'mainnet' : 'testnet');
+  return (
+    <div className="card">
+      <div className="row">
+        <div className="label">Deposits{processing > 0 && <> <span className="badge warn">{processing} processing</span></>}</div>
+        <button className="mini" onClick={() => setTick((n) => n + 1)}>Refresh</button>
+      </div>
+      {rows === null ? (
+        <p className="muted small">Looking for deposits…</p>
+      ) : rows.length === 0 ? (
+        <p className="muted small">Nothing incoming. A deposit shows here from the moment {DEPOSIT_CHAINS.map((c) => nets[c].name).join(' or ')} sees it, through its confirmations, until the chain credits it.</p>
+      ) : (
+        <ul className="list">
+          {rows.map((p) => (
+            <li key={`${p.chain}:${p.tx_hash}`}>
+              <span className="small">
+                <a href={externalTxUrl(nets[p.chain as ExternalChain], p.tx_hash)} target="_blank" rel="noreferrer" title={p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</a>
+                <br />
+                <span className="muted">{stageLabel(p)}</span>
+              </span>
+              <span className={`badge ${p.stage === 'credited' ? 'good' : p.stage === 'rejected' ? 'bad' : 'warn'}`}>{p.stage}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {unreachable.length > 0 && <p className="muted small">Could not reach {unreachable.join(' and ')} to look for incoming transactions; the chain's own records are shown.</p>}
+    </div>
+  );
+}
 
 export function Home({ state, onState }: { state: UiState; onState: (s: UiState) => void }) {
   const { network, address } = state;
@@ -127,24 +214,25 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
       {!network.placeholder && address && (
         <div className="card">
           <div className="label">Receive</div>
-          <p className="muted small">Fund this account from another chain. The address belongs to the Keelchain vault; the chain credits you after {network.id === 'testnet' ? 'the confirmations for that chain' : 'confirmation'}.</p>
+          <p className="muted small">Fund this account from {externalName(network.id, 'BTC')} or {externalName(network.id, 'TRON')}. The address belongs to the Keelchain vault; the chain credits you after that chain's confirmations. Coins sent on any other network do not arrive.</p>
           <div className="row">
-            {['BTC', 'TRON'].map((c) => (
+            {DEPOSIT_CHAINS.map((c) => (
               <button key={c} className="mini" disabled={depositBusy !== null} onClick={() => receive(c)}>
-                {depositBusy === c ? 'Requesting…' : c === 'BTC' ? 'Bitcoin' : 'Tron (USDT, TRX)'}
+                {depositBusy === c ? 'Requesting…' : c === 'BTC' ? externalName(network.id, 'BTC') : `${externalName(network.id, 'TRON')} (USDT, TRX)`}
               </button>
             ))}
           </div>
           {depositError && <p className="error">{depositError}</p>}
           {deposit && (
             <div>
-              <div className="label">{deposit.label} deposit address · index {deposit.index}{deposit.fresh ? ' · just assigned' : ''}</div>
+              <div className="label">{externalName(network.id, deposit.chain as ExternalChain)} deposit address · index {deposit.index}{deposit.fresh ? ' · just assigned' : ''}</div>
               <Address value={deposit.address} full />
-              <p className="muted small">{network.id === 'testnet' ? (deposit.chain === 'BTC' ? 'Signet coins only (a signet faucet works). Credited as BTC.BTC after 2 confirmations.' : 'Nile testnet only. USDT is credited as TRON.USDT, TRX as TRON.TRX, after 19 confirmations.') : 'Send only the assets of this chain to this address.'}</p>
+              <p className="notice small">{network.id === 'testnet' ? (deposit.chain === 'BTC' ? 'Bitcoin signet only: coins sent on Bitcoin mainnet, testnet3 or testnet4 never arrive. A signet faucet works. Credited as BTC.BTC after 2 confirmations.' : 'Tron Nile only: USDT or TRX sent on Tron mainnet or Shasta never arrive. USDT is credited as TRON.USDT, TRX as TRON.TRX, after 19 confirmations.') : 'Send only the assets of this chain, on this chain, to this address.'}</p>
             </div>
           )}
         </div>
       )}
+      {!network.placeholder && address && <Deposits rpc={network.rpc} networkId={network.id} address={address} refreshKey={refreshKey} />}
       {!network.placeholder && address && (
         <div className="card">
           <div className="label">Send</div>

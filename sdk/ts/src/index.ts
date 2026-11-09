@@ -5,3 +5,4 @@ export * from "./indexer.ts";
 export * from "./ws.ts";
 export * from "./connect.ts";
 export { Writer, bytesToHex, hexToBytes } from "./borsh.ts";
+export * from "./deposits.ts";

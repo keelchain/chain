@@ -45,6 +45,9 @@ export const useValidators = () => useApiQuery(['validators'], (a) => a.validato
 export const useEpochs = () => useApiQuery(['epochs'], (a) => a.epochs());
 export const useVaults = () => useApiQuery(['vaults'], (a) => a.vaults(), { refetchInterval: 10_000 });
 export const useVaultDeposits = (chain: string, status?: string) => useApiQuery(['vault-deposits', chain, status], (a) => a.vaultDeposits(chain, status));
+/** The chain's deposit rows for one owner on one chain, refreshed while the page is open. */
+export const useAccountDeposits = (addr: string, chain: string) =>
+  useApiQuery(['account-deposits', addr, chain], (a) => a.vaultDeposits(chain, undefined, addr), { enabled: !!addr && !!chain, refetchInterval: 15_000 });
 export const useOutbounds = (status?: string) => useApiQuery(['outbounds', status], (a) => a.outbounds(status));
 export const useLightning = () => useApiQuery(['lightning'], (a) => a.lightning(), { refetchInterval: 10_000 });
 export const useProposals = () => useApiQuery(['proposals'], (a) => a.proposals());

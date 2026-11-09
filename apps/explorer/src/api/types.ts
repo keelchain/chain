@@ -545,7 +545,7 @@ export interface ExplorerApi {
   validators(): Promise<Validator[]>;
   epochs(): Promise<Epoch[]>;
   vaults(): Promise<Vault[]>;
-  vaultDeposits(chain: string, status?: string): Promise<DepositsPage>;
+  vaultDeposits(chain: string, status?: string, owner?: string): Promise<DepositsPage>;
   outbounds(status?: string): Promise<OutboundsPage>;
   lightning(): Promise<LightningStatus>;
   proposals(): Promise<Proposal[]>;

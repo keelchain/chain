@@ -319,10 +319,16 @@ pub async fn account(State(app): State<App>, Path(addr): Path<String>) -> ApiRes
     }
     let deposit_rows = sqlx::query("SELECT data FROM events WHERE type = 'DepositAddressAssigned' AND addresses @> ARRAY[$1::text] ORDER BY height").bind(&a).fetch_all(&app.db.pool).await?;
     let mut deposit_addresses = Vec::new();
+    // Asking for an address a second time re-emits the event for the same
+    // index; list each (chain, index) once.
+    let mut seen = std::collections::BTreeSet::new();
     for r in deposit_rows {
         let d: Value = r.get("data");
         let chain = field_str(&d, "chain").unwrap_or_default();
         let index = d.get("index").and_then(Value::as_u64).unwrap_or(0);
+        if !seen.insert((chain.clone(), index)) {
+            continue;
+        }
         let address = app
             .node
             .get(&format!("/v1/vaults/{chain}/addresses/{index}"))

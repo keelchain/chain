@@ -76,6 +76,16 @@ export const ACTION_LABELS: Record<string, string> = {
   UnlockBudget: 'Unlock budget',
   AuthorizeSessionKey: 'Authorize session key',
   RevokeSessionKey: 'Revoke session key',
+  SetClientFee: 'Set client fees',
+  RegisterCustodyVault: 'Register custody vault',
+  RequestCustodyAddress: 'Request custody address',
+  WithdrawCustody: 'Withdraw from custody',
+  SwapCustody: 'Swap custody',
+  SetOfferArbitrators: 'Name offer arbitrators',
+  ChooseArbitrator: 'Choose arbitrator',
+  RotateCustodyVault: 'Rotate custody vault',
+  CancelCustodyRotation: 'Cancel vault rotation',
+  RetireCustodyGeneration: 'Retire vault generation',
 };
 
 export function actionLabel(kind: string): string {
@@ -92,6 +102,9 @@ const MOVES_FUNDS: Record<string, string> = {
   BurnStable: 'This converts KUSD into a reserve asset.',
   Bond: 'This locks KEEL as a bond.',
   Delegate: 'This delegates KEEL to a validator.',
+  WithdrawCustody: 'This sends funds out of the chain to an external address, paid from your custodian\'s vault.',
+  SwapCustody: 'This moves a balance between your custodian\'s vault and the network vault. The amount stays yours; only what backs it changes.',
+  RotateCustodyVault: 'This moves your vault to a new key. New deposit addresses are issued; the old ones keep working while the old key drains.',
 };
 
 function str(v: unknown): string {
@@ -326,6 +339,87 @@ export function decodeAction(action: unknown): DecodedAction {
     }
     case 'RevokeSessionKey':
       return view('Revoke a session key', [{ name: 'Session key', field: { k: 'address', value: str(p['key']) } }]);
+    case 'SetClientFee': {
+      const bps = (v: unknown) => `${(Number(v ?? 0) / 100).toFixed(2)}%`;
+      return view(`Set retail fees: P2P ${bps(p['p2p_bps'])}, taker ${bps(p['taker_bps'])}, withdraw ${bps(p['withdraw_bps'])}`, [
+        { name: 'P2P releases', field: { k: 'text', value: bps(p['p2p_bps']) } },
+        { name: 'Order-book fills', field: { k: 'text', value: bps(p['taker_bps']) } },
+        { name: 'Withdrawals', field: { k: 'text', value: bps(p['withdraw_bps']) } },
+      ]);
+    }
+    case 'RegisterCustodyVault': {
+      const fields: NamedField[] = [
+        { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
+        { name: 'Epoch', field: { k: 'number', value: amountStr(p['epoch']) } },
+        { name: 'Public key', field: { k: 'hash', value: str(p['public_key']) } },
+        { name: 'Signer URL', field: { k: 'text', value: str(p['signer_url']) } },
+      ];
+      if (present(p['chain_code'])) fields.push({ name: 'Chain code', field: { k: 'hash', value: str(p['chain_code']) } });
+      return view(`Register your ${str(p['chain'])} custody vault (epoch ${amountStr(p['epoch'])})`, fields);
+    }
+    case 'RequestCustodyAddress':
+      return view(`Request a ${str(p['chain'])} address in the custody of ${str(p['custodian']).slice(0, 8)}…`, [
+        { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
+        { name: 'Custodian', field: { k: 'address', value: str(p['custodian']) } },
+      ]);
+    case 'WithdrawCustody': {
+      const asset = str(p['asset']);
+      const chain = asset.split('.')[0] ?? '';
+      return view(`Withdraw ${formatAmount(amountStr(p['amount']), decimalsOf(asset))} ${asset} from custody to ${str(p['to'])}`, [
+        { name: 'Asset', field: { k: 'asset', value: asset } },
+        { name: 'Amount', field: amount(p['amount'], asset) },
+        { name: 'Destination', field: { k: 'external', chain, value: str(p['to']) } },
+      ]);
+    }
+    case 'SwapCustody': {
+      const asset = str(p['asset']);
+      const toMarket = str(p['to']) === 'deposit';
+      const who = present(p['on_behalf_of']) ? ` for ${str(p['on_behalf_of']).slice(0, 8)}…` : '';
+      const fields: NamedField[] = [
+        { name: 'Asset', field: { k: 'asset', value: asset } },
+        { name: 'Amount', field: amount(p['amount'], asset) },
+        { name: 'Direction', field: { k: 'badge', value: toMarket ? 'Into the market' : 'Back into custody', tone: 'neutral' } },
+      ];
+      if (present(p['on_behalf_of'])) fields.push({ name: 'On behalf of', field: { k: 'address', value: str(p['on_behalf_of']) } });
+      return view(
+        `${toMarket ? 'Move' : 'Return'} ${formatAmount(amountStr(p['amount']), decimalsOf(asset))} ${asset} ${toMarket ? 'from custody into the market' : 'from the market into custody'}${who}`,
+        fields,
+      );
+    }
+    case 'SetOfferArbitrators': {
+      const list = Array.isArray(p['arbitrators']) ? (p['arbitrators'] as unknown[]) : [];
+      const fields: NamedField[] = [{ name: 'Offer', field: id('offer', p['offer_id']) }];
+      list.forEach((a, i) => fields.push({ name: `Arbitrator ${i + 1}`, field: { k: 'address', value: str(a) } }));
+      return view(
+        list.length ? `Name ${list.length} arbitrator${list.length === 1 ? '' : 's'} on offer #${amountStr(p['offer_id'])}` : `Clear the arbitrators on offer #${amountStr(p['offer_id'])}`,
+        fields,
+      );
+    }
+    case 'ChooseArbitrator':
+      return view(`Choose the arbitrator for trade #${amountStr(p['trade_id'])}`, [
+        { name: 'Trade', field: id('trade', p['trade_id']) },
+        { name: 'Arbitrator', field: { k: 'address', value: str(p['arbitrator']) } },
+      ]);
+    case 'RotateCustodyVault': {
+      const fields: NamedField[] = [
+        { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
+        { name: 'New public key', field: { k: 'hash', value: str(p['public_key']) } },
+        { name: 'Chain code', field: { k: 'hash', value: str(p['chain_code']) } },
+        { name: 'New signer URL', field: { k: 'text', value: str(p['signer_url']) } },
+        { name: 'Sweep old coins', field: { k: 'bool', value: Boolean(p['sweep']) } },
+      ];
+      if (present(p['activate_at'])) fields.push({ name: 'Activate at height', field: { k: 'number', value: amountStr(p['activate_at']) } });
+      const when = present(p['activate_at']) ? ` at height ${amountStr(p['activate_at'])}` : ' now';
+      return view(`Rotate your ${str(p['chain'])} vault to a fresh key${when}${p['sweep'] ? ', sweeping the old coins' : ''}`, fields);
+    }
+    case 'CancelCustodyRotation':
+      return view(`Cancel the pending ${str(p['chain'])} vault rotation`, [{ name: 'Chain', field: { k: 'text', value: str(p['chain']) } }]);
+    case 'RetireCustodyGeneration':
+      return view(`Retire generation ${amountStr(p['gen'])} of the ${str(p['chain'])} vault`, [
+        { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
+        { name: 'Custodian', field: { k: 'address', value: str(p['custodian']) } },
+        { name: 'Generation', field: { k: 'number', value: amountStr(p['gen']) } },
+      ]);
     default:
       return view(sentence(kind), genericFields(p));
   }

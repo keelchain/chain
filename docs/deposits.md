@@ -57,11 +57,35 @@ equivalent) are held for `large_deposit_delay_blocks` before they are usable.
 
 ## 3. See it land
 
-- Wallet: *Balances* → Refresh.
-- Explorer: https://testnet.keelchain.com → Vaults → the deposit list, or your
-  account page.
+The chain learns about a deposit only when an observer reports it at the
+required depth, so for the first minutes the chain has nothing to show. The
+wallet and the explorer fill that gap by looking the deposit address up on
+the external network's public API (mempool.space for Bitcoin, TronGrid for
+Tron) straight from the browser, and merge what they see with the chain's
+own rows. Each incoming transaction moves through these stages:
+
+| Stage | Meaning |
+|---|---|
+| seen | in the external network's mempool, no confirmation yet |
+| confirming | confirmed, below the required depth (`1 of 2 confirmations`) |
+| observing | deep enough; the observers' quorum is being collected |
+| held | credited, but delayed as a large deposit until a release height |
+| credited | in your balance |
+| rejected | the observers disagreed; nothing credited |
+
+- Wallet: the *Deposits* card on the home screen lists them with a
+  `processing` count, refreshing every 30 seconds while the popup is open.
+- Explorer: your account page → *Deposits* tab, one card per chain with the
+  address, the network it lives on and the stages above.
 - RPC: `/v1/accounts/<account>` lists balances; `/v1/vaults/deposits?owner=<account>`
   lists pending and credited deposits with the external transaction hash.
+- SDK: `externalNetworks`, `fetchIncoming` and `depositProgress` are the same
+  helpers the wallet and the explorer use.
+
+If nothing appears after a few minutes, check the network: the testnet
+addresses live on Bitcoin **signet** and Tron **Nile**. Coins sent on
+testnet3, testnet4, Shasta or a mainnet to the same address string are on a
+different ledger, the observers never see them, and they cannot be credited.
 
 ## What has to be true on the chain side
 
