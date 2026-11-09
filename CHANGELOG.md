@@ -5,6 +5,9 @@ Dates are UTC.
 
 ## Unreleased
 
+- Docs: the whitepaper (draft v0.2) covers client custody, the float swap,
+  fresh-pool rotation and per-offer arbitration; how-it-works 9, 11 and 15
+  point at the swap; models.md walks a trade between the two models.
 - Node: versioned snapshots with a migration path (schema 3), follower nodes
   (`--role follower`, `--extra-peers`), state sync from a peer's snapshot
   (`--sync-from`, `--sync-verify`, `/v1/sync/*`), journal segments with

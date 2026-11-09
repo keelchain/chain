@@ -1,4 +1,4 @@
-# Keelchain — Whitepaper (draft v0.1, 2026-09-06)
+# Keelchain — Whitepaper (draft v0.2, 2026-11-03)
 
 ## Abstract
 
@@ -112,6 +112,31 @@ At every block boundary the chain checks that, per bridged asset, observed
 reserves cover user liabilities; a breach halts payouts of that asset until
 governance intervenes.
 
+The network vault is one of two custody models. An exchange that already
+runs its own wallets keeps its keys: it registers a vault of its own (any
+key it controls, from a hardware signer to its own threshold set), the
+chain hands out deposit addresses under that key, the observers watch
+them and build its payouts, and the exchange's signer signs after checking
+each request against the chain's outbound rows. Those balances are a
+separate account type, backed by the exchange's vault alone, with the same
+per-vault reserve check every block. Keel is the rails and the ledger; the
+exchange is the custodian.
+
+The two models meet in the ledger. An exchange keeps a float on both sides,
+coins in its own vault and a balance in the network vault, and a user's
+balance crosses between the models by a swap against those floats in one
+ledger posting: no coins move on any chain, both reserve checks hold by
+construction, and from then on the balance trades on the chain's book and
+escrow with everyone else, wallet users included, and comes back the same
+way. External transactions shrink to the net drift of the floats, batched.
+
+An exchange can also move its whole platform to a fresh vault key with a
+fresh address space, immediately or at a chosen height, while every
+account, balance and index stays as it was; the old key keeps crediting
+and paying for a grace period and is then retired. Whether the old coins
+are swept to the new key or left to drain through ordinary withdrawals,
+unlinked on the external chain, is the exchange's choice.
+
 Observer-signer sets change per epoch with a fresh key generation and a
 migration of vault balances, avoiding the need for key resharing.
 
@@ -149,9 +174,16 @@ Offers publish terms, margins, bounds, payment-method labels and working
 hours on chain; payment instructions and chat stay off chain, end-to-end
 encrypted between counterparties, with only hashes committed. Trades move
 through funded, paid, released or cancelled states under payment windows
-measured in block time. Disputes are ruled by bonded, governance-elected
-arbitrators on committed evidence and are slashed for absence or provable
-misconduct. Identity stays off chain: attesters registered by governance
+measured in block time. Who rules a dispute is decided at the offer:
+the maker names the bonded arbitrators it accepts, typically its own
+exchange's dispute team, and a taker accepts them by taking the offer, as
+it accepts the price and the payment window. Any address with an
+arbitrator bond can be named; no election is needed, so two exchanges, or
+an exchange and a direct user, settle their disputes with the team the
+offer named, and Keel stays the infrastructure. An offer that names nobody
+falls back to the governance-elected arbitrator set, and governance can bar
+an address from ruling anywhere. Rulings are on committed evidence and
+arbitrators are slashed for absence or provable misconduct. Identity stays off chain: attesters registered by governance
 (the KYC'd marketplace among them) assert tiers that offers may require.
 
 ## 10. Security model summary
@@ -162,6 +194,11 @@ misconduct. Identity stays off chain: attesters registered by governance
   verification where available, per-chain caps and delays, bonded
   observers, slashing for false observations, reserve invariant enforced
   in state.
+- Client custody: an exchange's own vault, its own signer behind the
+  chain's signing policy, a separate account type with its own reserve
+  check; fresh-pool rotation with a grace period.
+- Disputes: per-offer arbitrators open by bond, a governance fallback set,
+  a governance ban; no operator override key.
 - Economic spam resistance: budgets, per-block caps, open-order caps.
 - Upgrades and parameters: governance with timelocks; nothing unilateral.
 

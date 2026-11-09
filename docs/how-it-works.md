@@ -383,7 +383,10 @@ that happens to start with those characters.
 This section describes the network vaults: the model for clients whose users
 hold Keel Wallet. A client that keeps its own wallets registers its own vault
 and signs its own withdrawals; where the funds sit in each model, who signs,
-and what the explorer shows is in `models.md`.
+and what the explorer shows is in `models.md`. A balance crosses between the
+two models with the float swap (`SwapCustody`, also in `models.md`): one
+ledger posting against the client's floats on both sides, no coins moving,
+after which it trades on the book and in escrow like any `deposit` balance.
 
 ### 9.1 Vaults and threshold keys
 
@@ -516,7 +519,9 @@ constant-product pool. The marketplace's "swap" feature is an off-chain
 desk that fills from the book (through the house maker) and settles as
 ordinary fills; from the chain's point of view it is a taker order with a
 tx id like any other. An on-chain AMM would be a new module and a
-governance-listed pool; it is not on the roadmap.
+governance-listed pool; it is not on the roadmap. The float swap of
+section 9 is not a market either: it moves one balance between a client's
+vault and the network vault at par, against the client's own floats.
 
 ## 12. Peer-to-peer offers, trades and disputes
 
@@ -696,6 +701,11 @@ Precisely:
   bounded hot exposure per observer.
 - **Custodial-mode users: not yet.** Until they migrate, the marketplace
   can sign for them. The design's answer is to make that mode disappear.
+- **Users of a custodial client (model A): custodied by that client.**
+  Their balances are backed by the client's own vault, and the client may
+  sign swaps and payouts for them. The chain only guarantees the reserve
+  check and, after a float swap, that the balance on the `deposit` side is
+  held like any other.
 - **Peer discovery and matching: on chain.** Offers and the order book are
   chain state; no server is needed to find a counterparty, though the
   marketplace is the friendliest place to do it.

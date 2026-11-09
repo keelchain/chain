@@ -206,6 +206,64 @@ what the protocol guarantees. The honest options, in increasing weight:
 
 None of these is switched on by default; each is a governance decision.
 
+## Trading between the two models
+
+Both models produce the same unit on the ledger (`BTC.BTC` is `BTC.BTC`,
+whichever vault backs it), so a trade between them is an ordinary chain
+trade once the custodial side has swapped in. There are three pairings and
+one mechanism:
+
+| Who trades with whom | Where the trade happens | Who rules a dispute |
+|---|---|---|
+| A custodial client's user and a Keel Wallet user (a P2P client's user or a direct user) | the chain's book or escrow | the arbitrator the offer names, else the governance set |
+| A custodial client's user and another custodial client's user | the chain's book or escrow | the same |
+| Two users of the same custodial client | the client's own ledger, never the chain | the client's own support, as today |
+
+**The path, step by step, for a custodial user selling BTC to a wallet
+user:**
+
+1. The user (or the client on the user's behalf, `on_behalf_of`) swaps
+   `SwapCustody { to: "deposit" }`: the user's custody balance becomes the
+   client's, the client's network float becomes the user's `deposit`
+   balance. One ledger posting, no coins move, both reserve checks hold.
+2. The balance is now a `deposit` balance like any wallet user's: the user
+   places an order on `BTC-KUSD`, or posts a P2P offer and the escrow takes
+   the coins when a taker starts a trade. The counterparty never learns
+   which model the other side is in.
+3. A fill or a release settles on chain with the protocol fee and, on top,
+   each side's own client's retail fee: the chain pays the custodial
+   client's `SetClientFee` rate into the client's account because the user
+   is attested by that client, and the P2P client's rate into its account
+   for its user. Keel's share is the wholesale fee only.
+4. A dispute on an escrow trade goes to the arbitrator the offer named.
+   The custodial client bonds its dispute team as an arbitrator
+   (`Bond { role: Arbitrator }`, `min_arbitrator_bond`) and names it on
+   its users' offers; a wallet user who takes the offer accepts that team,
+   or filters it out. Offers that name nobody fall to the governance set.
+   The custodial client's internal support never touches a chain trade.
+5. The proceeds (KUSD, or BTC bought) sit on the `deposit` side; the user
+   or the client swaps them back with `to: "custody"` when the user is done
+   trading, or leaves them to trade again. Nothing moves on Bitcoin.
+
+**What the custodial client needs for this:** a network float in each asset
+its users trade (its own `RequestDepositAddress`, funded from its vault by
+`WithdrawCustody` to that address), KEEL for the swap usage, and, if it
+wants its own team ruling disputes, an arbitrator bond. It keeps its keys,
+its ledger and its UI; its users see one balance and one button. A client
+that would rather not run a float can let its users swap only what they
+sell, with the proceeds swapped back in the same session, so the float
+rarely exceeds one session's volume.
+
+**What it costs the user:** the client's usage charge for the swap, if the
+client passes it on, and the ordinary trade fees. No external chain fee at
+any point, because no external transaction happens.
+
+**What it does not do:** it does not let a custody balance trade without
+the swap, and it does not let two custodial clients settle against each
+other off chain. A custody balance is backed by one vault, and the chain
+only settles what the network vault backs. That is what keeps each client's
+reserve check exact.
+
 ## The per-network setting
 
 A client turns Keel on one network at a time. For a network that is on, new
