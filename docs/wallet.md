@@ -165,6 +165,50 @@ wallet.
    signature is a signing request. The custodial secret is gone.
 4. Every step is a chain tx id, shown in the Chain tab.
 
+## 5b. In Keel and in your wallet (self-custody for bridged coins)
+
+A user's Bitcoin and Tron can sit in one of two places, and the wallet
+shows both:
+
+- **In Keel**: the default. The deposit address is a child of the network
+  vault's threshold key, the observer set signs for it, and the balance is a
+  Keel balance that trades, escrows and swaps. Everything in `deposits.md`.
+- **In your wallet**: self-custody. The wallet derives a Bitcoin key and a
+  Tron key from the same BIP39 seed as the Keel accounts, on the standard
+  paths, so the phrase alone recovers the coins in any other wallet:
+
+  ```
+  Bitcoin  BIP84  m/84'/0'/0'/0/<account>   bc1…   (mainnet)
+                  m/84'/1'/0'/0/<account>   tb1…   (signet)
+  Tron     BIP44  m/44'/195'/0'/0/<account> T…     (same on Nile and mainnet)
+  ```
+
+  The chain never learns these addresses. The popup reads their balances
+  from mempool.space and TronGrid directly, and the explorer shows nothing
+  for them.
+
+**Settings → New deposits go to** picks which address the Receive card
+shows: Keel (default) or your wallet. Nothing already deposited changes.
+The card carries the one warning that matters: coins in your wallet have
+no observer set behind them, so a lost phrase loses them.
+
+**Move to Keel** (the *In your wallet* card): the background derives the
+key, builds the transaction to the account's vault deposit address (Bitcoin:
+a P2WPKH spend with change back to the own address, fee from the recommended
+rate, *Max* takes the fee from the amount; Tron: a TRX transfer or a TRC-20
+`transfer`, which needs a little TRX at the own address for energy), signs
+it locally, broadcasts it through the public API and wipes the key. From
+there it is an ordinary deposit and the Deposits card follows it.
+
+**Move to your wallet**: the Send card's *Withdraw* with the own address as
+destination, one click from the "Move to your wallet" button. An ordinary
+withdrawal: escrow, observer batch, threshold signature, fee from the amount.
+
+Self-custody is offered on the testnet and mainnet, where the wallet knows
+the public APIs; a custom network shows the Keel side only. Code:
+`apps/wallet-extension/src/core/selfcustody.ts`, checked against the live
+vault addresses in its tests.
+
 ## 6. What the operator still signs (its own keys, never users')
 
 Attester (KYC tiers), param admin (fees), treasury (awards, referral

@@ -699,6 +699,12 @@ Precisely:
   whose collusion above the threshold could move funds. The reserve
   invariant makes any shortfall visible and halts payouts. Lightning adds
   bounded hot exposure per observer.
+- **Bridged assets in your wallet: self-custodied.** Keel Wallet also
+  derives a Bitcoin and a Tron key from the user's seed on the standard
+  paths; coins there are outside the chain, recoverable with the phrase
+  alone, and move into Keel (a deposit) or back out (a withdrawal) on the
+  user's say. The default is the vault, because only a vaulted balance
+  trades; a user flips it in Settings (`wallet.md` §5b).
 - **Custodial-mode users: not yet.** Until they migrate, the marketplace
   can sign for them. The design's answer is to make that mode disappear.
 - **Users of a custodial client (model A): custodied by that client.**

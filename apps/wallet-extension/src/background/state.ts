@@ -20,16 +20,22 @@ export interface WalletState {
   networkId: string;
   /** networkId → origin → connection. */
   connections: Record<string, Record<string, Connection>>;
-  settings: { autoLockMinutes: number };
+  settings: {
+    autoLockMinutes: number;
+    /** Where the Receive card points new deposits: Keel's vault (default) or the user's own key. */
+    depositsTo: DepositsTo;
+  };
   /** Networks the user added (RPC + chain id), on top of the built-in ones. */
   customNetworks: Network[];
 }
 
+export type DepositsTo = 'keel' | 'wallet';
 export const DEFAULT_AUTO_LOCK_MINUTES = 15;
+export const DEFAULT_DEPOSITS_TO: DepositsTo = 'keel';
 const KEY = 'wallet';
 
 export function emptyState(): WalletState {
-  return { vault: null, accounts: [], activeIndex: 0, networkId: DEFAULT_NETWORK_ID, connections: {}, settings: { autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES }, customNetworks: [] };
+  return { vault: null, accounts: [], activeIndex: 0, networkId: DEFAULT_NETWORK_ID, connections: {}, settings: { autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES, depositsTo: DEFAULT_DEPOSITS_TO }, customNetworks: [] };
 }
 
 export async function loadState(store: KeyValueStore): Promise<WalletState> {
@@ -42,7 +48,10 @@ export async function loadState(store: KeyValueStore): Promise<WalletState> {
     activeIndex: typeof s.activeIndex === 'number' ? s.activeIndex : 0,
     networkId: typeof s.networkId === 'string' ? s.networkId : d.networkId,
     connections: typeof s.connections === 'object' && s.connections !== null ? s.connections : {},
-    settings: { autoLockMinutes: s.settings?.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MINUTES },
+    settings: {
+      autoLockMinutes: s.settings?.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MINUTES,
+      depositsTo: s.settings?.depositsTo === 'wallet' ? 'wallet' : DEFAULT_DEPOSITS_TO,
+    },
     customNetworks: Array.isArray(s.customNetworks) ? s.customNetworks.filter(isNetwork) : [],
   };
 }

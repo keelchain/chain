@@ -5,9 +5,18 @@ Dates are UTC.
 
 ## Unreleased
 
+- Docs: the whitepaper, how-it-works 15 and models.md describe the two
+  places a user's bridged coins can sit, in Keel or in their wallet.
 - Docs: the whitepaper (draft v0.2) covers client custody, the float swap,
   fresh-pool rotation and per-offer arbitration; how-it-works 9, 11 and 15
   point at the swap; models.md walks a trade between the two models.
+- Wallet: coins can be held *in your wallet* as well as *in Keel*. The
+  wallet derives Bitcoin (BIP84) and Tron (BIP44) keys from the same seed
+  phrase, shows their balances from the public chain APIs, and moves coins
+  into Keel by building, signing and broadcasting the deposit itself; the
+  Send card's withdrawal gets a one-click "Move to your wallet" destination.
+  Settings → "New deposits go to" chooses which address Receive shows; the
+  default stays Keel. Nothing on the chain changes.
 - Deposits in flight: the wallet's home screen and the explorer's account
   page (*Deposits* tab) show each incoming deposit from the moment the
   external network sees it (looked up on mempool.space or TronGrid from the

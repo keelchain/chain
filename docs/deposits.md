@@ -82,6 +82,9 @@ own rows. Each incoming transaction moves through these stages:
 - SDK: `externalNetworks`, `fetchIncoming` and `depositProgress` are the same
   helpers the wallet and the explorer use.
 
+Coins can also stay **in your wallet**, under your own key, and be moved
+into Keel when you want to trade: `wallet.md` §5b.
+
 If nothing appears after a few minutes, check the network: the testnet
 addresses live on Bitcoin **signet** and Tron **Nile**. Coins sent on
 testnet3, testnet4, Shasta or a mainnet to the same address string are on a

@@ -137,6 +137,14 @@ and paying for a grace period and is then retired. Whether the old coins
 are swept to the new key or left to drain through ordinary withdrawals,
 unlinked on the external chain, is the exchange's choice.
 
+A user is never obliged to leave coins in a vault. The wallet also holds a
+Bitcoin and a Tron key of the user's own, derived from the same seed phrase
+on the standard paths, so the phrase alone recovers them in any other
+wallet. Coins can sit there, outside the chain, and be moved into Keel to
+trade and back out again, each move an ordinary transaction on that chain.
+Vault custody is the default because it is what makes a balance tradeable;
+self-custody is a setting away.
+
 Observer-signer sets change per epoch with a fresh key generation and a
 migration of vault balances, avoiding the need for key resharing.
 

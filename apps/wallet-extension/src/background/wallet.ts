@@ -11,6 +11,7 @@ import { accountAddress, generateMnemonic, mnemonicToSeed, normalizeMnemonic, va
 import { sessionAction, validateEnvelope, validateSessionRequest } from '../core/actions';
 import { decodeAction, sessionSentence, type DecodedAction } from '../core/decode';
 import { signAction, signMessage } from '../core/sign';
+import { broadcastBtc, btcFeeRate, btcUtxos, buildBtcTransfer, externalApis, extNetwork, selfKey, tronBalances, tronBroadcast, tronCreateTrc20, tronCreateTrx, tronSign, type ExtNetwork, type SelfChain, type SelfKey } from '../core/selfcustody';
 import type { Action } from '../inpage/types';
 import { stringifyJson } from '@keelchain/sdk';
 import { fromWire, newId, toWire, WalletError, type ProviderEvent, type ProviderRequest } from '../core/protocol';
@@ -25,6 +26,18 @@ const DEPOSIT_CHAINS: Record<string, { path: string; action: string; label: stri
   ETH: { path: 'ETH', action: 'Ethereum', label: 'Ethereum' },
   TRON: { path: 'TRON', action: 'Tron', label: 'Tron' },
 };
+
+export interface SelfAddresses {
+  supported: boolean;
+  network: ExtNetwork | null;
+  addresses: Partial<Record<SelfChain, { address: string; path: string }>>;
+}
+
+export interface SelfBalances {
+  supported: boolean;
+  balances: { chain: SelfChain; asset: string; amount: string; pending: string }[];
+  unreachable: string[];
+}
 
 export interface DepositAddressInfo {
   chain: string;
@@ -310,6 +323,14 @@ export class Wallet {
         return this.decideApproval(String(p['id'] ?? ''), Boolean(p['approved']));
       case 'setAutoLock':
         return this.setAutoLock(Number(p['minutes']));
+      case 'setDepositsTo':
+        return this.setDepositsTo(String(p['to'] ?? ''));
+      case 'selfAddresses':
+        return this.selfAddresses();
+      case 'selfBalances':
+        return this.selfBalances();
+      case 'moveToKeel':
+        return this.moveToKeel(String(p['chain'] ?? ''), String(p['asset'] ?? ''), String(p['amount'] ?? ''), Boolean(p['max']));
       case 'revealMnemonic':
         return this.revealMnemonic(String(p['password'] ?? ''));
       case 'resetWallet':
@@ -531,6 +552,127 @@ export class Wallet {
   async decideApproval(id: string, approved: boolean): Promise<UiState> {
     if (approved && !this.deps.session.unlocked) throw new UiError('Unlock the wallet first.');
     this.deps.approvals.decide(id, approved);
+    return this.uiState();
+  }
+
+  // ------------------------------------------------------------------ in your wallet (self-custody)
+
+  /** Self-custody is offered on the networks whose external chains the wallet knows the public APIs of. */
+  private selfNet(s: WalletState): ExtNetwork | null {
+    const n = this.network(s);
+    return n.id === 'mainnet' || n.id === 'testnet' ? extNetwork(n.id) : null;
+  }
+
+  private selfKeyFor(s: WalletState, chain: SelfChain): SelfKey {
+    const net = this.selfNet(s);
+    if (!net) throw new UiError('Your own addresses are available on the testnet and mainnet only.');
+    const seed = this.deps.session.currentSeed();
+    if (!seed) throw new UiError('Unlock the wallet first.');
+    return selfKey(seed, chain, this.activeAccount(s).index, net);
+  }
+
+  /** The active account's own Bitcoin and Tron addresses, derived from the seed; no secret leaves this method. */
+  async selfAddresses(): Promise<SelfAddresses> {
+    const s = await this.st();
+    const net = this.selfNet(s);
+    if (!net) return { supported: false, network: net, addresses: {} };
+    const out: SelfAddresses = { supported: true, network: net, addresses: {} };
+    for (const chain of ['BTC', 'TRON'] as const) {
+      const k = this.selfKeyFor(s, chain);
+      out.addresses[chain] = { address: k.address, path: k.path };
+      k.privateKey.fill(0);
+    }
+    return out;
+  }
+
+  /** Balances at the own addresses, read from the public chain APIs. Unreachable APIs are reported, not thrown. */
+  async selfBalances(): Promise<SelfBalances> {
+    const s = await this.st();
+    const net = this.selfNet(s);
+    if (!net) return { supported: false, balances: [], unreachable: [] };
+    const apis = externalApis(net);
+    const addrs = await this.selfAddresses();
+    const balances: SelfBalances['balances'] = [];
+    const unreachable: string[] = [];
+    const btcAddr = addrs.addresses.BTC?.address;
+    if (btcAddr) {
+      try {
+        const utxos = await btcUtxos(apis.btc, btcAddr);
+        balances.push({ chain: 'BTC', asset: 'BTC.BTC', amount: utxos.reduce((a, u) => a + u.value, 0n).toString(), pending: utxos.filter((u) => !u.confirmed).reduce((a, u) => a + u.value, 0n).toString() });
+      } catch {
+        unreachable.push(net === 'mainnet' ? 'Bitcoin' : 'Bitcoin signet');
+      }
+    }
+    const tronAddr = addrs.addresses.TRON?.address;
+    if (tronAddr) {
+      try {
+        const b = await tronBalances(apis.tron, tronAddr, apis.usdt);
+        balances.push({ chain: 'TRON', asset: 'TRON.TRX', amount: b.trx.toString(), pending: '0' });
+        balances.push({ chain: 'TRON', asset: 'TRON.USDT', amount: b.usdt.toString(), pending: '0' });
+      } catch {
+        unreachable.push(net === 'mainnet' ? 'Tron' : 'Tron Nile');
+      }
+    }
+    return { supported: true, balances, unreachable };
+  }
+
+  /**
+   * Move coins from the own address into Keel: build, sign and broadcast a
+   * transaction to the account's vault deposit address. From there it is an
+   * ordinary deposit, which the Deposits card follows. `amount` is in the
+   * asset's smallest units; `max` sends everything (Bitcoin: fee taken from
+   * the amount; Tron: the TRX fee stays in the wallet, so `max` on TRX keeps
+   * a small reserve).
+   */
+  async moveToKeel(chain: string, asset: string, amountRaw: string, max: boolean): Promise<{ txid: string; amount: string; fee: string; asset: string }> {
+    const s = await this.st();
+    const net = this.selfNet(s);
+    if (!net) throw new UiError('Your own addresses are available on the testnet and mainnet only.');
+    if (chain !== 'BTC' && chain !== 'TRON') throw new UiError(`Unknown chain ${chain}`);
+    if (!max && (!/^\d+$/.test(amountRaw) || BigInt(amountRaw) === 0n)) throw new UiError('Enter an amount.');
+    const apis = externalApis(net);
+    const vault = await this.depositAddress(chain);
+    const key = this.selfKeyFor(s, chain);
+    try {
+      if (chain === 'BTC') {
+        if (asset !== 'BTC.BTC') throw new UiError('Bitcoin moves BTC.BTC.');
+        const utxos = await btcUtxos(apis.btc, key.address);
+        const feeRate = await btcFeeRate(apis.btc);
+        const built = buildBtcTransfer({ key, utxos, to: vault.address, amount: max ? 0n : BigInt(amountRaw), feeRate, net, sendMax: max });
+        const txid = await broadcastBtc(apis.btc, built.hex);
+        this.deps.session.touch();
+        return { txid, amount: built.amount.toString(), fee: built.fee.toString(), asset };
+      }
+      const bal = await tronBalances(apis.tron, key.address, apis.usdt);
+      if (asset === 'TRON.TRX') {
+        // Keep 1.5 TRX for bandwidth when sending everything.
+        const amount = max ? bal.trx - 1_500_000n : BigInt(amountRaw);
+        if (amount <= 0n || amount > bal.trx) throw new UiError('Not enough TRX.');
+        const tx = await tronCreateTrx(apis.tron, key.address, vault.address, amount);
+        const txid = await tronBroadcast(apis.tron, tronSign(tx, key.privateKey));
+        this.deps.session.touch();
+        return { txid, amount: amount.toString(), fee: '0', asset };
+      }
+      if (asset === 'TRON.USDT') {
+        const amount = max ? bal.usdt : BigInt(amountRaw);
+        if (amount <= 0n || amount > bal.usdt) throw new UiError('Not enough USDT.');
+        if (bal.trx < 1_000_000n) throw new UiError('A USDT transfer needs some TRX in your wallet address for energy; send a few TRX there first.');
+        const tx = await tronCreateTrc20(apis.tron, key.address, vault.address, amount, apis.usdt);
+        const txid = await tronBroadcast(apis.tron, tronSign(tx, key.privateKey));
+        this.deps.session.touch();
+        return { txid, amount: amount.toString(), fee: '0', asset };
+      }
+      throw new UiError(`Tron moves TRON.TRX or TRON.USDT, not ${asset}.`);
+    } finally {
+      key.privateKey.fill(0);
+    }
+  }
+
+  async setDepositsTo(to: string): Promise<UiState> {
+    if (to !== 'keel' && to !== 'wallet') throw new UiError('Deposits go to "keel" or "wallet".');
+    const s = await this.st();
+    s.settings.depositsTo = to;
+    await this.save();
     return this.uiState();
   }
 

@@ -62,6 +62,16 @@ export function Settings({ state, onState }: { state: UiState; onState: (s: UiSt
         </div>
       </div>
       <div className="card">
+        <div className="label">New deposits go to</div>
+        <div className="row">
+          <label className="small"><input type="radio" name="depositsTo" checked={state.settings.depositsTo !== 'wallet'} onChange={() => void act('setDepositsTo', { to: 'keel' })} /> Keel (default)</label>
+          <label className="small"><input type="radio" name="depositsTo" checked={state.settings.depositsTo === 'wallet'} onChange={() => void act('setDepositsTo', { to: 'wallet' })} /> Your wallet</label>
+        </div>
+        <p className="muted small">
+          <b>Keel</b>: deposits land in the network vault, signed by the observer set, and your balance trades at once. <b>Your wallet</b>: deposits land at addresses only your seed phrase controls, outside Keel; you move coins to Keel when you want to trade. Coins in your wallet have no observer set behind them: a lost phrase loses them. Nothing already deposited changes.
+        </p>
+      </div>
+      <div className="card">
         <div className="label">Rename active account</div>
         <div className="row">
           <input value={rename} placeholder={state.accounts.find((a) => a.index === state.activeIndex)?.name ?? ''} onChange={(e) => setRename(e.target.value)} />

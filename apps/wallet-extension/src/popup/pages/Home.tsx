@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { depositProgress, externalNetworks, externalTxUrl, fetchIncoming, isProcessing, stageLabel, type DepositProgress, type ExternalChain } from '@keelchain/sdk';
 import { call, fetchAccount, fetchChainDeposits, fetchDepositAddress, fetchParams, type AccountResponse, type UiState } from '../ui';
-import type { DepositAddressInfo } from '../../background/wallet';
+import type { DepositAddressInfo, SelfAddresses } from '../../background/wallet';
 import { Address } from '../components/Address';
+import { SelfCustody, chainOfAsset } from '../components/SelfCustody';
 import { SiteAccessBanner } from '../components/SiteAccess';
 import { decimalsOf, formatAmount, sentence } from '../../core/format';
 import { explorerAccountUrl } from '../../core/networks';
@@ -103,6 +104,16 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [deposit, setDeposit] = useState<DepositAddressInfo | null>(null);
+  const [ownAddrs, setOwnAddrs] = useState<SelfAddresses | null>(null);
+  const toWallet = state.settings.depositsTo === 'wallet';
+  const [showOther, setShowOther] = useState(false);
+  // Which side the Receive card shows: the setting, flipped by the "show the other" link.
+  const receiveOwn = toWallet !== showOther;
+  useEffect(() => {
+    setOwnAddrs(null);
+    if (!address || network.placeholder) return;
+    call<SelfAddresses>('selfAddresses').then(setOwnAddrs, () => setOwnAddrs(null));
+  }, [address, network.id, network.placeholder, refreshKey]);
   const [depositBusy, setDepositBusy] = useState<string | null>(null);
   const [depositError, setDepositError] = useState<string | null>(null);
   const [sendKind, setSendKind] = useState<'transfer' | 'withdraw'>('transfer');
@@ -218,16 +229,33 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
       {!network.placeholder && address && (
         <div className="card">
           <div className="label">Receive</div>
-          <p className="muted small">Fund this account from {externalName(network.id, 'BTC')} or {externalName(network.id, 'TRON')}. The address belongs to the Keelchain vault; the chain credits you after that chain's confirmations. Coins sent on any other network do not arrive.</p>
-          <div className="row">
-            {DEPOSIT_CHAINS.map((c) => (
-              <button key={c} className="mini" disabled={depositBusy !== null} onClick={() => receive(c)}>
-                {depositBusy === c ? 'Requesting…' : c === 'BTC' ? externalName(network.id, 'BTC') : `${externalName(network.id, 'TRON')} (USDT, TRX)`}
-              </button>
-            ))}
-          </div>
+          {receiveOwn && ownAddrs?.supported ? (
+            <>
+              <p className="muted small">New deposits go to <b>your wallet</b>: addresses only your seed phrase controls, outside Keel. Move coins to Keel from the card below when you want to trade. <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show the Keel address instead</a></p>
+              {(['BTC', 'TRON'] as const).map((c) => {
+                const a = ownAddrs.addresses[c];
+                return a ? (
+                  <div key={c}>
+                    <div className="label">{externalName(network.id, c)} · your address</div>
+                    <Address value={a.address} full />
+                  </div>
+                ) : null;
+              })}
+            </>
+          ) : (
+            <>
+              <p className="muted small">Fund this account from {externalName(network.id, 'BTC')} or {externalName(network.id, 'TRON')}. The address belongs to the Keelchain vault; the chain credits you after that chain's confirmations. Coins sent on any other network do not arrive.{ownAddrs?.supported && <> <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show my own address instead</a></>}</p>
+              <div className="row">
+                {DEPOSIT_CHAINS.map((c) => (
+                  <button key={c} className="mini" disabled={depositBusy !== null} onClick={() => receive(c)}>
+                    {depositBusy === c ? 'Requesting…' : c === 'BTC' ? externalName(network.id, 'BTC') : `${externalName(network.id, 'TRON')} (USDT, TRX)`}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {depositError && <p className="error">{depositError}</p>}
-          {deposit && (
+          {!receiveOwn && deposit && (
             <div>
               <div className="label">{externalName(network.id, deposit.chain as ExternalChain)} deposit address · index {deposit.index}{deposit.fresh ? ' · just assigned' : ''}</div>
               <Address value={deposit.address} full />
@@ -237,6 +265,7 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
         </div>
       )}
       {!network.placeholder && address && <Deposits rpc={network.rpc} networkId={network.id} address={address} refreshKey={refreshKey} />}
+      {!network.placeholder && address && <SelfCustody networkId={network.id} address={address} refreshKey={refreshKey} onMoved={() => setRefreshKey((k) => k + 1)} />}
       {!network.placeholder && address && (
         <div className="card">
           <div className="label">Send</div>
@@ -250,6 +279,11 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
             </select>
           </div>
           <input value={sendTo} placeholder={sendKind === 'transfer' ? 'Recipient Keel address (64 hex)' : 'Destination address on that chain'} onChange={(e) => setSendTo(e.target.value.trim())} />
+          {sendKind === 'withdraw' && ownAddrs?.supported && (() => {
+            const c = chainOfAsset(sendAsset);
+            const own = c && c !== 'ETH' ? ownAddrs.addresses[c] : undefined;
+            return own ? <button className="mini" onClick={() => setSendTo(own.address)}>Move to your wallet ({own.address.slice(0, 8)}…)</button> : null;
+          })()}
           <div className="row">
             <input value={sendAmount} placeholder={`Amount in ${sendAsset || 'units'}`} onChange={(e) => setSendAmount(e.target.value.trim())} />
             {sendKind === 'transfer' && <input value={sendMemo} placeholder="Memo (optional)" onChange={(e) => setSendMemo(e.target.value)} />}

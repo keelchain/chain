@@ -3,7 +3,7 @@
  * in-memory transport, a fake content bridge and the real Wallet controller
  * (memory store, fake timer, scripted approvals).
  */
-import { beforeEach, describe, expect, it, test } from 'vitest';
+import { beforeEach, describe, expect, it, test, vi } from 'vitest';
 import { Keypair, verify, txId, type SignedAction as SdkSignedAction } from '@keelchain/sdk';
 import { createProvider, type Transport } from '../inpage/provider';
 import { CHANNEL, toProviderError, type ContentToInpage, type InpageToContent, type ProviderEvent, type ProviderResponse } from '../core/protocol';
@@ -334,4 +334,59 @@ test('the popup gets the wallet state back from lock and unlock, never a bare ac
   const afterUnlock = (await h.wallet.handleUi('unlock', { password: PASSWORD })) as UiState;
   expect(afterUnlock.locked).toBe(false);
   expect(afterUnlock.address).toBe(unlocked.address);
+});
+
+test('deposits default to Keel; the user can point them at their own wallet addresses', async () => {
+  const h = harness();
+  await setup(h);
+  const st = (await h.wallet.handleUi('getState', {})) as UiState;
+  expect(st.settings.depositsTo).toBe('keel');
+  const flipped = (await h.wallet.handleUi('setDepositsTo', { to: 'wallet' })) as UiState;
+  expect(flipped.settings.depositsTo).toBe('wallet');
+  await expect(h.wallet.handleUi('setDepositsTo', { to: 'elsewhere' })).rejects.toThrow(/keel|wallet/);
+  const own = (await h.wallet.handleUi('selfAddresses', {})) as { supported: boolean; addresses: Record<string, { address: string; path: string }> };
+  expect(own.supported).toBe(true);
+  expect(own.addresses['BTC']!.address.startsWith('tb1q')).toBe(true);
+  expect(own.addresses['BTC']!.path).toBe("m/84'/1'/0'/0/0");
+  expect(own.addresses['TRON']!.address.startsWith('T')).toBe(true);
+  // Deterministic, and different per account.
+  const again = (await h.wallet.handleUi('selfAddresses', {})) as typeof own;
+  expect(again.addresses['BTC']!.address).toBe(own.addresses['BTC']!.address);
+  await h.wallet.handleUi('addAccount', {});
+  await h.wallet.handleUi('selectAccount', { index: 1 });
+  const second = (await h.wallet.handleUi('selfAddresses', {})) as typeof own;
+  expect(second.addresses['BTC']!.address).not.toBe(own.addresses['BTC']!.address);
+  expect(second.addresses['BTC']!.path).toBe("m/84'/1'/0'/0/1");
+});
+
+test('move to Keel builds a Bitcoin spend from the own address to the vault deposit address and broadcasts it', async () => {
+  const h = harness();
+  await setup(h);
+  const own = (await h.wallet.handleUi('selfAddresses', {})) as { addresses: Record<string, { address: string }> };
+  const ownBtc = own.addresses['BTC']!.address;
+  const vaultAddr = 'tb1q3nyvdyv9f44m5zmrduumvneynpmut0fxm68gn8';
+  let broadcast = '';
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/v1/vaults/BTC/addresses?owner=')) return Response.json({ addresses: [{ index: 1, address: vaultAddr }] });
+    if (url.includes(`/address/${ownBtc}/utxo`)) return Response.json([{ txid: '33'.repeat(32), vout: 0, value: 200_000, status: { confirmed: true } }]);
+    if (url.includes('/v1/fees/recommended')) return Response.json({ halfHourFee: 2 });
+    if (url.endsWith('/tx') && init?.method === 'POST') {
+      broadcast = String(init.body);
+      return new Response('44'.repeat(32));
+    }
+    return new Response('not found', { status: 404 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const r = (await h.wallet.handleUi('moveToKeel', { chain: 'BTC', asset: 'BTC.BTC', amount: '150000', max: false })) as { txid: string; amount: string; fee: string };
+    expect(r.txid).toBe('44'.repeat(32));
+    expect(r.amount).toBe('150000');
+    expect(BigInt(r.fee)).toBeGreaterThan(0n);
+    expect(broadcast).toMatch(/^[0-9a-f]+$/);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('mempool.space/signet/api'))).toBe(true);
+    await expect(h.wallet.handleUi('moveToKeel', { chain: 'BTC', asset: 'BTC.BTC', amount: '900000', max: false })).rejects.toThrow(/Not enough/);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

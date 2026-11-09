@@ -175,7 +175,10 @@ team, or by the governance-elected set when the offer names none.
 
 The client holds operator roles (attester for its KYC tiers, treasury for its
 revenue) and scope-limited session keys so that trading does not need a popup
-per click. It never holds a user's spendable key.
+per click. It never holds a user's spendable key. A user may also keep
+bridged coins *in their wallet*, under a Bitcoin or Tron key of their own
+derived from the same seed, and move them into Keel only to trade
+(`wallet.md` §5b); nothing about the client's integration changes.
 
 **What Keel charges:** a wholesale protocol fee on escrow releases, order-book
 fills and withdrawals, small enough that the user pays one number and the
