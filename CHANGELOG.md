@@ -16,7 +16,10 @@ Dates are UTC.
   into Keel by building, signing and broadcasting the deposit itself; the
   Send card's withdrawal gets a one-click "Move to your wallet" destination.
   Settings → "New deposits go to" chooses which address Receive shows; the
-  default stays Keel. Nothing on the chain changes.
+  default stays Keel. Nothing on the chain changes. The popup is now five
+  tabs (Home, Send, Deposits, Wallet, Settings); Send lists the bridged
+  assets whether or not they are held and gains a "Move to your wallet" kind
+  with the destination locked to the own address.
 - Deposits in flight: the wallet's home screen and the explorer's account
   page (*Deposits* tab) show each incoming deposit from the moment the
   external network sees it (looked up on mempool.space or TronGrid from the
@@ -25,6 +28,13 @@ Dates are UTC.
   Nile on the testnet). SDK: `externalNetworks`, `fetchIncoming`,
   `depositProgress`. The explorer's Bitcoin links for the testnet now point
   at signet, not testnet4. The indexer lists each deposit address once.
+- Wallet: the unlocked session survives the browser evicting the service
+  worker (mirrored in `chrome.storage.session`, memory only, cleared on
+  browser exit), so the password is asked when the auto-lock timer says,
+  not every half minute of idleness.
+- Wallet: a refreshed look in the site's palette with a dark theme, a brand
+  header, pill tabs, cards with depth, clearer inputs and buttons; the
+  Send tab's result shows a copyable, linked transaction id.
 - Wallet: the Lock button handed the popup a bare acknowledgement instead
   of the wallet state, so the popup rendered the onboarding screen until
   its next poll; lock now returns the locked state.
@@ -64,6 +74,12 @@ Dates are UTC.
   `RetireCustodyGeneration`; `pools.grace_blocks`, `pools.usage_rotation_keel`;
   `/v1/custody` lists live generations, `?gen=` and `addresses/lookup`;
   `gen` on batches. Registering over an existing vault is refused.
+- Observer: the network vault's Ethereum and Tron deposit indexes are
+  consolidated into the hot address the payouts spend from (tokens first,
+  with gas funding when an index lacks it, then the native coin), the same
+  pass client vaults already had. Before this the first Tron withdrawal on
+  the testnet sat in `Batched` for good: every coin was on the users'
+  indexes and index 0 held nothing to pay from or to pay energy with.
 - Observer: one address book per live custody generation, batches paid
   from the generation the chain prefers with fallback to the active key,
   sweeps on Bitcoin, Ethereum and Tron, Ethereum/Tron consolidation of

@@ -156,11 +156,14 @@ network call.
   content script and the page only ever see addresses, signatures and
   decoded previews. Signing is done in the worker after the user approves.
 - Unlocked secrets (the 64-byte seed and derived keypairs) live in worker
-  memory only and are zeroed on lock. Auto-lock is inactivity based
-  (default 15 minutes, configurable in Settings). The browser may evict an
-  idle service worker earlier; that also drops the keys, so you may be asked
-  for the password sooner than the timer. Nothing unlocked is ever written
-  to storage.
+  memory and are zeroed on lock. Auto-lock is inactivity based (default 15
+  minutes, configurable in Settings). Because the browser evicts an idle
+  service worker after about thirty seconds, the seed and its lock deadline
+  are mirrored in `chrome.storage.session`: memory only, readable by this
+  extension's own contexts only, cleared when the browser closes. A fresh
+  worker restores them until the deadline, so the timer, not the eviction,
+  decides when the password is asked again. Nothing unlocked is written to
+  `chrome.storage.local` or disk.
 - Nothing is signed silently: every `signMessage`, `signAction` and
   `authorizeSession` requires a click. Session keys never receive
   fund-moving scopes; the chain enforces that too.

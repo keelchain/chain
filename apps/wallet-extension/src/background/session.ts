@@ -1,8 +1,14 @@
 /**
- * Unlocked secrets live only here, in service-worker memory: the 64-byte
- * BIP39 seed and a cache of derived keypairs. An inactivity timer wipes them.
- * If the browser evicts the worker the memory goes with it, which is the
- * same as locking.
+ * Unlocked secrets live here: the 64-byte BIP39 seed and a cache of derived
+ * keypairs. An inactivity timer wipes them.
+ *
+ * A Manifest V3 service worker is evicted after about thirty seconds without
+ * work, and its memory goes with it. Left at that, the wallet would ask for
+ * the password every time the popup reopened, whatever the auto-lock says.
+ * So the seed and its lock deadline are mirrored into an optional
+ * `SessionStore` (`chrome.storage.session`: memory only, extension contexts
+ * only, gone when the browser closes), and a freshly started worker restores
+ * them when the deadline has not passed. Locking removes the mirror.
  */
 import type { Keypair } from '@keelchain/sdk';
 import { accountKeypair } from '../core/keys';
@@ -17,6 +23,13 @@ const defaultTimer: Timer = {
   clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
 };
 
+/** Where the unlocked seed is mirrored across worker restarts. */
+export interface SessionStore {
+  get(): Promise<{ seedHex: string; lockAtMs: number } | null>;
+  set(v: { seedHex: string; lockAtMs: number }): Promise<void>;
+  remove(): Promise<void>;
+}
+
 export class Session {
   private seed: Uint8Array | null = null;
   private keys = new Map<number, Keypair>();
@@ -25,7 +38,36 @@ export class Session {
   private ttlMs = 15 * 60_000;
   onLock: (() => void) | null = null;
 
-  constructor(private readonly timer: Timer = defaultTimer, private readonly now: () => number = () => Date.now()) {}
+  constructor(
+    private readonly timer: Timer = defaultTimer,
+    private readonly now: () => number = () => Date.now(),
+    private readonly store: SessionStore | null = null,
+  ) {}
+
+  /** Restores an unlocked session mirrored by a previous worker, when its deadline has not passed. */
+  async restore(): Promise<boolean> {
+    if (!this.store || this.seed !== null) return false;
+    const saved = await this.store.get().catch(() => null);
+    if (!saved || !/^[0-9a-f]{128}$/.test(saved.seedHex) || saved.lockAtMs <= this.now()) {
+      if (saved) await this.store.remove().catch(() => undefined);
+      return false;
+    }
+    this.seed = Uint8Array.from(saved.seedHex.match(/../g)!.map((b) => parseInt(b, 16)));
+    this.lockAtMs = saved.lockAtMs;
+    if (this.handle !== null) this.timer.clear(this.handle);
+    this.handle = this.timer.set(Math.max(1, this.lockAtMs - this.now()), () => this.lock());
+    return true;
+  }
+
+  private persist(): void {
+    if (!this.store) return;
+    if (this.seed === null) {
+      void this.store.remove().catch(() => undefined);
+      return;
+    }
+    const seedHex = Array.from(this.seed, (b) => b.toString(16).padStart(2, '0')).join('');
+    void this.store.set({ seedHex, lockAtMs: this.lockAtMs }).catch(() => undefined);
+  }
 
   get unlocked(): boolean {
     if (this.seed !== null && this.now() >= this.lockAtMs) this.lock();
@@ -50,6 +92,7 @@ export class Session {
     this.lockAtMs = this.now() + this.ttlMs;
     if (this.handle !== null) this.timer.clear(this.handle);
     this.handle = this.timer.set(this.ttlMs, () => this.lock());
+    this.persist();
   }
 
   setTtl(ttlMinutes: number): void {
@@ -60,6 +103,7 @@ export class Session {
   lock(): void {
     const was = this.seed !== null;
     this.wipe();
+    this.persist();
     if (was) this.onLock?.();
   }
 

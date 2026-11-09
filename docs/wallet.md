@@ -192,7 +192,11 @@ shows: Keel (default) or your wallet. Nothing already deposited changes.
 The card carries the one warning that matters: coins in your wallet have
 no observer set behind them, so a lost phrase loses them.
 
-**Move to Keel** (the *In your wallet* card): the background derives the
+The popup is five tabs: **Home** (address, balances in Keel, Receive),
+**Send**, **Deposits** (every incoming deposit and its stage), **Wallet**
+(coins in your wallet) and **Settings**.
+
+**Move to Keel** (the *Wallet* tab): the background derives the
 key, builds the transaction to the account's vault deposit address (Bitcoin:
 a P2WPKH spend with change back to the own address, fee from the recommended
 rate, *Max* takes the fee from the amount; Tron: a TRX transfer or a TRC-20
@@ -200,8 +204,9 @@ rate, *Max* takes the fee from the amount; Tron: a TRX transfer or a TRC-20
 it locally, broadcasts it through the public API and wipes the key. From
 there it is an ordinary deposit and the Deposits card follows it.
 
-**Move to your wallet**: the Send card's *Withdraw* with the own address as
-destination, one click from the "Move to your wallet" button. An ordinary
+**Move to your wallet**: *Send → Move to your wallet*. The bridged assets
+are always listed with what you hold in Keel, the destination is your own
+address for that chain, locked, and *Max* sends everything. An ordinary
 withdrawal: escrow, observer batch, threshold signature, fee from the amount.
 
 Self-custody is offered on the testnet and mainnet, where the wallet knows

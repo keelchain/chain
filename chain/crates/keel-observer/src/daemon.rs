@@ -550,6 +550,32 @@ impl Daemon {
                 tracing::warn!(error = %e, chain = from.chain.as_str(), gen = from.vault.gen, "custody move pass failed");
             }
         }
+        // The network vault's own books: Ethereum and Tron payouts are paid
+        // from the hot address (index 0) while deposits land on the users'
+        // indexes, so the same consolidation runs here, signed by the
+        // observers' threshold signer. A never-draining gen-0 book takes
+        // only the consolidation path of each pass. Bitcoin needs none:
+        // its batches spend any UTXO of the book.
+        let ctx = outbound::OutboundContext {
+            submitter: &self.submitter,
+            state: &self.state,
+            params: &books.params,
+            tss: self.tss.as_ref(),
+            cfg: &self.cfg.outbound,
+        };
+        if let (Some(from), Some(rpc), Some(cfg)) =
+            (&books.ethereum, &self.nodes.ethereum, &self.cfg.ethereum)
+        {
+            if let Err(e) = crate::moves::ethereum(&ctx, rpc.as_ref(), from, None, cfg).await {
+                tracing::warn!(error = %e, "network vault ethereum consolidation failed");
+            }
+        }
+        if let (Some(from), Some(api), Some(cfg)) = (&books.tron, &self.nodes.tron, &self.cfg.tron)
+        {
+            if let Err(e) = crate::moves::tron(&ctx, api.as_ref(), from, None, cfg).await {
+                tracing::warn!(error = %e, "network vault tron consolidation failed");
+            }
+        }
         Ok(())
     }
 

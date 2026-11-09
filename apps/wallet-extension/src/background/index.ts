@@ -5,8 +5,27 @@ import { Approvals } from './approvals';
 import { Session } from './session';
 import { UiError, Wallet } from './wallet';
 
-const session = new Session();
+// The unlocked seed is mirrored in chrome.storage.session (memory only,
+// this extension's contexts only, cleared when the browser closes) so that
+// the worker being evicted does not lock the wallet before its time.
+const SESSION_KEY = 'session';
+const sessionStore = {
+  async get() {
+    const got = await chrome.storage.session.get(SESSION_KEY);
+    const v = got[SESSION_KEY] as { seedHex?: unknown; lockAtMs?: unknown } | undefined;
+    return v && typeof v.seedHex === 'string' && typeof v.lockAtMs === 'number' ? { seedHex: v.seedHex, lockAtMs: v.lockAtMs } : null;
+  },
+  async set(v: { seedHex: string; lockAtMs: number }) {
+    await chrome.storage.session.set({ [SESSION_KEY]: v });
+  },
+  async remove() {
+    await chrome.storage.session.remove(SESSION_KEY);
+  },
+};
+const session = new Session(undefined, undefined, sessionStore);
 const approvals = new Approvals();
+/** Every message waits for the previous worker's session to be restored. */
+const ready: Promise<unknown> = session.restore().catch(() => false);
 
 function emit(origin: string | null, event: ProviderEvent): void {
   const msg = { kind: 'keel:event' as const, event: { event: event.event, payload: toWire(event.payload) } };
@@ -97,7 +116,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
       respond({ id: request.id, ok: false, error: { code: 'INVALID_REQUEST', message: 'Requests must come from a page' } });
       return false;
     }
-    wallet.handleProvider(origin, request).then(
+    ready.then(() => wallet.handleProvider(origin, request)).then(
       (result) => respond({ id: request.id, ok: true, result }),
       (e: unknown) => respond({ id: request.id, ok: false, error: toProviderError(e) }),
     );
@@ -115,7 +134,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
       );
       return true;
     }
-    wallet.handleUi(message.method, message.params).then(
+    ready.then(() => wallet.handleUi(message.method, message.params)).then(
       (result) => sendResponse({ ok: true, result: toWire(result) }),
       (e: unknown) => sendResponse({ ok: false, error: e instanceof UiError || e instanceof Error ? e.message : String(e) }),
     );

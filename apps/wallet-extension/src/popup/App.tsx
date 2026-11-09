@@ -3,10 +3,20 @@ import { call, getState, type UiState } from './ui';
 import { Onboarding } from './pages/Onboarding';
 import { Unlock } from './pages/Unlock';
 import { Home } from './pages/Home';
+import { Send } from './pages/Send';
+import { Deposits } from './pages/Deposits';
+import { Wallet } from './pages/Wallet';
 import { Settings } from './pages/Settings';
 import { Approval } from './pages/Approval';
 
-export type Tab = 'home' | 'settings';
+export type Tab = 'home' | 'send' | 'deposits' | 'wallet' | 'settings';
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'home', label: 'Home' },
+  { id: 'send', label: 'Send' },
+  { id: 'deposits', label: 'Deposits' },
+  { id: 'wallet', label: 'Wallet' },
+  { id: 'settings', label: 'Settings' },
+];
 
 export function App() {
   const [state, setState] = useState<UiState | null>(null);
@@ -58,11 +68,16 @@ export function App() {
         <span>Keel Wallet</span>
       </div>
       <nav className="tabs">
-        <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>Wallet</button>
-        <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Settings</button>
+        {TABS.map((t) => (
+          <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>
+        ))}
         <button className="ghost" onClick={() => void call<UiState>('lock').then(setState)} title="Lock now">Lock</button>
       </nav>
-      {tab === 'home' ? <Home state={state} onState={setState} /> : <Settings state={state} onState={setState} />}
+      {tab === 'home' && <Home state={state} onState={setState} />}
+      {tab === 'send' && <Send state={state} />}
+      {tab === 'deposits' && <Deposits state={state} />}
+      {tab === 'wallet' && <Wallet state={state} />}
+      {tab === 'settings' && <Settings state={state} onState={setState} />}
     </div>
   );
 }

@@ -1,103 +1,14 @@
 import { useEffect, useState } from 'react';
-import { depositProgress, externalNetworks, externalTxUrl, fetchIncoming, isProcessing, stageLabel, type DepositProgress, type ExternalChain } from '@keelchain/sdk';
-import { call, fetchAccount, fetchChainDeposits, fetchDepositAddress, fetchParams, type AccountResponse, type UiState } from '../ui';
+import type { ExternalChain } from '@keelchain/sdk';
+import { call, fetchAccount, type AccountResponse, type UiState } from '../ui';
 import type { DepositAddressInfo, SelfAddresses } from '../../background/wallet';
 import { Address } from '../components/Address';
-import { SelfCustody, chainOfAsset } from '../components/SelfCustody';
 import { SiteAccessBanner } from '../components/SiteAccess';
 import { decimalsOf, formatAmount, sentence } from '../../core/format';
 import { explorerAccountUrl } from '../../core/networks';
+import { DEPOSIT_CHAINS, externalName } from '../external';
 
-const DEPOSIT_CHAINS: ExternalChain[] = ['BTC', 'TRON'];
-const REQUIRED_PARAM: Record<ExternalChain, string> = { BTC: 'confirmations_btc', ETH: 'confirmations_eth', TRON: 'confirmations_tron' };
-const REQUIRED_DEFAULT: Record<ExternalChain, number> = { BTC: 2, ETH: 12, TRON: 19 };
-
-/** Name of the external network an id maps to: the testnet bridges signet and Nile. */
-function externalName(networkId: string, chain: ExternalChain): string {
-  return externalNetworks(networkId === 'mainnet' ? 'mainnet' : 'testnet')[chain].name;
-}
-
-/**
- * Deposits in flight and landed for the active account: the chain's own rows
- * (observers voting, credited) merged with what the external networks show
- * arriving at the deposit addresses, looked up on their public APIs from the
- * popup. Refreshes every 30 seconds while the popup is open.
- */
-function Deposits({ rpc, networkId, address, refreshKey }: { rpc: string; networkId: string; address: string; refreshKey: number }) {
-  const [rows, setRows] = useState<DepositProgress[] | null>(null);
-  const [unreachable, setUnreachable] = useState<string[]>([]);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 30_000);
-    return () => clearInterval(t);
-  }, []);
-  useEffect(() => {
-    let cancelled = false;
-    const nets = externalNetworks(networkId === 'mainnet' ? 'mainnet' : 'testnet');
-    (async () => {
-      const [chainRows, params, addresses] = await Promise.all([
-        fetchChainDeposits(rpc, address).catch(() => []),
-        fetchParams(rpc).catch(() => ({}) as Record<string, unknown>),
-        Promise.all(DEPOSIT_CHAINS.map((c) => fetchDepositAddress(rpc, address, c).catch(() => null))),
-      ]);
-      const failed: string[] = [];
-      const all: DepositProgress[] = [];
-      for (const [i, chain] of DEPOSIT_CHAINS.entries()) {
-        const dep = addresses[i];
-        const net = nets[chain];
-        const required = Number(params[REQUIRED_PARAM[chain]] ?? 0) || REQUIRED_DEFAULT[chain];
-        let incoming = null;
-        if (dep && net.api) {
-          try {
-            incoming = await fetchIncoming(net, dep.address);
-          } catch {
-            failed.push(net.name);
-          }
-        }
-        all.push(...depositProgress(incoming, chainRows.filter((r) => r.chain === chain), required));
-      }
-      if (!cancelled) {
-        setRows(all);
-        setUnreachable(failed);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [rpc, networkId, address, refreshKey, tick]);
-  const processing = (rows ?? []).filter((p) => isProcessing(p.stage)).length;
-  const nets = externalNetworks(networkId === 'mainnet' ? 'mainnet' : 'testnet');
-  return (
-    <div className="card">
-      <div className="row">
-        <div className="label">Deposits{processing > 0 && <> <span className="badge warn">{processing} processing</span></>}</div>
-        <button className="mini" onClick={() => setTick((n) => n + 1)}>Refresh</button>
-      </div>
-      {rows === null ? (
-        <p className="muted small">Looking for deposits…</p>
-      ) : rows.length === 0 ? (
-        <p className="muted small">Nothing incoming. A deposit shows here from the moment {DEPOSIT_CHAINS.map((c) => nets[c].name).join(' or ')} sees it, through its confirmations, until the chain credits it.</p>
-      ) : (
-        <ul className="list">
-          {rows.map((p) => (
-            <li key={`${p.chain}:${p.tx_hash}`}>
-              <span className="small">
-                {nets[p.chain as ExternalChain] ? (
-                  <a href={externalTxUrl(nets[p.chain as ExternalChain], p.tx_hash)} target="_blank" rel="noreferrer" title={p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</a>
-                ) : (
-                  <span title={p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</span>
-                )}
-                <br />
-                <span className="muted">{stageLabel(p)}</span>
-              </span>
-              <span className={`badge ${p.stage === 'credited' ? 'good' : p.stage === 'rejected' ? 'bad' : 'warn'}`}>{p.stage}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {unreachable.length > 0 && <p className="muted small">Could not reach {unreachable.join(' and ')} to look for incoming transactions; the chain's own records are shown.</p>}
-    </div>
-  );
-}
-
+/** The account: network and account selectors, address, balances in Keel, and where to receive. */
 export function Home({ state, onState }: { state: UiState; onState: (s: UiState) => void }) {
   const { network, address } = state;
   const [account, setAccount] = useState<AccountResponse | null>(null);
@@ -116,32 +27,6 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
   }, [address, network.id, network.placeholder, refreshKey]);
   const [depositBusy, setDepositBusy] = useState<string | null>(null);
   const [depositError, setDepositError] = useState<string | null>(null);
-  const [sendKind, setSendKind] = useState<'transfer' | 'withdraw'>('transfer');
-  const [sendAsset, setSendAsset] = useState('');
-  const [sendTo, setSendTo] = useState('');
-  const [sendAmount, setSendAmount] = useState('');
-  const [sendMemo, setSendMemo] = useState('');
-  const [sendConfirm, setSendConfirm] = useState(false);
-  const [sendBusy, setSendBusy] = useState(false);
-  const [sendResult, setSendResult] = useState<string | null>(null);
-
-  const doSend = async () => {
-    setSendBusy(true);
-    try {
-      const decimals = decimalsOf(sendAsset);
-      const [whole, frac = ''] = sendAmount.split('.');
-      if (!/^\d+$/.test(whole ?? '') || !/^\d*$/.test(frac) || frac.length > decimals) throw new Error(`Amount must be a number with at most ${decimals} decimals.`);
-      const raw = (BigInt(whole ?? '0') * 10n ** BigInt(decimals) + BigInt((frac + '0'.repeat(decimals)).slice(0, decimals))).toString();
-      const r = await call<{ txId: string; ok: boolean; error: string | null }>('send', { kind: sendKind, asset: sendAsset, to: sendTo, amount: raw, memo: sendMemo });
-      setSendResult(r.ok ? `done: ${r.txId}${r.error ? ` (${r.error})` : ''}` : `rejected: ${r.error ?? 'unknown'} (${r.txId})`);
-      setSendConfirm(false);
-      setRefreshKey((k) => k + 1);
-    } catch (e) {
-      setSendResult(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSendBusy(false);
-    }
-  };
 
   const receive = (chain: string) => {
     setDepositBusy(chain);
@@ -162,12 +47,7 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
     let live = true;
     setError(null);
     fetchAccount(network.rpc, address).then(
-      (a) => {
-        if (!live) return;
-        setAccount(a);
-        const first = a.balances.find((b) => b.account_type === 'deposit')?.asset;
-        if (first) setSendAsset((cur) => cur || first);
-      },
+      (a) => { if (live) setAccount(a); },
       (e: unknown) => live && setError(`Cannot reach ${network.rpc}: ${e instanceof Error ? e.message : String(e)}`),
     );
     return () => {
@@ -200,7 +80,7 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
       )}
       <div className="card">
         <div className="row">
-          <div className="label">Balances</div>
+          <div className="label">In Keel</div>
           <button className="mini" onClick={() => setRefreshKey((k) => k + 1)}>Refresh</button>
         </div>
         {network.placeholder ? (
@@ -231,9 +111,9 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
           <div className="label">Receive</div>
           {receiveOwn && ownAddrs?.supported ? (
             <>
-              <p className="muted small">New deposits go to <b>your wallet</b>: addresses only your seed phrase controls, outside Keel. Move coins to Keel from the card below when you want to trade. <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show the Keel address instead</a></p>
-              {(['BTC', 'TRON'] as const).map((c) => {
-                const a = ownAddrs.addresses[c];
+              <p className="muted small">New deposits go to <b>your wallet</b>: addresses only your seed phrase controls, outside Keel. Move coins to Keel from the Wallet tab when you want to trade. <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show the Keel address instead</a></p>
+              {DEPOSIT_CHAINS.map((c) => {
+                const a = ownAddrs.addresses[c as 'BTC' | 'TRON'];
                 return a ? (
                   <div key={c}>
                     <div className="label">{externalName(network.id, c)} · your address</div>
@@ -262,44 +142,6 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
               <p className="notice small">{network.id === 'testnet' ? (deposit.chain === 'BTC' ? 'Bitcoin signet only: coins sent on Bitcoin mainnet, testnet3 or testnet4 never arrive. A signet faucet works. Credited as BTC.BTC after 2 confirmations.' : 'Tron Nile only: USDT or TRX sent on Tron mainnet or Shasta never arrive. USDT is credited as TRON.USDT, TRX as TRON.TRX, after 19 confirmations.') : 'Send only the assets of this chain, on this chain, to this address.'}</p>
             </div>
           )}
-        </div>
-      )}
-      {!network.placeholder && address && <Deposits rpc={network.rpc} networkId={network.id} address={address} refreshKey={refreshKey} />}
-      {!network.placeholder && address && <SelfCustody networkId={network.id} address={address} refreshKey={refreshKey} onMoved={() => setRefreshKey((k) => k + 1)} />}
-      {!network.placeholder && address && (
-        <div className="card">
-          <div className="label">Send</div>
-          <div className="row">
-            <select value={sendKind} onChange={(e) => setSendKind(e.target.value as 'transfer' | 'withdraw')} title="Kind">
-              <option value="transfer">Transfer on Keel</option>
-              <option value="withdraw">Withdraw to another chain</option>
-            </select>
-            <select value={sendAsset} onChange={(e) => setSendAsset(e.target.value)} title="Asset">
-              {(account?.balances ?? []).filter((b) => b.account_type === 'deposit').map((b) => <option key={b.asset} value={b.asset}>{b.asset}</option>)}
-            </select>
-          </div>
-          <input value={sendTo} placeholder={sendKind === 'transfer' ? 'Recipient Keel address (64 hex)' : 'Destination address on that chain'} onChange={(e) => setSendTo(e.target.value.trim())} />
-          {sendKind === 'withdraw' && ownAddrs?.supported && (() => {
-            const c = chainOfAsset(sendAsset);
-            const own = c && c !== 'ETH' ? ownAddrs.addresses[c] : undefined;
-            return own ? <button className="mini" onClick={() => setSendTo(own.address)}>Move to your wallet ({own.address.slice(0, 8)}…)</button> : null;
-          })()}
-          <div className="row">
-            <input value={sendAmount} placeholder={`Amount in ${sendAsset || 'units'}`} onChange={(e) => setSendAmount(e.target.value.trim())} />
-            {sendKind === 'transfer' && <input value={sendMemo} placeholder="Memo (optional)" onChange={(e) => setSendMemo(e.target.value)} />}
-          </div>
-          {sendConfirm ? (
-            <div>
-              <p className="small">{sendKind === 'transfer' ? 'Transfer' : 'Withdraw'} <b>{sendAmount} {sendAsset}</b> to <code className="small">{sendTo}</code>{sendKind === 'withdraw' ? ' (network fee is taken from the amount)' : ''}?</p>
-              <div className="row">
-                <button disabled={sendBusy} onClick={() => void doSend()}>{sendBusy ? 'Signing…' : 'Confirm'}</button>
-                <button className="mini" disabled={sendBusy} onClick={() => setSendConfirm(false)}>Back</button>
-              </div>
-            </div>
-          ) : (
-            <button disabled={!sendAsset || !sendTo || !sendAmount} onClick={() => { setSendResult(null); setSendConfirm(true); }}>Review</button>
-          )}
-          {sendResult && <p className={sendResult.startsWith('done') ? 'small' : 'error'}>{sendResult}</p>}
         </div>
       )}
       <div className="row">
