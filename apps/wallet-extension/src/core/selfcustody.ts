@@ -285,15 +285,16 @@ export async function tronCreateTrc20(api: string, from: string, to: string, amo
   return j.transaction;
 }
 
-/** Signs with the user's key: sha256 of the raw transaction, secp256k1, r ‖ s ‖ v. */
+/** Signs with the user's key: sha256 of the raw transaction, secp256k1, r ‖ s ‖ v
+ *  with v = 27 + recovery id, the header byte java-tron accepts (27..34). */
 export function tronSign(tx: TronTx, privateKey: Uint8Array): TronTx {
   const digest = sha256(hex.decode(tx.raw_data_hex));
   if (hex.encode(digest) !== tx.txID) throw new Error('Tron: transaction id does not match its contents');
   const recovered = secp256k1.sign(digest, privateKey, { prehash: false, format: 'recovered' });
-  // noble puts the recovery byte first; Tron wants it last.
+  // noble puts the recovery byte first; Tron wants it last, offset by 27.
   const sig = new Uint8Array(65);
   sig.set(recovered.subarray(1), 0);
-  sig[64] = recovered[0]!;
+  sig[64] = 27 + recovered[0]!;
   return { ...tx, signature: [hex.encode(sig)] };
 }
 

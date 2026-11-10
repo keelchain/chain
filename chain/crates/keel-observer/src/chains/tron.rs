@@ -357,8 +357,14 @@ pub fn observation(
 
 // ---------------------------------------------------------------- outbound
 
-pub async fn broadcast(api: &dyn TronApi, tx: Value) -> anyhow::Result<String> {
-    let v = api.post("/wallet/broadcasttransaction", tx).await?;
+/// `POST /wallet/broadcasthex` with the signed transaction protobuf. The
+/// JSON endpoint (`broadcasttransaction`) rebuilds the transaction from a
+/// `raw_data` object and ignores `raw_data_hex`, so a hex-only body gets a
+/// NullPointerException back; the hex endpoint takes the bytes as signed.
+pub async fn broadcast(api: &dyn TronApi, signed_hex: &str) -> anyhow::Result<String> {
+    let v = api
+        .post("/wallet/broadcasthex", json!({ "transaction": signed_hex }))
+        .await?;
     if v["result"].as_bool() != Some(true) {
         anyhow::bail!("broadcast failed: {v}");
     }

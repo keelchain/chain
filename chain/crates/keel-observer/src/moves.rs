@@ -742,7 +742,7 @@ async fn tron_sign_and_send(
     index: u64,
     raw: &keel_chains::tron::Raw,
     context: SignContext,
-) -> anyhow::Result<(String, serde_json::Value)> {
+) -> anyhow::Result<(String, String)> {
     let digest = raw.txid();
     let sig = ctx
         .tss
@@ -750,9 +750,9 @@ async fn tron_sign_and_send(
         .await?;
     let v = keel_chains::eth::recovery_id(&digest, &sig.compact(), &book.pubkey(index)?)?;
     let sig65 = keel_chains::tron::Raw::signature(&sig.compact(), v);
-    let json = raw.broadcast_json(&sig65);
-    tron::broadcast(api, json.clone()).await?;
-    Ok((hex::encode(digest), json))
+    let signed = raw.signed_hex(sig65);
+    tron::broadcast(api, &signed).await?;
+    Ok((hex::encode(digest), signed))
 }
 
 /// One Tron pass for a custody book (see [`ethereum`]).

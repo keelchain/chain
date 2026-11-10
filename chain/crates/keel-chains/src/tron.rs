@@ -200,6 +200,17 @@ impl Raw {
     }
 }
 
+/// Decode a signed transaction as `signed_hex` produced it: the raw
+/// transaction and its signatures (`broadcasthex` takes this form).
+pub fn decode_signed(hex_tx: &str) -> Result<(Raw, Vec<Vec<u8>>), crate::Error> {
+    let bytes = hex::decode(hex_tx).map_err(|e| crate::Error::Tx(e.to_string()))?;
+    let tx = Transaction::decode(bytes.as_slice()).map_err(|e| crate::Error::Tx(e.to_string()))?;
+    let raw = tx
+        .raw_data
+        .ok_or_else(|| crate::Error::Tx("no raw_data".into()))?;
+    Ok((raw, tx.signature))
+}
+
 /// The 4-byte selector of a Solidity function signature.
 pub fn selector(signature: &str) -> [u8; 4] {
     let h = keccak256(signature.as_bytes());

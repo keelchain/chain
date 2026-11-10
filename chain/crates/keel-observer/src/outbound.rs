@@ -477,7 +477,7 @@ pub async fn assemble_tron(
     tss: &dyn TssClient,
     hot_index: u64,
     batch_id: u64,
-) -> anyhow::Result<(serde_json::Value, [u8; 32])> {
+) -> anyhow::Result<(String, [u8; 32])> {
     let owner = keel_chains::address::tron_decode(
         book.address(hot_index)
             .ok_or_else(|| anyhow::anyhow!("hot address not derived"))?,
@@ -511,7 +511,7 @@ pub async fn assemble_tron(
         .await?;
     let v = keel_chains::eth::recovery_id(&digest, &sig.compact(), &book.pubkey(hot_index)?)?;
     let sig65 = keel_chains::tron::Raw::signature(&sig.compact(), v);
-    Ok((raw.broadcast_json(&sig65), digest))
+    Ok((raw.signed_hex(sig65), digest))
 }
 
 pub async fn process_tron(
@@ -585,7 +585,7 @@ pub async fn process_tron(
                 true,
                 Some(json.to_string()),
             )?;
-            let sent = tron::broadcast(api, json).await?;
+            let sent = tron::broadcast(api, &json).await?;
             tracing::info!(id = o.id, tx = %sent, "tron outbound broadcast");
         }
     }
@@ -765,10 +765,14 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(json["txID"].as_str().unwrap(), hex::encode(txid));
-        let sig65 = hex::decode(json["signature"][0].as_str().unwrap()).unwrap();
+        // What goes to `/wallet/broadcasthex`: the raw transaction and one
+        // 65-byte signature, and the raw bytes hash to the txid.
+        let (raw, sigs) = keel_chains::tron::decode_signed(&json).unwrap();
+        assert_eq!(sigs.len(), 1);
+        let sig65 = sigs[0].clone();
         assert_eq!(sig65.len(), 65);
-        let raw = hex::decode(json["raw_data_hex"].as_str().unwrap()).unwrap();
+        assert_eq!(raw.txid(), txid);
+        let raw = raw.to_bytes();
         assert_eq!(
             <sha2::Sha256 as sha2::Digest>::digest(&raw).as_slice(),
             &txid
@@ -792,6 +796,6 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_ne!(json_trx["raw_data_hex"], json["raw_data_hex"]);
+        assert_ne!(json_trx, json);
     }
 }

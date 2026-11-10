@@ -28,6 +28,8 @@ Dates are UTC.
   Nile on the testnet). SDK: `externalNetworks`, `fetchIncoming`,
   `depositProgress`. The explorer's Bitcoin links for the testnet now point
   at signet, not testnet4. The indexer lists each deposit address once.
+- Wallet: a Tron move to Keel is signed with the 27-offset recovery byte
+  java-tron requires; the first build used the raw recovery id.
 - Wallet: balances name what each ledger account means ("Available",
   "Withdrawal in flight", "In trade escrow", "In open orders") instead
   of the ledger's own account names such as `sendout_escrow`.
@@ -77,6 +79,12 @@ Dates are UTC.
   `RetireCustodyGeneration`; `pools.grace_blocks`, `pools.usage_rotation_keel`;
   `/v1/custody` lists live generations, `?gen=` and `addresses/lookup`;
   `gen` on batches. Registering over an existing vault is refused.
+- Observer: Tron transactions are broadcast through `/wallet/broadcasthex`
+  with the signed protobuf. The JSON endpoint rebuilds a transaction from
+  its `raw_data` object and ignores `raw_data_hex`, so the hex-only body
+  the observer sent came back as a NullPointerException: no Tron payout or
+  consolidation had ever left an observer. Found on the testnet's first
+  Tron withdrawal.
 - Observer: the network vault's Ethereum and Tron deposit indexes are
   consolidated into the hot address the payouts spend from (tokens first,
   with gas funding when an index lacks it, then the native coin), the same

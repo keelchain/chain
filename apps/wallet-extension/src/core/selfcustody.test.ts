@@ -81,15 +81,17 @@ describe('moving coins to Keel', () => {
     expect(built.fee).toBe(3n * BigInt(11 + 68 * 2 + 31));
   });
 
-  it('signs a Tron transaction as r ‖ s ‖ v over sha256 of the raw bytes', () => {
+  it('signs a Tron transaction as r ‖ s ‖ (27 + v) over sha256 of the raw bytes', () => {
     const tron = selfKey(seed, 'TRON', 0, 'testnet');
     const rawHex = '0a02' + 'ab'.repeat(60);
     const tx: TronTx = { txID: hex.encode(sha256(hex.decode(rawHex))), raw_data: {}, raw_data_hex: rawHex };
     const signed = tronSign(tx, tron.privateKey);
     const sig = hex.decode(signed.signature![0]!);
     expect(sig.length).toBe(65);
+    expect(sig[64]).toBeGreaterThanOrEqual(27);
+    expect(sig[64]).toBeLessThanOrEqual(28);
     const nobleOrder = new Uint8Array(65);
-    nobleOrder[0] = sig[64]!;
+    nobleOrder[0] = sig[64]! - 27;
     nobleOrder.set(sig.subarray(0, 64), 1);
     const recovered = secp256k1.recoverPublicKey(nobleOrder, hex.decode(tx.txID), { prehash: false });
     expect(hex.encode(recovered)).toBe(hex.encode(tron.publicKey));
