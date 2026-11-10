@@ -43,7 +43,7 @@ start() {
     echo "explorer already listening on :$EXPLORER_PORT"
   else
     [ -d "$ROOT/apps/explorer/node_modules" ] || (cd "$ROOT/apps/explorer" && npm ci)
-    local nets="[{\"id\":\"testnet\",\"name\":\"Testnet\",\"api\":\"http://127.0.0.1:6100\"},{\"id\":\"mainnet\",\"name\":\"Mainnet\",\"api\":\"http://127.0.0.1:6101\"}]"
+    local nets="[{\"id\":\"testnet\",\"name\":\"Testnet\",\"api\":\"http://127.0.0.1:6100\",\"rpc\":\"$KEEL_NODE_RPC\"},{\"id\":\"mainnet\",\"name\":\"Mainnet\",\"api\":\"http://127.0.0.1:6101\",\"rpc\":\"$KEEL_NODE_RPC\"}]"
     (cd "$ROOT/apps/explorer" && VITE_NETWORKS="${VITE_NETWORKS:-$nets}" nohup npx vite --host 127.0.0.1 --port "$EXPLORER_PORT" --strictPort > "$LOGS/explorer.log" 2>&1 &)
     echo "explorer on http://127.0.0.1:$EXPLORER_PORT/$KEEL_NETWORK (log $LOGS/explorer.log)"
   fi

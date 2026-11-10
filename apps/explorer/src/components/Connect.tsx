@@ -1,18 +1,14 @@
-import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAccount } from '../api/hooks';
+import type { Balance } from '../api/types';
 import { useHref } from '../network/NetworkContext';
 import { useWallet } from '../wallet/WalletContext';
-import { Hex } from './ui';
+import { Amount, Hex } from './ui';
 
-interface Balance {
-  asset: string;
-  account_type: string;
-  balance: string;
-}
-
-/** Spendable balance of `asset` from `/v1/accounts/{addr}`, as a display string. */
-export function spendable(balances: Balance[] | undefined, asset: string, decimals: number): string {
+/** Spendable balance of `asset` from a balances list, as a display string
+ *  (used by the dashboard, which reads the node RPC for the nonce as well). */
+export function spendable(balances: { asset: string; account_type: string; balance: string }[] | undefined, asset: string, decimals: number): string {
   const row = balances?.find((b) => b.asset === asset && b.account_type === 'deposit');
   if (!row) return '0';
   const n = BigInt(row.balance);
@@ -20,6 +16,14 @@ export function spendable(balances: Balance[] | undefined, asset: string, decima
   const whole = n / d;
   const frac = (n % d).toString().padStart(decimals, '0').replace(/0+$/, '');
   return frac ? `${whole}.${frac}` : whole.toString();
+}
+
+/** The `deposit` rows a user can spend, one per asset, largest first; the
+ *  same rows the account page shows, from the indexer (`/v1/accounts/{addr}`). */
+export function spendableRows(balances: Balance[] | undefined): Balance[] {
+  return (balances ?? [])
+    .filter((b) => b.account_type === 'deposit' && BigInt(b.balance) > 0n)
+    .sort((a, b) => a.asset.localeCompare(b.asset));
 }
 
 /** Header control: Connect, or the connected address with a drop-down to
@@ -37,12 +41,9 @@ export function ConnectControl() {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
-  const acct = useQuery({
-    queryKey: ['wallet-account', w.account?.address, w.rpc],
-    queryFn: () => w.rpc.account(w.account!.address) as Promise<{ balances?: Balance[] }>,
-    enabled: !!w.account,
-    refetchInterval: 10_000,
-  });
+  // Balances come from the indexer, the same source as the account page, so
+  // the two never disagree and the dropdown works wherever the page does.
+  const acct = useAccount(w.account?.address ?? '');
   if (!w.account) {
     return (
       <button type="button" className="btn primary" onClick={() => void w.connect()} disabled={w.busy} title={w.error ?? 'Connect Keel Wallet'}>
@@ -57,14 +58,20 @@ export function ConnectControl() {
       </button>
       {open && (
         <div className="wallet-dropdown" role="menu">
-          <div className="wallet-row">
-            <span className="text-2 small">KEEL</span>
-            <span className="num">{spendable(acct.data?.balances, 'KEEL', 6)}</span>
-          </div>
-          <div className="wallet-row">
-            <span className="text-2 small">KUSD</span>
-            <span className="num">{spendable(acct.data?.balances, 'KUSD', 6)}</span>
-          </div>
+          {acct.isError ? (
+            <div className="wallet-row"><span className="text-2 small">Balances unavailable</span></div>
+          ) : acct.isPending ? (
+            <div className="wallet-row"><span className="text-2 small">Loading…</span></div>
+          ) : spendableRows(acct.data?.balances).length === 0 ? (
+            <div className="wallet-row"><span className="text-2 small">No balances</span></div>
+          ) : (
+            spendableRows(acct.data?.balances).map((b) => (
+              <div className="wallet-row" key={b.asset}>
+                <span className="text-2 small">{b.asset}</span>
+                <span className="num"><Amount value={b.balance} asset={b.asset} decimals={b.decimals} sym={false} /></span>
+              </div>
+            ))
+          )}
           <Link to={href('/dashboard')} className="btn primary" role="menuitem" onClick={() => setOpen(false)}>
             Dashboard
           </Link>
