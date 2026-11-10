@@ -79,6 +79,11 @@ Dates are UTC.
   `RetireCustodyGeneration`; `pools.grace_blocks`, `pools.usage_rotation_keel`;
   `/v1/custody` lists live generations, `?gen=` and `addresses/lookup`;
   `gen` on batches. Registering over an existing vault is refused.
+- Observer: a remembered Tron payout the network never saw is rebroadcast
+  within its expiry window and dropped after five minutes so the outbound
+  is built and signed again (a record written before a failed broadcast
+  had pinned the testnet's first Tron withdrawal in `Batched`); an
+  Ethereum payout whose broadcast was lost is resent like Bitcoin's.
 - Observer: Tron transactions are broadcast through `/wallet/broadcasthex`
   with the signed protobuf. The JSON endpoint rebuilds a transaction from
   its `raw_data` object and ignores `raw_data_hex`, so the hex-only body

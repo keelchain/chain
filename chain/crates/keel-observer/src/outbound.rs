@@ -70,6 +70,13 @@ impl OutboundContext<'_> {
         self.state.read(|d| d.outbound_txs.get(&id).cloned())
     }
 
+    /// Drop a remembered transaction so the outbound is built again.
+    fn forget_outbound(&self, id: u64) -> anyhow::Result<()> {
+        self.state.update(|d| {
+            d.outbound_txs.remove(&id);
+        })
+    }
+
     fn remember(
         &self,
         ids: &[u64],
@@ -396,13 +403,32 @@ pub async fn process_ethereum(
     for (batch_id, outbounds) in batches_of(rows, Chain::Ethereum, book.vault.custodian) {
         for o in &outbounds {
             if let Some(tx) = ctx.known_tx(o.id) {
-                if let Some(r) = eth::receipt_status(rpc, &tx.txid).await? {
-                    if tip.saturating_sub(r.block_number) >= required {
-                        let hash: [u8; 32] = hex::decode(tx.txid.trim_start_matches("0x"))?
-                            .try_into()
-                            .map_err(|_| anyhow::anyhow!("tx hash length"))?;
-                        ctx.observe(o.id, hash, r.block_number, tip, r.fee_paid, r.success)
-                            .await?;
+                match eth::receipt_status(rpc, &tx.txid).await? {
+                    Some(r) => {
+                        if tip.saturating_sub(r.block_number) >= required {
+                            let hash: [u8; 32] = hex::decode(tx.txid.trim_start_matches("0x"))?
+                                .try_into()
+                                .map_err(|_| anyhow::anyhow!("tx hash length"))?;
+                            ctx.observe(o.id, hash, r.block_number, tip, r.fee_paid, r.success)
+                                .await?;
+                        }
+                    }
+                    None => {
+                        // Ours but not mined and not pending: the broadcast
+                        // was lost. Sending the same signed bytes again is
+                        // idempotent (same nonce, same hash).
+                        if let (true, Some(raw)) = (tx.ours, &tx.raw) {
+                            if let Ok(bytes) = hex::decode(raw.trim_start_matches("0x")) {
+                                match eth::send_raw(rpc, &bytes).await {
+                                    Ok(sent) => {
+                                        tracing::info!(id = o.id, tx = %sent, "ethereum outbound rebroadcast")
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(id = o.id, txid = %tx.txid, error = %e, "ethereum rebroadcast failed")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 continue;
@@ -514,6 +540,14 @@ pub async fn assemble_tron(
     Ok((raw.signed_hex(sig65), digest))
 }
 
+/// A Tron transaction built by the observer expires 60 s after its
+/// timestamp; the signed bytes may be sent again until then.
+const TRON_REBROADCAST_SECS: u64 = 45;
+/// A remembered Tron transaction the network has not seen after this long
+/// is dropped and the outbound rebuilt. Blocks come every 3 s, so an actual
+/// broadcast is visible long before this.
+const TRON_STALE_SECS: u64 = 300;
+
 pub async fn process_tron(
     ctx: &OutboundContext<'_>,
     api: &dyn TronApi,
@@ -530,21 +564,51 @@ pub async fn process_tron(
     for (batch_id, outbounds) in batches_of(rows, Chain::Tron, book.vault.custodian) {
         for o in &outbounds {
             if let Some(tx) = ctx.known_tx(o.id) {
-                if let Some(info) = tron::tx_info(api, &tx.txid).await? {
-                    if now.number.saturating_sub(info.block_number) >= required {
-                        let hash: [u8; 32] = hex::decode(&tx.txid)?
-                            .try_into()
-                            .map_err(|_| anyhow::anyhow!("txid length"))?;
-                        ctx.observe(
-                            o.id,
-                            hash,
-                            info.block_number,
-                            now.number,
-                            info.fee_sun as u128,
-                            info.success,
-                        )
-                        .await?;
+                match tron::tx_info(api, &tx.txid).await? {
+                    Some(info) => {
+                        if now.number.saturating_sub(info.block_number) >= required {
+                            let hash: [u8; 32] = hex::decode(&tx.txid)?
+                                .try_into()
+                                .map_err(|_| anyhow::anyhow!("txid length"))?;
+                            ctx.observe(
+                                o.id,
+                                hash,
+                                info.block_number,
+                                now.number,
+                                info.fee_sun as u128,
+                                info.success,
+                            )
+                            .await?;
+                        }
                     }
+                    None if tx.ours => {
+                        // Not on chain. A Tron transaction expires a minute
+                        // after it is built, so within that window the signed
+                        // bytes can go again; after it the record is a dead
+                        // end (a broadcast that never got in) and is dropped
+                        // so the next pass builds and signs a fresh one.
+                        let age = now_unix().saturating_sub(tx.broadcast_unix_secs);
+                        if age <= TRON_REBROADCAST_SECS {
+                            if let Some(raw) = tx
+                                .raw
+                                .as_deref()
+                                .filter(|r| r.bytes().all(|b| b.is_ascii_hexdigit()))
+                            {
+                                match tron::broadcast(api, raw).await {
+                                    Ok(sent) => {
+                                        tracing::info!(id = o.id, tx = %sent, "tron outbound rebroadcast")
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(id = o.id, txid = %tx.txid, error = %e, "tron rebroadcast failed")
+                                    }
+                                }
+                            }
+                        } else if age > TRON_STALE_SECS {
+                            tracing::warn!(id = o.id, txid = %tx.txid, age_secs = age, "tron outbound never appeared on chain; rebuilding it");
+                            ctx.forget_outbound(o.id)?;
+                        }
+                    }
+                    None => {}
                 }
                 continue;
             }
