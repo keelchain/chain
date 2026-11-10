@@ -11,6 +11,7 @@ import {
   selfKey,
   selfPath,
   tronAddressFromPubkey,
+  tronBalances,
   tronCreateTrc20,
   tronDecode,
   tronSign,
@@ -112,5 +113,25 @@ describe('moving coins to Keel', () => {
     expect(param.slice(24, 64)).toBe(hex.encode(tronDecode('TYqumPzuwGPqBP4JiouDjr8ajD6g4ThPXY')!.subarray(1)));
     expect(BigInt('0x' + param.slice(64))).toBe(1_000_000n);
     expect(body['visible']).toBe(true);
+  });
+});
+
+describe('own-address balances', () => {
+  it('reads USDT from the token contract when the account has no record on Tron', async () => {
+    const own = 'TSHekemZoCipcSH2F71rjn7mqByp8VCd5K';
+    let param = '';
+    const f = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith(`/v1/accounts/${own}`)) return Response.json({ data: [], success: true });
+      if (u.endsWith('/wallet/triggerconstantcontract')) {
+        param = String((JSON.parse(String(init?.body)) as { parameter: string }).parameter);
+        return Response.json({ result: { result: true }, constant_result: ['000000000000000000000000000000000000000000000000000000001dcd6500'] });
+      }
+      return new Response('nope', { status: 404 });
+    }) as unknown as typeof fetch;
+    const b = await tronBalances('https://nile.trongrid.io', own, 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf', f);
+    expect(b.usdt).toBe(500_000_000n);
+    expect(b.trx).toBe(0n);
+    expect(param).toBe('000000000000000000000000b2feff0786e43e712547a5b74c6e807422ec220c');
   });
 });

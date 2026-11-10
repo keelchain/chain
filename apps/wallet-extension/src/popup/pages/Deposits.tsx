@@ -4,7 +4,7 @@
  * arriving at the deposit addresses, looked up on their public APIs from the
  * popup. Refreshes every 30 seconds while the tab is open.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { depositProgress, externalNetworks, externalTxUrl, fetchIncoming, isProcessing, stageLabel, type DepositProgress, type ExternalChain } from '@keelchain/sdk';
 import { fetchChainDeposits, fetchDepositAddress, fetchParams, type UiState } from '../ui';
 import { decimalsOf, formatAmount } from '../../core/format';
@@ -20,6 +20,15 @@ export function Deposits({ state }: { state: UiState }) {
   const [rows, setRows] = useState<DepositProgress[] | null>(null);
   const [unreachable, setUnreachable] = useState<string[]>([]);
   const [tick, setTick] = useState(0);
+  // What the last refreshes showed. The public APIs are eventually consistent
+  // and sometimes refuse a call, and the chain only lists a deposit once an
+  // observer reported it, so a transaction can be missing from one refresh
+  // and back in the next. A deposit still being processed stays on screen at
+  // its last known stage until it reappears, for up to ten minutes.
+  const memory = useRef(new Map<string, { p: DepositProgress; seen: number }>());
+  useEffect(() => {
+    memory.current.clear();
+  }, [address, networkId]);
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 30_000);
     return () => clearInterval(t);
@@ -49,6 +58,14 @@ export function Deposits({ state }: { state: UiState }) {
           }
         }
         all.push(...depositProgress(incoming, chainRows.filter((r) => r.chain === chain), required));
+      }
+      const nowMs = Date.now();
+      const present = new Set(all.map((p) => `${p.chain}:${p.tx_hash}`));
+      for (const p of all) memory.current.set(`${p.chain}:${p.tx_hash}`, { p, seen: nowMs });
+      for (const [k, v] of memory.current) {
+        if (present.has(k)) continue;
+        if (isProcessing(v.p.stage) && nowMs - v.seen < 10 * 60_000) all.push(v.p);
+        else memory.current.delete(k);
       }
       if (!cancelled) {
         setRows(all);

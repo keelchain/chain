@@ -219,15 +219,36 @@ export interface TronBalances {
 }
 
 export async function tronBalances(api: string, address: string, usdtContract: string, f: typeof fetch = fetch): Promise<TronBalances> {
-  const j = (await getJson(f, `${api}/v1/accounts/${address}`)) as { data?: { balance?: number; trc20?: Record<string, string>[] }[] };
-  const acct = j.data?.[0];
-  if (!acct) return { trx: 0n, usdt: 0n }; // an address the chain has never seen
-  let usdt = 0n;
-  for (const entry of acct.trc20 ?? []) {
-    const v = entry[usdtContract];
-    if (v && /^\d+$/.test(v)) usdt += BigInt(v);
+  const [acctJson, usdtFromContract] = await Promise.all([
+    getJson(f, `${api}/v1/accounts/${address}`).catch(() => null) as Promise<{ data?: { balance?: number; trc20?: Record<string, string>[] }[] } | null>,
+    trc20BalanceOf(api, usdtContract, address, f).catch(() => null),
+  ]);
+  const acct = acctJson?.data?.[0];
+  // An address that only ever received tokens has no account record on Tron,
+  // so `/v1/accounts` answers with nothing; the token contract still knows.
+  let usdt = usdtFromContract;
+  if (usdt === null) {
+    usdt = 0n;
+    for (const entry of acct?.trc20 ?? []) {
+      const v = entry[usdtContract];
+      if (v && /^\d+$/.test(v)) usdt += BigInt(v);
+    }
   }
-  return { trx: BigInt(acct.balance ?? 0), usdt };
+  return { trx: BigInt(acct?.balance ?? 0), usdt };
+}
+
+/** `balanceOf(address)` on a TRC-20 contract through `triggerconstantcontract`. */
+export async function trc20BalanceOf(api: string, contract: string, address: string, f: typeof fetch = fetch): Promise<bigint> {
+  const raw = tronDecode(address);
+  if (!raw) throw new Error('Not a Tron address.');
+  const j = (await getJson(f, `${api}/wallet/triggerconstantcontract`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ owner_address: address, contract_address: contract, function_selector: 'balanceOf(address)', parameter: hex.encode(raw.subarray(1)).padStart(64, '0'), visible: true }),
+  })) as { result?: { result?: boolean }; constant_result?: string[] };
+  const word = j.constant_result?.[0];
+  if (!j.result?.result || !word || !/^[0-9a-fA-F]+$/.test(word)) throw new Error('balanceOf failed');
+  return BigInt('0x' + word);
 }
 
 /** An unsigned Tron transaction as TronGrid returns it. */

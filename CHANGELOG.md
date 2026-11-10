@@ -28,6 +28,15 @@ Dates are UTC.
   Nile on the testnet). SDK: `externalNetworks`, `fetchIncoming`,
   `depositProgress`. The explorer's Bitcoin links for the testnet now point
   at signet, not testnet4. The indexer lists each deposit address once.
+- Wallet: a deposit being processed stays in the Deposits tab at its last
+  known stage when one refresh cannot see it (a refused public-API call, or
+  the gap between the last confirmation and the observers' report), instead
+  of vanishing for a refresh and coming back credited.
+- Wallet: Home hides empty non-spendable rows (an emptied withdrawal escrow
+  used to linger as "Withdrawal in flight 0").
+- Wallet: the own address's USDT balance is read from the token contract,
+  so an address that holds only tokens (no account record on Tron yet)
+  shows what it holds instead of zero.
 - Wallet: a Tron move to Keel is signed with the 27-offset recovery byte
   java-tron requires; the first build used the raw recovery id.
 - Wallet: balances name what each ledger account means ("Available",

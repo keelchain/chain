@@ -94,7 +94,7 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
         ) : (
           <table className="balances">
             <tbody>
-              {account.balances.map((b, i) => (
+              {account.balances.filter((b) => b.account_type === 'deposit' || BigInt(String(b.balance)) > 0n).map((b, i) => (
                 <tr key={i}>
                   <td>{b.asset}</td>
                   <td className="muted">{accountTypeLabel(b.account_type)}</td>
