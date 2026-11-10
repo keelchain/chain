@@ -413,6 +413,26 @@ switches which address the Receive card shows. Derivation paths, the
 settings that choose the default, and the self-custody code are in
 `wallet.md` section 5b.
 
+What each kind of balance can do:
+
+| | In Keel | In your wallet |
+|---|---|---|
+| Who signs | the observer set, threshold key (9.1) | you, a key from your seed |
+| Trade on the book, swap | yes | no |
+| Escrow in a P2P fiat trade | yes | no |
+| Transfer to another Keel address | yes | no |
+| Withdraw to any external address | yes, through the observer batch (9.3) | from the wallet: no; from any other wallet that imports the same phrase: yes |
+| Lightning | yes, through the pools (9.5) | no |
+| Counted in the reserve invariant (9.4) | yes | no |
+| Shown in the explorer | yes | no, the chain never learns the address |
+| Lost phrase | the account is recoverable through Keel's recovery rules | the coins are gone |
+| Move to the other side | *Send → Move to your wallet* (a withdrawal) | *Wallet → Move to Keel* (a deposit) |
+
+Inside the wallet extension the only actions on coins in your wallet are to
+see them and to move them into Keel (`selfAddresses`, `selfBalances`,
+`moveToKeel` in `background/wallet.ts`). Everything else about them happens
+in whatever other wallet the user imports the phrase into.
+
 ### 9.1 Vaults and threshold keys
 
 Assets from other chains live in **vaults**: one active vault per external
