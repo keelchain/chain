@@ -388,6 +388,31 @@ two models with the float swap (`SwapCustody`, also in `models.md`): one
 ledger posting against the client's floats on both sides, no coins moving,
 after which it trades on the book and in escrow like any `deposit` balance.
 
+### 9.0 Two places a user's coins can be: in Keel, or in your wallet
+
+For the bridged chains (Bitcoin and Tron) a Keel Wallet user holds coins in
+one of two places, and the wallet shows both side by side:
+
+- **In Keel** (the default): the deposit address is a child of the network
+  vault's threshold key (9.1), the observer set signs for it, and the balance
+  is a Keel balance that trades, escrows and swaps. Everything below in this
+  section, deposits (9.2), withdrawals (9.3) and the reserve invariant (9.4),
+  is about coins in Keel.
+- **In your wallet** (self-custody): the wallet derives a Bitcoin and a Tron
+  key from the same BIP39 seed as the Keel accounts, on the standard paths,
+  so the phrase alone recovers them in any other wallet. The chain never
+  learns these addresses, no observer set stands behind them, and they do
+  not trade until moved into Keel.
+
+Coins cross between the two with an ordinary deposit (*Move to Keel*: the
+wallet signs a transaction to the account's vault deposit address and the
+Deposits tab follows it through the stages of 9.2) or an ordinary
+withdrawal (*Move to your wallet*: escrow, observer batch, threshold
+signature, as in 9.3). Nothing already deposited changes when the user
+switches which address the Receive card shows. Derivation paths, the
+settings that choose the default, and the self-custody code are in
+`wallet.md` section 5b.
+
 ### 9.1 Vaults and threshold keys
 
 Assets from other chains live in **vaults**: one active vault per external
