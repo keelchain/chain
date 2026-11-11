@@ -377,6 +377,19 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 gen: 0,
             },
         ),
+        (
+            "deposit_liquidity",
+            Action::DepositLiquidity {
+                asset: Asset::new("KUSD"),
+                amount: 250_000_000,
+            },
+        ),
+        (
+            "withdraw_liquidity",
+            Action::WithdrawLiquidity {
+                shares: 123_456_789,
+            },
+        ),
     ]
 }
 

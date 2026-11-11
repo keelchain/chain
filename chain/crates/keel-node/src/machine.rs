@@ -1047,6 +1047,9 @@ mod tests {
     fn upgrade_gate_follows_the_newest_activation() {
         let alice = Keypair::from_seed(1);
         let mut state = Genesis::devnet(CHAIN_ID_DEVNET, &[alice.address()], vec![]).build();
+        // A fresh genesis activates the build's own version at height 0.
+        assert!(upgrade_gate(&state, 10, NODE_VERSION).is_ok());
+        state.gov.upgrades.clear();
         assert!(upgrade_gate(&state, 10, "0.1.0").is_ok());
         state.gov.upgrades.push(("0.2.0".into(), 100));
         assert!(upgrade_gate(&state, 99, "0.1.0").is_ok());

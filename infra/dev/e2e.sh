@@ -67,6 +67,18 @@ for rpc in "$RPC0" "$RPC3"; do
 done
 say "balances agree on node 0 and node 3"
 
+# The pooled house-maker inventory (0.2.0): alice funds the pool with 1,000
+# KUSD and the node reports her shares (1 share per micro-USD).
+say "alice deposits 1000 KUSD into the liquidity pool"
+"$KEEL" --rpc "$RPC0" send --secret "$ALICE_SECRET" --wait 30 liquidity deposit KUSD 1000000000 > "$KEEL_DEVNET_DIR/liq.json"
+grep -q '"LiquidityDeposited"' "$KEEL_DEVNET_DIR/liq.json" || { say "deposit receipt has no LiquidityDeposited:"; cat "$KEEL_DEVNET_DIR/liq.json"; exit 1; }
+sleep 2
+POOL_SHARES=$(curl -s "$RPC0/v1/liquidity" | python3 -c 'import sys,json;print(json.load(sys.stdin)["pool"]["total_shares"])')
+MY_SHARES=$(curl -s "$RPC0/v1/liquidity/$ALICE" | python3 -c 'import sys,json;print(json.load(sys.stdin)["shares"])')
+[[ "$POOL_SHARES" == "1000000000" && "$MY_SHARES" == "1000000000" ]] || { say "pool shares mismatch: pool=$POOL_SHARES alice=$MY_SHARES"; exit 1; }
+curl -s "$RPC0/v1/params" | python3 -c 'import sys,json;p=json.load(sys.stdin);assert p["liquidity"]["protocol_share_bps"]==5000 and "usage_fill_keel" in p["clients"]'
+say "liquidity pool: $POOL_SHARES shares, params exposed"
+
 # State hash agreement at a common height: read node 0's receipts height, then compare hashes when both pass it.
 H=$(height "$RPC0"); T=$((H + 3))
 wait_height "$RPC0" "$T" 30; wait_height "$RPC3" "$T" 30

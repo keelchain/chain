@@ -62,7 +62,17 @@ pub struct Genesis {
     /// governance revokes it: the platform super admin at launch.
     #[serde(default)]
     pub param_admin: Option<Address>,
+    /// Software versions treated as activated from the given height, as
+    /// if a `SoftwareUpgrade` proposal had executed. A fresh network seeds
+    /// the version it is built with at height 0 so every gated feature is
+    /// on from block zero; a running network activates by proposal.
+    #[serde(default)]
+    pub upgrades: Vec<(String, u64)>,
 }
+
+/// The version this binary is built as; `Genesis::devnet` activates it at
+/// height 0.
+pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// How the 21,000,000,000 KEEL are issued at genesis. Shares are basis
 /// points of `total_supply`; the awards already promised by the platform
@@ -224,6 +234,7 @@ impl Genesis {
             token_contracts: Vec::new(),
             allocation: None,
             param_admin: None,
+            upgrades: vec![(BUILD_VERSION.to_string(), 0)],
         }
     }
 
@@ -348,6 +359,7 @@ impl Genesis {
             &self.arbitrators,
         );
         state.gov.param_admin = self.param_admin;
+        state.gov.upgrades = self.upgrades.clone();
         if let Some(alloc) = &self.allocation {
             self.apply_allocation(&mut state, alloc);
         }

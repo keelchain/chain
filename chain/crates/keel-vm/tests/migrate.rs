@@ -92,18 +92,47 @@ fn schema_zero_fixture_loads() {
 fn legacy_body(schema: u32) -> Vec<u8> {
     let state = genesis_state();
     let full = borsh::to_vec(&state).unwrap();
+    let liquidity = borsh::to_vec(&state.liquidity).unwrap();
     let pools = borsh::to_vec(&state.pools).unwrap();
     let arbitration = borsh::to_vec(&state.arbitration).unwrap();
     let custody = borsh::to_vec(&state.custody).unwrap();
     let clients = borsh::to_vec(&state.clients).unwrap();
-    let cut = match schema {
-        0 | 1 => custody.len() + clients.len() + arbitration.len() + pools.len(),
-        2 => custody.len() + arbitration.len() + pools.len(),
-        3 => arbitration.len() + pools.len(),
-        4 => pools.len(),
-        _ => 0,
+    // Schemas 2 to 5 carried the schema-3 `clients` layout: the eight
+    // original params (defaults on a devnet genesis) and five empty maps.
+    let legacy_clients = {
+        let mut v = borsh::to_vec(&(
+            200u32,
+            50u32,
+            100u32,
+            0u128,
+            0u128,
+            500u32,
+            1_000_000u64,
+            0u128,
+        ))
+        .unwrap();
+        v.extend_from_slice(&[0u8; 4 * 5]);
+        v
     };
-    let body = full[..full.len() - cut].to_vec();
+    let head = full.len()
+        - liquidity.len()
+        - pools.len()
+        - arbitration.len()
+        - custody.len()
+        - clients.len();
+    let mut body = full[..head].to_vec();
+    if schema >= 2 {
+        body.extend_from_slice(&legacy_clients);
+    }
+    if schema >= 3 {
+        body.extend_from_slice(&custody);
+    }
+    if schema >= 4 {
+        body.extend_from_slice(&arbitration);
+    }
+    if schema >= 5 {
+        body.extend_from_slice(&pools);
+    }
     if schema == 0 {
         return body;
     }

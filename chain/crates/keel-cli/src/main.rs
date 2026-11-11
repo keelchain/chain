@@ -127,10 +127,22 @@ enum ActionCmd {
     /// Lightning pool operations for an observer key (2026-09-10).
     #[command(subcommand)]
     Lightning(LightningCmd),
+    /// The pooled house-maker inventory (docs/how-it-works.md §11).
+    #[command(subcommand)]
+    Liquidity(LiquidityCmd),
     /// Raw action JSON (keel_actions::Action serde form).
     Raw {
         json: String,
     },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum LiquidityCmd {
+    /// Fund the pool with `amount` (smallest units) of `asset`; mints shares.
+    Deposit { asset: String, amount: Amount },
+    /// Burn `shares`; the pro-rata slice of every pool asset is released
+    /// after the withdraw delay.
+    Withdraw { shares: u128 },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -607,6 +619,13 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
             valid_until,
         }),
         ActionCmd::BuyBudget { actions } => Action::BuyBudget { actions },
+        ActionCmd::Liquidity(LiquidityCmd::Deposit { asset, amount }) => Action::DepositLiquidity {
+            asset: Asset::new(asset),
+            amount,
+        },
+        ActionCmd::Liquidity(LiquidityCmd::Withdraw { shares }) => {
+            Action::WithdrawLiquidity { shares }
+        }
         ActionCmd::Raw { json } => serde_json::from_value(read_json_arg(&json)?)?,
     })
 }

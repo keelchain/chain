@@ -29,6 +29,8 @@ action's JSON they are 32-element byte arrays (serde form).
 | GET | `/v1/receipts/{tx_id}` | `{index, tx_id, signer, ok, error{code,message}?, events[]}` (404 until applied) |
 | GET | `/v1/clients/{addr}` → `{address, attester, fee, caps, earned, usage_paid, attested_accounts, usage_prices}` | a client's retail schedule and what it earned and paid |
 | GET | `/v1/treasury` → `{height, balances:{treasury,validator_rewards,burn}, last_buyback, params, fee_split_bps}` | system balances per asset and the epoch buyback record |
+| GET | `/v1/liquidity` → `{height, active, pool:{balances, total_shares, value_usd, value_per_share, hwm, holders, protocol_shares}, params, last_epoch, pending_unlocks}` | the pooled house-maker inventory and its mark |
+| GET | `/v1/liquidity/{addr}` → `{shares, share_bps, value_usd, legs, pending}` | one depositor's position and pending releases |
 | GET | `/v1/ready/{chain}?max_checkpoint_age=` → `{chain, ready, reasons, height, vault, checkpoint, last_deposit_credited, outbound_pending, halted, fee_rate}` | whether a client may turn that network on; what a per-network switch polls |
 | GET | `/v1/sync/meta` → `{height, state_hash, last_hash, schema, boundaries:[{epoch,height,digest}]}` | newest snapshot for state sync (`keel-node --sync-from`) |
 | GET | `/v1/sync/snapshot` → bytes | the snapshot itself (`KEEL` header, schema, borsh state) |

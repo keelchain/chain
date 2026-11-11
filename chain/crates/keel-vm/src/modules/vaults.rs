@@ -647,13 +647,18 @@ fn withdraw(
     let native = native_asset(chain);
     let is_native = native == w.asset;
 
-    // Flat fee in the withdrawn asset (0 when no price exists yet).
-    let flat = asset_units_for_usd(
-        state,
-        &w.asset,
-        state.params.withdraw_flat_fee_usd_micro as Amount,
-    )
-    .unwrap_or(0);
+    // Flat fee in the withdrawn asset (0 when no price exists yet, or when
+    // the withdrawer's client pays usage instead, 0.2.0).
+    let flat = if super::clients::waives_fee(state, ctx.height, &signer, ctx.seconds()).is_some() {
+        0
+    } else {
+        asset_units_for_usd(
+            state,
+            &w.asset,
+            state.params.withdraw_flat_fee_usd_micro as Amount,
+        )
+        .unwrap_or(0)
+    };
     if flat >= w.amount {
         return Err(VmError::Invalid(
             "amount does not cover the withdrawal fee".into(),

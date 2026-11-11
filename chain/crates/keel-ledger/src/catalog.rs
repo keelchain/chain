@@ -106,6 +106,10 @@ pub const ACCOUNT_TYPES: &[(&str, NormalSide, bool)] = &[
     // its way back to the deposit after an unlock request.
     ("budget_lock", NormalSide::Credit, true),
     ("budget_unlocking", NormalSide::Credit, true),
+    // A liquidity-pool withdrawal on its way back to the depositor's
+    // deposit after the withdraw delay (2026-10-02). User-owned and
+    // restricted, so it counts as a user liability on its own.
+    ("liquidity_unlocking", NormalSide::Credit, true),
 ];
 
 pub fn account_type_info(account_type: &str) -> Option<(NormalSide, bool)> {
@@ -249,6 +253,10 @@ tx_types! {
     LightningPayout => "lightning_payout",
     LightningPoolFund => "lightning_pool_fund",
     LightningPoolSweep => "lightning_pool_sweep",
+    LiquidityDeposit => "liquidity_deposit",
+    LiquidityWithdraw => "liquidity_withdraw",
+    LiquidityRelease => "liquidity_release",
+    LiquidityFee => "liquidity_fee",
 }
 
 #[cfg(test)]

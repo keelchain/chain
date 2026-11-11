@@ -6,8 +6,8 @@
 use crate::{
     context::BlockContext,
     modules::{
-        arbitration, attest, budgets, clients, custody, disputes, gov, lightning, markets, p2p,
-        pools, sessions, stable, staking, tokens, treasury, vaults,
+        arbitration, attest, budgets, clients, custody, disputes, gov, lightning, liquidity,
+        markets, p2p, pools, sessions, stable, staking, tokens, treasury, vaults,
     },
     receipt::{Event, Receipt, VmError},
     state::State,
@@ -38,6 +38,15 @@ pub fn check_admission(state: &State, sa: &SignedAction) -> Result<(), VmError> 
     }
     if state.is_paused(sa.envelope.action.module()) {
         return Err(VmError::Paused(sa.envelope.action.module().into()));
+    }
+    // Actions of a feature governance has not activated yet are kept out
+    // of the mempool so a node never includes them early.
+    if matches!(
+        sa.envelope.action,
+        Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. }
+    ) && !liquidity::active(state, state.height + 1)
+    {
+        return Err(VmError::Invalid("liquidity not active".into()));
     }
     if sa.envelope.action.is_observer_action() {
         if !staking::is_observer(state, &sa.envelope.signer) {
@@ -98,6 +107,10 @@ pub fn apply_block(
     end.extend(vaults::end_block(state, ctx));
     end.extend(custody::end_block(state, ctx));
     end.extend(stable::end_block(state, ctx));
+    // The pool's epoch fee and clients' owed usage land in the fee split
+    // before the buyback sweeps it into KEEL.
+    end.extend(liquidity::end_block(state, ctx));
+    end.extend(clients::end_block(state, ctx));
     end.extend(treasury::end_block(state, ctx));
     end.extend(staking::end_block(state, ctx));
     end.extend(gov::end_block(state, ctx));
@@ -229,7 +242,7 @@ fn apply_one(
             expires_at,
         } => attest::apply_attest(state, ctx, signer, *subject, *tier, *expires_at),
         Action::SetParam { key, value } => gov::set_param(state, signer, key, *value),
-        Action::SetClientFee(fee) => clients::apply_set_fee(state, signer, fee),
+        Action::SetClientFee(fee) => clients::apply_set_fee(state, ctx.height, signer, fee),
         Action::RegisterCustodyVault(_)
         | Action::RequestCustodyAddress { .. }
         | Action::ObserveCustodyDeposit { .. }
@@ -280,6 +293,9 @@ fn apply_one(
         Action::AnnounceLightningSweep { tx_hash, amount } => {
             lightning::announce_sweep(state, signer, *tx_hash, *amount)
         }
+        Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. } => {
+            liquidity::apply(state, ctx, signer, &tx_id, action)
+        }
     };
     if result.is_err() {
         state.ledger.rollback(sp);
@@ -308,10 +324,13 @@ fn invariants(state: &mut State) -> Vec<Event> {
             .system_reserves(&asset)
             .saturating_sub(custody_reserves)
             .max(0) as u128;
+        // Depositors' share of the liquidity pool's vault assets sits in
+        // a system account `user_liabilities` ignores; count it here.
         let liabilities = state
             .ledger
             .user_liabilities(&asset)
-            .saturating_sub(custody_liabilities);
+            .saturating_sub(custody_liabilities)
+            .saturating_add(liquidity::user_pool_liability(state, state.height, &asset));
         if reserves < liabilities {
             events.push(Event::InvariantBreached {
                 asset: asset.clone(),

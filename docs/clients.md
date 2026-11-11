@@ -178,10 +178,15 @@ book with KUSD, USDT, BTC or TRX; there is no invoice.
   vault, per outbound batch built and broadcast, per network watched, plus
   a service tier chosen by locking KEEL. Nothing is a share of the client's
   own fees.
-- **P2P clients** pay a wholesale protocol fee on escrow releases,
-  order-book fills and withdrawals, and set their own retail fee on top
-  (`SetClientFee`), which the chain pays into the client's account in the
-  same posting.
+- **P2P clients** pay usage per flow of their users: `clients.usage_fill_keel`
+  per order that filled, `usage_release_keel` per escrow release,
+  `usage_ruling_keel` per dispute ruling, `usage_outbound_keel` per
+  withdrawal. Their users pay no protocol fee (0.2.0); the client sets its
+  own retail fee (`SetClientFee`, uncapped), which the chain pays into the
+  client's account in the same posting. A per-flow charge the client cannot
+  pay is owed (`UsageOwed`), collected from its next KEEL, and blocks new
+  addresses and withdrawals for its accounts until paid; `GET
+  /v1/clients/{addr}` shows `usage_owed`.
 - **Service tiers** come from locked KEEL on the client's operator account:
   higher limits, webhooks and a revenue dashboard. `tokenomics.md` has the
   schedule and the governance parameters behind it.

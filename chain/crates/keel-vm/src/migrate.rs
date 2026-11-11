@@ -23,7 +23,7 @@ use crate::state::State;
 use borsh::BorshDeserialize;
 
 /// Current snapshot schema.
-pub const SCHEMA: u32 = 5;
+pub const SCHEMA: u32 = 6;
 
 /// Magic prefix of a versioned snapshot.
 pub const MAGIC: &[u8; 4] = b"KEEL";
@@ -54,12 +54,14 @@ pub fn upgrade(schema: u32, payload: &[u8]) -> Option<State> {
         // Schema 0 (headerless) and schema 1 share the same layout; 1 only
         // added the header. Schema 2 appended `State.clients`, schema 3
         // appended `State.custody`, schema 4 appended `State.arbitration`,
-        // schema 5 appended `State.pools`.
+        // schema 5 appended `State.pools`, schema 6 appended
+        // `State.liquidity` and new fields inside `clients`.
         0 | 1 => StateV1::try_from_slice(payload).ok().map(State::from),
         2 => StateV2::try_from_slice(payload).ok().map(State::from),
         3 => StateV3::try_from_slice(payload).ok().map(State::from),
         4 => StateV4::try_from_slice(payload).ok().map(State::from),
-        5 => State::try_from_slice(payload).ok(),
+        5 => StateV5::try_from_slice(payload).ok().map(State::from),
+        6 => State::try_from_slice(payload).ok(),
         _ => None,
     }
 }
@@ -92,7 +94,7 @@ pub struct StateV1 {
     pub last_hash: keel_crypto::Hash32,
 }
 
-/// Schema 2: schema 1 plus `clients`.
+/// Schema 2: schema 1 plus `clients` (in its schema-3 layout).
 #[derive(BorshDeserialize)]
 pub struct StateV2 {
     pub chain_id: u32,
@@ -116,68 +118,7 @@ pub struct StateV2 {
     pub paused: std::collections::BTreeMap<String, u64>,
     pub gov_house_operator: Option<keel_types::Address>,
     pub last_hash: keel_crypto::Hash32,
-    pub clients: crate::modules::clients::ClientsState,
-}
-
-/// Schema 4: schema 3 plus `arbitration`.
-#[derive(BorshDeserialize)]
-pub struct StateV4 {
-    pub chain_id: u32,
-    pub height: u64,
-    pub timestamp: u64,
-    pub params: crate::params::Params,
-    pub accounts: std::collections::BTreeMap<keel_types::Address, crate::state::AccountMeta>,
-    pub ledger: keel_ledger::Ledger,
-    pub tokens: crate::modules::tokens::TokensState,
-    pub markets: crate::modules::markets::MarketsState,
-    pub p2p: crate::modules::p2p::P2pState,
-    pub disputes: crate::modules::disputes::DisputesState,
-    pub vaults: crate::modules::vaults::VaultsState,
-    pub stable: crate::modules::stable::StableState,
-    pub staking: crate::modules::staking::StakingState,
-    pub gov: crate::modules::gov::GovState,
-    pub attest: crate::modules::attest::AttestState,
-    pub budgets: crate::modules::budgets::BudgetsState,
-    pub sessions: crate::modules::sessions::SessionsState,
-    pub lightning: crate::modules::lightning::LightningState,
-    pub paused: std::collections::BTreeMap<String, u64>,
-    pub gov_house_operator: Option<keel_types::Address>,
-    pub last_hash: keel_crypto::Hash32,
-    pub clients: crate::modules::clients::ClientsState,
-    pub custody: crate::modules::custody::CustodyState,
-    pub arbitration: crate::modules::arbitration::ArbitrationState,
-}
-
-impl From<StateV4> for State {
-    fn from(v: StateV4) -> Self {
-        State {
-            chain_id: v.chain_id,
-            height: v.height,
-            timestamp: v.timestamp,
-            params: v.params,
-            accounts: v.accounts,
-            ledger: v.ledger,
-            tokens: v.tokens,
-            markets: v.markets,
-            p2p: v.p2p,
-            disputes: v.disputes,
-            vaults: v.vaults,
-            stable: v.stable,
-            staking: v.staking,
-            gov: v.gov,
-            attest: v.attest,
-            budgets: v.budgets,
-            sessions: v.sessions,
-            lightning: v.lightning,
-            paused: v.paused,
-            gov_house_operator: v.gov_house_operator,
-            last_hash: v.last_hash,
-            clients: v.clients,
-            custody: v.custody,
-            arbitration: v.arbitration,
-            pools: Default::default(),
-        }
-    }
+    pub clients: crate::modules::clients::ClientsStateV3,
 }
 
 /// Schema 3: schema 2 plus `custody`.
@@ -204,8 +145,134 @@ pub struct StateV3 {
     pub paused: std::collections::BTreeMap<String, u64>,
     pub gov_house_operator: Option<keel_types::Address>,
     pub last_hash: keel_crypto::Hash32,
-    pub clients: crate::modules::clients::ClientsState,
+    pub clients: crate::modules::clients::ClientsStateV3,
     pub custody: crate::modules::custody::CustodyState,
+}
+
+/// Schema 4: schema 3 plus `arbitration`.
+#[derive(BorshDeserialize)]
+pub struct StateV4 {
+    pub chain_id: u32,
+    pub height: u64,
+    pub timestamp: u64,
+    pub params: crate::params::Params,
+    pub accounts: std::collections::BTreeMap<keel_types::Address, crate::state::AccountMeta>,
+    pub ledger: keel_ledger::Ledger,
+    pub tokens: crate::modules::tokens::TokensState,
+    pub markets: crate::modules::markets::MarketsState,
+    pub p2p: crate::modules::p2p::P2pState,
+    pub disputes: crate::modules::disputes::DisputesState,
+    pub vaults: crate::modules::vaults::VaultsState,
+    pub stable: crate::modules::stable::StableState,
+    pub staking: crate::modules::staking::StakingState,
+    pub gov: crate::modules::gov::GovState,
+    pub attest: crate::modules::attest::AttestState,
+    pub budgets: crate::modules::budgets::BudgetsState,
+    pub sessions: crate::modules::sessions::SessionsState,
+    pub lightning: crate::modules::lightning::LightningState,
+    pub paused: std::collections::BTreeMap<String, u64>,
+    pub gov_house_operator: Option<keel_types::Address>,
+    pub last_hash: keel_crypto::Hash32,
+    pub clients: crate::modules::clients::ClientsStateV3,
+    pub custody: crate::modules::custody::CustodyState,
+    pub arbitration: crate::modules::arbitration::ArbitrationState,
+}
+
+/// Schema 5: schema 4 plus `pools`; `clients` still in its schema-3
+/// layout.
+#[derive(BorshDeserialize)]
+pub struct StateV5 {
+    pub chain_id: u32,
+    pub height: u64,
+    pub timestamp: u64,
+    pub params: crate::params::Params,
+    pub accounts: std::collections::BTreeMap<keel_types::Address, crate::state::AccountMeta>,
+    pub ledger: keel_ledger::Ledger,
+    pub tokens: crate::modules::tokens::TokensState,
+    pub markets: crate::modules::markets::MarketsState,
+    pub p2p: crate::modules::p2p::P2pState,
+    pub disputes: crate::modules::disputes::DisputesState,
+    pub vaults: crate::modules::vaults::VaultsState,
+    pub stable: crate::modules::stable::StableState,
+    pub staking: crate::modules::staking::StakingState,
+    pub gov: crate::modules::gov::GovState,
+    pub attest: crate::modules::attest::AttestState,
+    pub budgets: crate::modules::budgets::BudgetsState,
+    pub sessions: crate::modules::sessions::SessionsState,
+    pub lightning: crate::modules::lightning::LightningState,
+    pub paused: std::collections::BTreeMap<String, u64>,
+    pub gov_house_operator: Option<keel_types::Address>,
+    pub last_hash: keel_crypto::Hash32,
+    pub clients: crate::modules::clients::ClientsStateV3,
+    pub custody: crate::modules::custody::CustodyState,
+    pub arbitration: crate::modules::arbitration::ArbitrationState,
+    pub pools: crate::modules::pools::PoolsState,
+}
+
+impl From<StateV5> for State {
+    fn from(v: StateV5) -> Self {
+        State {
+            chain_id: v.chain_id,
+            height: v.height,
+            timestamp: v.timestamp,
+            params: v.params,
+            accounts: v.accounts,
+            ledger: v.ledger,
+            tokens: v.tokens,
+            markets: v.markets,
+            p2p: v.p2p,
+            disputes: v.disputes,
+            vaults: v.vaults,
+            stable: v.stable,
+            staking: v.staking,
+            gov: v.gov,
+            attest: v.attest,
+            budgets: v.budgets,
+            sessions: v.sessions,
+            lightning: v.lightning,
+            paused: v.paused,
+            gov_house_operator: v.gov_house_operator,
+            last_hash: v.last_hash,
+            clients: v.clients.into(),
+            custody: v.custody,
+            arbitration: v.arbitration,
+            pools: v.pools,
+            liquidity: Default::default(),
+        }
+    }
+}
+
+impl From<StateV4> for State {
+    fn from(v: StateV4) -> Self {
+        State {
+            chain_id: v.chain_id,
+            height: v.height,
+            timestamp: v.timestamp,
+            params: v.params,
+            accounts: v.accounts,
+            ledger: v.ledger,
+            tokens: v.tokens,
+            markets: v.markets,
+            p2p: v.p2p,
+            disputes: v.disputes,
+            vaults: v.vaults,
+            stable: v.stable,
+            staking: v.staking,
+            gov: v.gov,
+            attest: v.attest,
+            budgets: v.budgets,
+            sessions: v.sessions,
+            lightning: v.lightning,
+            paused: v.paused,
+            gov_house_operator: v.gov_house_operator,
+            last_hash: v.last_hash,
+            clients: v.clients.into(),
+            custody: v.custody,
+            arbitration: v.arbitration,
+            pools: Default::default(),
+            liquidity: Default::default(),
+        }
+    }
 }
 
 impl From<StateV3> for State {
@@ -232,10 +299,11 @@ impl From<StateV3> for State {
             paused: v.paused,
             gov_house_operator: v.gov_house_operator,
             last_hash: v.last_hash,
-            clients: v.clients,
+            clients: v.clients.into(),
             custody: v.custody,
             arbitration: Default::default(),
             pools: Default::default(),
+            liquidity: Default::default(),
         }
     }
 }
@@ -264,10 +332,11 @@ impl From<StateV2> for State {
             paused: v.paused,
             gov_house_operator: v.gov_house_operator,
             last_hash: v.last_hash,
-            clients: v.clients,
+            clients: v.clients.into(),
             custody: Default::default(),
             arbitration: Default::default(),
             pools: Default::default(),
+            liquidity: Default::default(),
         }
     }
 }
@@ -300,6 +369,7 @@ impl From<StateV1> for State {
             custody: Default::default(),
             arbitration: Default::default(),
             pools: Default::default(),
+            liquidity: Default::default(),
         }
     }
 }

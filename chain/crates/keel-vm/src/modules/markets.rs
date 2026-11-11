@@ -21,13 +21,13 @@ use keel_actions::{Action, HouseQuote, PlaceOrder};
 use keel_book::{Book, Incoming, MakerRef, Plan, RestingOrder, SyntheticLevel};
 use keel_ledger::{AccountKey, Record, TxType};
 use keel_types::{
-    base_for_quote, quote_amount, Address, Amount, Asset, FeeSide, OrderId, OrderType, PairConfig,
-    Seq, SettleParty, Side,
+    base_for_quote, mul_div_floor, quote_amount, Address, Amount, Asset, FeeSide, OrderId,
+    OrderType, PairConfig, Seq, SettleParty, Side,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{fees, tokens};
+use super::{fees, liquidity, tokens};
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
@@ -210,13 +210,21 @@ fn synthetic_levels(state: &State, market: &Market, height: u64) -> Vec<Syntheti
     }
     let cfg = &market.cfg;
     let party = &cfg.house_party;
+    // With the pool live, one quote side may expose at most a share of
+    // the inventory (depositors' money); before that the whole balance.
+    let cap_bps: Amount = if liquidity::active(state, height) {
+        state.liquidity.params.max_quote_inventory_bps as Amount
+    } else {
+        10_000
+    };
+    let capped = |inventory: Amount| mul_div_floor(inventory, cap_bps, 10_000).unwrap_or(0);
     let mut out = Vec::new();
     if let Some((price, size)) = h.ask {
         // Selling base: bounded by base inventory.
         let inventory = party_key(party, &cfg.base_asset)
             .map(|k| state.ledger.balance(&k).max(0) as Amount)
             .unwrap_or(0);
-        let size = size.min(inventory);
+        let size = size.min(capped(inventory));
         if size > 0 && price > 0 {
             out.push(SyntheticLevel {
                 source: "house".into(),
@@ -231,7 +239,7 @@ fn synthetic_levels(state: &State, market: &Market, height: u64) -> Vec<Syntheti
         let inventory = party_key(party, &cfg.quote_asset)
             .map(|k| state.ledger.balance(&k).max(0) as Amount)
             .unwrap_or(0);
-        let affordable = base_for_quote(inventory, price, cfg.base_decimals);
+        let affordable = base_for_quote(capped(inventory), price, cfg.base_decimals);
         let size = size.min(affordable);
         if size > 0 && price > 0 {
             out.push(SyntheticLevel {
@@ -550,7 +558,11 @@ fn settle(
     let base = &cfg.base_asset;
     let quote = &cfg.quote_asset;
     let stable = state.tokens.stable.clone();
+    // 0.2.0: an account attested by a live client pays no taker fee; the
+    // client is billed per order that filled instead.
+    let waived_for = super::clients::waives_fee(state, _ctx.height, &taker, _ctx.seconds());
     for f in &plan.fills {
+        let taker_fee = if waived_for.is_some() { 0 } else { f.taker_fee };
         let fill_id = state.markets.next_fill_id;
         state.markets.next_fill_id += 1;
         let group = format!("fill:{fill_id}");
@@ -608,7 +620,7 @@ fn settle(
                         *lock_used = lock_used.saturating_add(release);
                     }
                 }
-                if f.taker_fee > 0 && f.fee_side == FeeSide::Base {
+                if taker_fee > 0 && f.fee_side == FeeSide::Base {
                     fees::collect(
                         state,
                         &format!("{group}:fee"),
@@ -616,7 +628,7 @@ fn settle(
                         Some(&group),
                         tokens::deposit_key(taker, base),
                         base,
-                        f.taker_fee,
+                        taker_fee,
                     )?;
                 }
                 // The taker's client, if any, takes its retail fee on the fill.
@@ -662,7 +674,7 @@ fn settle(
                     ],
                 )?;
                 *lock_used = lock_used.saturating_add(f.quantity);
-                if f.taker_fee > 0 && f.fee_side == FeeSide::Quote {
+                if taker_fee > 0 && f.fee_side == FeeSide::Quote {
                     fees::collect(
                         state,
                         &format!("{group}:fee"),
@@ -670,7 +682,7 @@ fn settle(
                         Some(&group),
                         tokens::deposit_key(taker, quote),
                         quote,
-                        f.taker_fee,
+                        taker_fee,
                     )?;
                 }
                 events.extend(super::clients::retail(
@@ -701,8 +713,14 @@ fn settle(
             price: f.price,
             quantity: f.quantity,
             quote: f.quote_amount,
-            fee: f.taker_fee,
+            fee: taker_fee,
         });
+    }
+    if let Some(client) = waived_for {
+        if !plan.fills.is_empty() {
+            let tag = keel_crypto::sha256(&[b"fill", &taker_id.0.to_be_bytes()]);
+            events.extend(super::clients::charge_usage_to(state, client, "fill", &tag)?);
+        }
     }
     Ok(())
 }
@@ -765,6 +783,11 @@ fn quote(
 ) -> Result<Vec<Event>, VmError> {
     let max_ttl = state.params.house_quote_max_ttl_blocks;
     let operator = state.staking_house_operator();
+    let min_spread = if liquidity::active(state, ctx.height) {
+        state.liquidity.params.min_spread_bps as Amount
+    } else {
+        0
+    };
     let market = state
         .markets
         .pairs
@@ -789,6 +812,12 @@ fn quote(
     if let (Some((b, _)), Some((a, _))) = (q.bid, q.ask) {
         if b >= a {
             return Err(VmError::Invalid("bid must be below ask".into()));
+        }
+        // Depositors' inventory is never quoted tighter than governance allows.
+        if min_spread > 0 && mul_div_floor(a - b, 10_000, b).unwrap_or(0) < min_spread {
+            return Err(VmError::Invalid(
+                "spread below liquidity.min_spread_bps".into(),
+            ));
         }
     }
     market.house = Some(HouseQuoteState {

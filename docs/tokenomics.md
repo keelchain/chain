@@ -51,6 +51,10 @@ them; `--no-allocation` skips issuance on test networks.
 - Offer listing deposit: 10 KEEL per live offer (refundable).
 - Proposal deposit: 1,000,000 KEEL (refunded on pass or reject; burned on veto).
 - Fee tier discounts for stakers (planned parameter).
+- Liquidity-pool deposits (2026-10-02): KEEL, KUSD or BTC put into the
+  house maker's pool earns the depositor's share of the spread; the
+  protocol keeps `liquidity.protocol_share_bps` (50%) of the pool's gain
+  through the fee split.
 
 ## Fee flows (defaults in `keel_vm::Params`, editable live)
 
@@ -67,6 +71,10 @@ proposal, after which only `ParamChange` proposals can move them.
 | P2P release | 1% (+1% under $50) | seller |
 | Withdrawal | network cost + $1 flat | withdrawer |
 | Dispute | 1% of escrow | losing side |
+| Liquidity pool profit share | 50% of the pool's gain above its high-water mark, in kind, each epoch | the pool (depositors) |
+
+Accounts attested by a live client pay none of the first four; their
+client pays usage in KEEL instead (below).
 
 Split: 50% treasury, 40% validators + observers + delegators (observers
 take 25% of that share first), 10% burn. All splits are on-chain ledger
@@ -89,21 +97,29 @@ flow: `p2p_seller_fee_bps` on an escrow release, `taker_fee_bps` on a fill,
 at collection into the `treasury`, `validator_rewards` and `burn` system
 accounts (`fee_split_*_bps`).
 
-**Retail fees** belong to the client. A client is an attester: the account
-that vouched for a user's tier. It publishes its own schedule with
-`SetClientFee` (`p2p_bps`, `taker_bps`, `withdraw_bps`, each capped by the
-`clients.fee_cap_*` parameters), and whenever one of its attested accounts
-pays a protocol fee, the retail fee is charged to that account in the same
-block and credited to the client's deposit account, up to what the payer
-holds. `GET /rpc/v1/clients/{address}` shows a client's schedule and what it
-has earned per asset. A user with no attester pays no retail fee.
+**Clients keep all their fees (0.2.0).** A client is an attester: the
+account that vouched for a user's tier. An account attested by a live
+client pays no protocol fee on fills, escrow releases, dispute rulings or
+the withdrawal flat fee. The client publishes its own schedule with
+`SetClientFee` (`p2p_bps`, `taker_bps`, `withdraw_bps`, uncapped while the
+waiver is on), and the chain charges that retail fee to the client's user
+in the same block and credits it to the client's deposit account, up to
+what the payer holds. `GET /rpc/v1/clients/{address}` shows a client's
+schedule, what it has earned per asset, its usage paid and anything it
+owes. A user with no attester pays the protocol fees and no retail fee.
 
-**Usage** is what a custodial client pays for the custody rails its
-accounts use: `clients.usage_address_keel` per deposit address issued and
-`clients.usage_outbound_keel` per withdrawal queued, charged in KEEL to the
-client through the protocol fee split. A client without KEEL cannot have
-addresses or withdrawals issued for its users, which is its bill falling
-due. Both prices are zero until governance sets them.
+**Usage** is what a client pays Keel for the rails, in KEEL through the
+protocol fee split: `clients.usage_address_keel` per deposit address
+issued, `clients.usage_outbound_keel` per withdrawal queued,
+`clients.usage_fill_keel` per order of its users that filled,
+`clients.usage_release_keel` per escrow release and
+`clients.usage_ruling_keel` per dispute ruling. The three per-flow charges
+never block the user's trade: what the client cannot pay is owed, collected
+from its next KEEL (at the epoch boundary or on its next charge), and no
+new address or withdrawal is issued to its accounts while it is owed. All
+five prices are zero until governance sets them; every one is a
+`ParamChange` key. `clients.protocol_fee_waived = 0` restores the earlier
+pricing (protocol fee plus a capped retail fee).
 
 **The buyback.** At every epoch boundary the chain sweeps the non-KEEL
 balances of the three system accounts: for each asset with a `KEEL-<asset>`

@@ -5,6 +5,16 @@ Dates are UTC.
 
 ## Unreleased
 
+- 0.2.0 (activation by `SoftwareUpgrade { "0.2.0", H }`; fresh networks
+  seed it at genesis): the pooled house-maker inventory (`DepositLiquidity`,
+  `WithdrawLiquidity`, `liquidity.*` parameters, `GET /v1/liquidity`,
+  `/v1/liquidity/{addr}`); clients keep all their fees, the chain waives
+  its protocol fee for attested accounts and bills the client per flow
+  (`clients.usage_fill_keel`, `usage_release_keel`, `usage_ruling_keel`,
+  `clients.protocol_fee_waived`), retail caps lifted; `clients.*` and
+  `liquidity.*` keys votable by `ParamChange`; `GET /v1/params` carries
+  them; snapshot schema 6 (`State.liquidity`, new `clients` fields). The
+  next deploy resets the testnet.
 - Docs: the whitepaper, how-it-works 15 and models.md describe the two
   places a user's bridged coins can sit, in Keel or in their wallet.
 - Docs: the whitepaper (draft v0.2) covers client custody, the float swap,

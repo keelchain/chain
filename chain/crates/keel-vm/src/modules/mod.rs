@@ -15,6 +15,7 @@ pub mod disputes;
 pub mod fees;
 pub mod gov;
 pub mod lightning;
+pub mod liquidity;
 pub mod markets;
 pub mod p2p;
 pub mod pools;

@@ -204,10 +204,17 @@ fn rule(
     }
 
     let (mut buyer_share, mut seller_share) = shares(t.amount, ruling);
-    // Dispute fee from the loser's share, capped at that share.
-    let dispute_fee =
-        mul_div_floor(t.amount, state.params.dispute_fee_bps as Amount, 10_000).unwrap_or(0);
     let buyer_loses = buyer_share <= seller_share;
+    let loser = if buyer_loses { t.buyer } else { t.seller };
+    // 0.2.0: a loser attested by a live client pays no dispute fee; the
+    // client is billed the ruling instead.
+    let waived_for = super::clients::waives_fee(state, ctx.height, &loser, ctx.seconds());
+    // Dispute fee from the loser's share, capped at that share.
+    let dispute_fee = if waived_for.is_some() {
+        0
+    } else {
+        mul_div_floor(t.amount, state.params.dispute_fee_bps as Amount, 10_000).unwrap_or(0)
+    };
     let charged = if buyer_loses {
         let c = dispute_fee.min(buyer_share);
         buyer_share -= c;
@@ -277,12 +284,19 @@ fn rule(
     d.ruling = Some(ruling);
     d.ruled_by = Some(signer);
     d.ruled_at = Some(ctx.seconds());
+    state.clients.waived_trades.remove(&trade_id);
     finish_trade(state, trade_id, TradeStatus::Ruled);
-    Ok(vec![Event::DisputeRuled {
+    let mut events = Vec::new();
+    if let Some(client) = waived_for {
+        let tag = keel_crypto::sha256(&[b"ruling", &trade_id.to_be_bytes()]);
+        events.extend(super::clients::charge_usage_to(state, client, "ruling", &tag)?);
+    }
+    events.push(Event::DisputeRuled {
         trade_id,
         buyer_amount: buyer_share,
         seller_amount: seller_back,
-    }])
+    });
+    Ok(events)
 }
 
 pub fn end_block(_state: &mut State, _ctx: &BlockContext) -> Vec<Event> {

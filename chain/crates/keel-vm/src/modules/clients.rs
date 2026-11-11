@@ -15,6 +15,15 @@
 //!   ordinary fee split. A client without KEEL cannot have new addresses or
 //!   withdrawals issued to its users; that is its bill.
 //!
+//! - **Waived protocol fees (0.2.0).** An account attested by a live client
+//!   pays no protocol fee on fills, escrow releases, dispute rulings and
+//!   the withdrawal flat fee; the client pays a KEEL price per flow
+//!   instead (`usage_fill_keel`, `usage_release_keel`, `usage_ruling_keel`,
+//!   and the existing per-outbound price). Those charges never block the
+//!   user: what the client cannot pay is owed and collected from its next
+//!   KEEL, and the rails (addresses, withdrawals) stay closed meanwhile.
+//!   With the fee waived the retail caps no longer apply.
+//!
 //! Governance knobs live here as `clients.*` parameters (`SetParam` and
 //! `ParamChange` route them), so `Params` keeps its layout.
 
@@ -48,6 +57,16 @@ pub struct ClientParams {
     /// KEEL per 30-day period for a dedicated node (informational for the
     /// gateway; paid by transfer to the treasury).
     pub service_dedicated_keel_per_period: u128,
+    /// 1: accounts attested by a live client pay no protocol fee on fills,
+    /// releases, rulings and withdrawals; the client pays the per-flow
+    /// usage prices below instead and its retail schedule is uncapped.
+    /// 0: the pre-0.2.0 pricing (protocol fee plus capped retail).
+    pub protocol_fee_waived: u32,
+    /// KEEL (smallest units) a client pays per order that filled, per
+    /// escrow release and per dispute ruling of its accounts. 0 = free.
+    pub usage_fill_keel: u128,
+    pub usage_release_keel: u128,
+    pub usage_ruling_keel: u128,
 }
 
 impl Default for ClientParams {
@@ -61,6 +80,63 @@ impl Default for ClientParams {
             buyback_max_slippage_bps: 500,
             buyback_dust_usd_micro: 1_000_000,
             service_dedicated_keel_per_period: 0,
+            protocol_fee_waived: 1,
+            usage_fill_keel: 0,
+            usage_release_keel: 0,
+            usage_ruling_keel: 0,
+        }
+    }
+}
+
+/// The `ClientParams` layout of snapshot schemas 2 and 3 (frozen).
+#[derive(Clone, Debug, BorshDeserialize)]
+pub struct ClientParamsV3 {
+    pub fee_cap_p2p_bps: u32,
+    pub fee_cap_taker_bps: u32,
+    pub fee_cap_withdraw_bps: u32,
+    pub usage_address_keel: u128,
+    pub usage_outbound_keel: u128,
+    pub buyback_max_slippage_bps: u32,
+    pub buyback_dust_usd_micro: u64,
+    pub service_dedicated_keel_per_period: u128,
+}
+
+/// The `ClientsState` layout of snapshot schemas 2 and 3 (frozen).
+#[derive(Clone, Debug, BorshDeserialize)]
+pub struct ClientsStateV3 {
+    pub params: ClientParamsV3,
+    pub attested_by: BTreeMap<Address, Address>,
+    pub fees: BTreeMap<Address, ClientFee>,
+    pub earned: BTreeMap<(Address, Asset), Amount>,
+    pub usage_paid: BTreeMap<(Address, Asset), Amount>,
+    pub last_buyback: BTreeMap<Asset, (u64, Amount, Amount)>,
+}
+
+impl From<ClientsStateV3> for ClientsState {
+    fn from(v: ClientsStateV3) -> Self {
+        let d = ClientParams::default();
+        ClientsState {
+            params: ClientParams {
+                fee_cap_p2p_bps: v.params.fee_cap_p2p_bps,
+                fee_cap_taker_bps: v.params.fee_cap_taker_bps,
+                fee_cap_withdraw_bps: v.params.fee_cap_withdraw_bps,
+                usage_address_keel: v.params.usage_address_keel,
+                usage_outbound_keel: v.params.usage_outbound_keel,
+                buyback_max_slippage_bps: v.params.buyback_max_slippage_bps,
+                buyback_dust_usd_micro: v.params.buyback_dust_usd_micro,
+                service_dedicated_keel_per_period: v.params.service_dedicated_keel_per_period,
+                protocol_fee_waived: d.protocol_fee_waived,
+                usage_fill_keel: d.usage_fill_keel,
+                usage_release_keel: d.usage_release_keel,
+                usage_ruling_keel: d.usage_ruling_keel,
+            },
+            attested_by: v.attested_by,
+            fees: v.fees,
+            earned: v.earned,
+            usage_paid: v.usage_paid,
+            last_buyback: v.last_buyback,
+            usage_owed: BTreeMap::new(),
+            waived_trades: BTreeMap::new(),
         }
     }
 }
@@ -78,6 +154,13 @@ pub struct ClientsState {
     pub usage_paid: BTreeMap<(Address, Asset), Amount>,
     /// Asset -> (height, spent, KEEL bought) of the last buyback.
     pub last_buyback: BTreeMap<Asset, (u64, Amount, Amount)>,
+    /// Client -> KEEL usage it could not pay when it fell due (schema 6).
+    /// Collected from the client's next KEEL; while it is owed, no new
+    /// addresses or withdrawals are issued to the client's accounts.
+    pub usage_owed: BTreeMap<Address, Amount>,
+    /// Trade id -> the client billed at release because the seller's
+    /// protocol fee was waived at trade start (schema 6).
+    pub waived_trades: BTreeMap<u64, Address>,
 }
 
 pub const PARAM_KEYS: &[&str] = &[
@@ -89,6 +172,10 @@ pub const PARAM_KEYS: &[&str] = &[
     "clients.buyback_max_slippage_bps",
     "clients.buyback_dust_usd_micro",
     "clients.service_dedicated_keel_per_period",
+    "clients.protocol_fee_waived",
+    "clients.usage_fill_keel",
+    "clients.usage_release_keel",
+    "clients.usage_ruling_keel",
 ];
 
 pub fn get_param(state: &State, key: &str) -> Option<u128> {
@@ -102,6 +189,10 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
         "clients.buyback_max_slippage_bps" => p.buyback_max_slippage_bps as u128,
         "clients.buyback_dust_usd_micro" => p.buyback_dust_usd_micro as u128,
         "clients.service_dedicated_keel_per_period" => p.service_dedicated_keel_per_period,
+        "clients.protocol_fee_waived" => p.protocol_fee_waived as u128,
+        "clients.usage_fill_keel" => p.usage_fill_keel,
+        "clients.usage_release_keel" => p.usage_release_keel,
+        "clients.usage_ruling_keel" => p.usage_ruling_keel,
         _ => return None,
     })
 }
@@ -127,6 +218,15 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
                 u64::try_from(value).map_err(|_| VmError::Invalid("too large".into()))?
         }
         "clients.service_dedicated_keel_per_period" => p.service_dedicated_keel_per_period = value,
+        "clients.protocol_fee_waived" => {
+            if value > 1 {
+                return Err(VmError::Invalid(format!("{key} must be 0 or 1")));
+            }
+            p.protocol_fee_waived = value as u32;
+        }
+        "clients.usage_fill_keel" => p.usage_fill_keel = value,
+        "clients.usage_release_keel" => p.usage_release_keel = value,
+        "clients.usage_ruling_keel" => p.usage_ruling_keel = value,
         _ => return Err(VmError::Invalid(format!("cannot set {key}"))),
     }
     Ok(vec![Event::ParamChanged {
@@ -135,9 +235,12 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
     }])
 }
 
-/// `SetClientFee`: an attester's retail schedule, within the caps.
+/// `SetClientFee`: an attester's retail schedule. Capped by governance
+/// until the client keeps all its fees (`protocol_fee_waived`), after
+/// which the schedule is the client's own business.
 pub fn apply_set_fee(
     state: &mut State,
+    height: u64,
     signer: Address,
     fee: &ClientFee,
 ) -> Result<Vec<Event>, VmError> {
@@ -145,9 +248,11 @@ pub fn apply_set_fee(
         return Err(VmError::Unauthorized);
     }
     let p = &state.clients.params;
-    if fee.p2p_bps > p.fee_cap_p2p_bps
+    let uncapped = active(state, height) && p.protocol_fee_waived == 1;
+    if !uncapped
+        && (fee.p2p_bps > p.fee_cap_p2p_bps
         || fee.taker_bps > p.fee_cap_taker_bps
-        || fee.withdraw_bps > p.fee_cap_withdraw_bps
+        || fee.withdraw_bps > p.fee_cap_withdraw_bps)
     {
         return Err(VmError::Invalid(format!(
             "retail fee above the caps ({} / {} / {} bps)",
@@ -183,6 +288,32 @@ impl Flow {
 /// The client that collects retail fees from `payer`, if any.
 pub fn client_of(state: &State, payer: &Address) -> Option<Address> {
     state.clients.attested_by.get(payer).copied()
+}
+
+/// Whether the 0.2.0 pricing (waived protocol fees, per-flow usage) is
+/// live at `height`.
+pub fn active(state: &State, height: u64) -> bool {
+    super::liquidity::active(state, height)
+}
+
+/// The client billed for `payer`'s flows: its attester, while the
+/// attestation is unexpired. `client_of` never expires, which is right for
+/// retail fees the client agreed with its user but not for billing.
+pub fn billing_client_of(state: &State, payer: &Address, now_secs: u64) -> Option<Address> {
+    let client = client_of(state, payer)?;
+    let meta = state.account_ref(payer)?;
+    (meta.tier_expires_at > now_secs).then_some(client)
+}
+
+/// `Some(client)` when the chain waives its protocol fee for `payer` and
+/// bills that client instead: the pricing is active and switched on, the
+/// payer has a live client, and the client is not paying for itself.
+pub fn waives_fee(state: &State, height: u64, payer: &Address, now_secs: u64) -> Option<Address> {
+    if !active(state, height) || state.clients.params.protocol_fee_waived != 1 {
+        return None;
+    }
+    let client = billing_client_of(state, payer, now_secs)?;
+    (client != *payer).then_some(client)
 }
 
 /// Charge `payer`'s retail fee for `flow` on `base_amount` of `asset` and
@@ -265,25 +396,80 @@ pub fn charge_usage(
 
 /// Charge the usage price of `kind` to `client` directly (custody
 /// services are billed to the custodian whoever signed).
+///
+/// `address` and `outbound` are the rails: an unfunded client, or one with
+/// usage owed, fails the user's action. `fill`, `release` and `ruling`
+/// are the flows whose protocol fee the chain waived for the client's
+/// user: those never block the user; what the client cannot pay is
+/// recorded as owed and collected from its next KEEL.
 pub fn charge_usage_to(
     state: &mut State,
     client: Address,
     kind: &str,
     tx_id: &[u8; 32],
 ) -> Result<Vec<Event>, VmError> {
-    let price = match kind {
-        "address" => state.clients.params.usage_address_keel,
+    let p = &state.clients.params;
+    let (price, soft) = match kind {
+        "address" => (p.usage_address_keel, false),
         // A float swap is rails usage like a payout, priced the same until
         // it gets its own knob.
-        "outbound" | "swap" => state.clients.params.usage_outbound_keel,
-        "rotation" => state.pools.params.usage_rotation_keel,
-        _ => 0,
+        "outbound" | "swap" => (p.usage_outbound_keel, false),
+        "rotation" => (state.pools.params.usage_rotation_keel, false),
+        "fill" => (p.usage_fill_keel, true),
+        "release" => (p.usage_release_keel, true),
+        "ruling" => (p.usage_ruling_keel, true),
+        _ => (0, true),
     };
-    if price == 0 {
-        return Ok(Vec::new());
-    }
     let native = state.tokens.native.clone();
-    fees::collect(
+    let mut events = Vec::new();
+    // Settle what is owed first; the rails stay closed until it is paid.
+    let owed = state.clients.usage_owed.get(&client).copied().unwrap_or(0);
+    if owed > 0 {
+        let have = state
+            .ledger
+            .balance(&tokens::deposit_key(client, &native))
+            .max(0) as Amount;
+        let pay = owed.min(have);
+        if pay > 0 {
+            fees::collect(
+                state,
+                &format!("usage:owed:{}", tokens::hex(tx_id)),
+                TxType::BudgetPurchase,
+                None,
+                tokens::deposit_key(client, &native),
+                &native,
+                pay,
+            )?;
+            let left = owed - pay;
+            if left == 0 {
+                state.clients.usage_owed.remove(&client);
+            } else {
+                state.clients.usage_owed.insert(client, left);
+            }
+            let u = state
+                .clients
+                .usage_paid
+                .entry((client, native.clone()))
+                .or_insert(0);
+            *u = u.saturating_add(pay);
+            events.push(Event::UsageCharged {
+                client,
+                asset: native.clone(),
+                amount: pay,
+                kind: "owed".into(),
+            });
+        }
+        if !soft && state.clients.usage_owed.contains_key(&client) {
+            return Err(VmError::Invalid(format!(
+                "client {} owes usage; no {kind} until it is paid",
+                client.to_hex()
+            )));
+        }
+    }
+    if price == 0 {
+        return Ok(events);
+    }
+    let paid = fees::collect(
         state,
         &format!("usage:{kind}:{}", tokens::hex(tx_id)),
         TxType::BudgetPurchase,
@@ -291,23 +477,97 @@ pub fn charge_usage_to(
         tokens::deposit_key(client, &native),
         &native,
         price,
-    )
-    .map_err(|_| {
-        VmError::Invalid(format!(
+    );
+    match paid {
+        Ok(()) => {
+            let u = state
+                .clients
+                .usage_paid
+                .entry((client, native.clone()))
+                .or_insert(0);
+            *u = u.saturating_add(price);
+            events.push(Event::UsageCharged {
+                client,
+                asset: native,
+                amount: price,
+                kind: kind.to_string(),
+            });
+            Ok(events)
+        }
+        Err(_) if soft => {
+            let o = state.clients.usage_owed.entry(client).or_insert(0);
+            *o = o.saturating_add(price);
+            events.push(Event::UsageOwed {
+                client,
+                amount: price,
+                kind: kind.to_string(),
+            });
+            Ok(events)
+        }
+        Err(_) => Err(VmError::Invalid(format!(
             "client {} cannot pay the {kind} usage price of {price} KEEL units",
             client.to_hex()
-        ))
-    })?;
-    let u = state
+        ))),
+    }
+}
+
+/// Epoch boundary: collect usage owed from clients that hold KEEL again.
+pub fn end_block(state: &mut State, ctx: &crate::context::BlockContext) -> Vec<Event> {
+    if !active(state, ctx.height) {
+        return Vec::new();
+    }
+    let len = state.params.epoch_length_blocks.max(1);
+    if ctx.height == 0 || !ctx.height.is_multiple_of(len) {
+        return Vec::new();
+    }
+    let mut events = Vec::new();
+    let native = state.tokens.native.clone();
+    let owing: Vec<(Address, Amount)> = state
         .clients
-        .usage_paid
-        .entry((client, native.clone()))
-        .or_insert(0);
-    *u = u.saturating_add(price);
-    Ok(vec![Event::UsageCharged {
-        client,
-        asset: native,
-        amount: price,
-        kind: kind.to_string(),
-    }])
+        .usage_owed
+        .iter()
+        .map(|(c, a)| (*c, *a))
+        .collect();
+    for (client, owed) in owing {
+        let have = state
+            .ledger
+            .balance(&tokens::deposit_key(client, &native))
+            .max(0) as Amount;
+        let pay = owed.min(have);
+        if pay == 0 {
+            continue;
+        }
+        if fees::collect(
+            state,
+            &format!("usage:owed:{}:{}", ctx.height, client),
+            TxType::BudgetPurchase,
+            None,
+            tokens::deposit_key(client, &native),
+            &native,
+            pay,
+        )
+        .is_err()
+        {
+            continue;
+        }
+        let left = owed - pay;
+        if left == 0 {
+            state.clients.usage_owed.remove(&client);
+        } else {
+            state.clients.usage_owed.insert(client, left);
+        }
+        let u = state
+            .clients
+            .usage_paid
+            .entry((client, native.clone()))
+            .or_insert(0);
+        *u = u.saturating_add(pay);
+        events.push(Event::UsageCharged {
+            client,
+            asset: native.clone(),
+            amount: pay,
+            kind: "owed".into(),
+        });
+    }
+    events
 }

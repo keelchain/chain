@@ -3365,7 +3365,7 @@ dependencies = [
 
 [[package]]
 name = "keel-actions"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh",
  "hex",
@@ -3378,7 +3378,7 @@ dependencies = [
 
 [[package]]
 name = "keel-attest"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh",
  "keel-actions",
@@ -3389,7 +3389,7 @@ dependencies = [
 
 [[package]]
 name = "keel-book"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh",
  "keel-types",
@@ -3398,7 +3398,7 @@ dependencies = [
 
 [[package]]
 name = "keel-chains"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitcoin",
  "bs58",
@@ -3416,7 +3416,7 @@ dependencies = [
 
 [[package]]
 name = "keel-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3433,7 +3433,7 @@ dependencies = [
 
 [[package]]
 name = "keel-consensus"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "commonware-actor",
@@ -3458,7 +3458,7 @@ dependencies = [
 
 [[package]]
 name = "keel-crypto"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ed25519-dalek",
  "keel-types",
@@ -3468,7 +3468,7 @@ dependencies = [
 
 [[package]]
 name = "keel-indexer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3495,7 +3495,7 @@ dependencies = [
 
 [[package]]
 name = "keel-lc-btc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitcoin",
  "borsh",
@@ -3505,7 +3505,7 @@ dependencies = [
 
 [[package]]
 name = "keel-lc-eth"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -3519,7 +3519,7 @@ dependencies = [
 
 [[package]]
 name = "keel-ledger"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh",
  "keel-types",
@@ -3529,7 +3529,7 @@ dependencies = [
 
 [[package]]
 name = "keel-ln"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitcoin",
  "lightning-invoice",
@@ -3539,7 +3539,7 @@ dependencies = [
 
 [[package]]
 name = "keel-node"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "borsh",
@@ -3573,7 +3573,7 @@ dependencies = [
 
 [[package]]
 name = "keel-observer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -3608,7 +3608,7 @@ dependencies = [
 
 [[package]]
 name = "keel-rpc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "futures",
@@ -3629,7 +3629,7 @@ dependencies = [
 
 [[package]]
 name = "keel-tss"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3661,7 +3661,7 @@ dependencies = [
 
 [[package]]
 name = "keel-types"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh",
  "hex",
@@ -3671,7 +3671,7 @@ dependencies = [
 
 [[package]]
 name = "keel-vm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitcoin",
  "borsh",

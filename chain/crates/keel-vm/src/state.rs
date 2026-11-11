@@ -56,6 +56,9 @@ pub struct State {
     pub arbitration: arbitration::ArbitrationState,
     /// Custody vault generations and rotations (schema 5).
     pub pools: pools::PoolsState,
+    /// The pooled house-maker inventory: depositors' shares, the
+    /// high-water mark and pending withdrawals (schema 6).
+    pub liquidity: liquidity::LiquidityState,
 }
 
 impl State {

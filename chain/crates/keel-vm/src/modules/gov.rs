@@ -90,26 +90,57 @@ pub struct GovState {
     pub param_admin: Option<Address>,
 }
 
-/// Direct parameter change by the appointed admin. Same validation as an
-/// executed `ParamChange`, without the proposal round trip.
-pub fn set_param(
+/// Whether governance has activated `version` at or below `height`: an
+/// executed `SoftwareUpgrade { version, height }` exists for it. Modules
+/// gate behaviour changes on this so replaying blocks from before the
+/// activation stays byte-identical (docs/dev-rules.md). Any matching entry
+/// counts, so a later activation does not switch an earlier feature off.
+pub fn feature_active(state: &State, height: u64, version: &str) -> bool {
+    state
+        .gov
+        .upgrades
+        .iter()
+        .any(|(v, at)| v == version && *at <= height)
+}
+
+/// Parameters owned by a module (`clients.*`, `liquidity.*`), read through
+/// the module so `Params` keeps its layout.
+fn module_param_get(state: &State, key: &str) -> Option<u128> {
+    if key.starts_with("clients.") {
+        super::clients::get_param(state, key)
+    } else if key.starts_with("liquidity.") {
+        super::liquidity::get_param(state, key)
+    } else if key.starts_with("arbitration.") {
+        super::arbitration::get_param(state, key)
+    } else if key.starts_with("pools.") {
+        super::pools::get_param(state, key)
+    } else {
+        None
+    }
+}
+
+/// `Some(result)` when `key` belongs to a module; `None` for `Params` keys.
+fn module_param_set(
     state: &mut State,
-    signer: Address,
     key: &str,
     value: u128,
-) -> Result<Vec<Event>, VmError> {
-    if state.gov.param_admin != Some(signer) {
-        return Err(VmError::Unauthorized);
-    }
+) -> Option<Result<Vec<Event>, VmError>> {
     if key.starts_with("clients.") {
-        return super::clients::set_param(state, key, value);
+        Some(super::clients::set_param(state, key, value))
+    } else if key.starts_with("liquidity.") {
+        Some(super::liquidity::set_param(state, key, value))
+    } else if key.starts_with("arbitration.") {
+        Some(super::arbitration::set_param(state, key, value))
+    } else if key.starts_with("pools.") {
+        Some(super::pools::set_param(state, key, value))
+    } else {
+        None
     }
-    if key.starts_with("arbitration.") {
-        return super::arbitration::set_param(state, key, value);
-    }
-    if key.starts_with("pools.") {
-        return super::pools::set_param(state, key, value);
-    }
+}
+
+/// Validate-and-commit of a scalar `Params` change, shared by the admin
+/// path and executed proposals.
+fn commit_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>, VmError> {
     let mut next = state.params.clone();
     if !next.set(key, value) {
         return Err(VmError::Invalid(format!("cannot set {key}")));
@@ -125,6 +156,23 @@ pub fn set_param(
         key: key.to_string(),
         value,
     }])
+}
+
+/// Direct parameter change by the appointed admin. Same validation as an
+/// executed `ParamChange`, without the proposal round trip.
+pub fn set_param(
+    state: &mut State,
+    signer: Address,
+    key: &str,
+    value: u128,
+) -> Result<Vec<Event>, VmError> {
+    if state.gov.param_admin != Some(signer) {
+        return Err(VmError::Unauthorized);
+    }
+    if let Some(r) = module_param_set(state, key, value) {
+        return r;
+    }
+    commit_param(state, key, value)
 }
 
 fn deposit_key(owner: Address, native: &keel_types::Asset) -> AccountKey {
@@ -152,7 +200,14 @@ pub fn apply(
 fn validate_kind(state: &State, kind: &ProposalKind) -> Result<(), VmError> {
     match kind {
         ProposalKind::ParamChange { key, .. } => {
-            if state.params.get(key).is_none() && !is_devnet_operator_key(state, key) {
+            // Module-owned keys became votable with the 0.2.0 activation;
+            // before it a proposal on them is refused as it always was.
+            let module_key = super::liquidity::active(state, state.height)
+                && module_param_get(state, key).is_some();
+            if state.params.get(key).is_none()
+                && !module_key
+                && !is_devnet_operator_key(state, key)
+            {
                 return Err(VmError::Invalid(format!("unknown param {key}")));
             }
         }
@@ -365,6 +420,15 @@ fn execute_kind(
                 });
                 return Ok(());
             }
+            if super::liquidity::active(state, ctx.height) {
+                if let Some(r) = module_param_set(state, key, *value) {
+                    events.extend(r?);
+                    return Ok(());
+                }
+                events.extend(commit_param(state, key, *value)?);
+                return Ok(());
+            }
+            // Pre-activation path, kept byte for byte: no block-timing check.
             let mut next = state.params.clone();
             if !next.set(key, *value) {
                 return Err(VmError::Invalid(format!("cannot set {key}")));
@@ -414,7 +478,15 @@ fn execute_kind(
                 Some(tokens::AssetKind::Vault { .. })
             ) {
                 let reserves = state.ledger.system_reserves(asset).max(0) as Amount;
-                if reserves < state.ledger.user_liabilities(asset) {
+                // Depositors' share of the liquidity pool's vault assets
+                // is a user liability too (0 before the pool is active).
+                let liabilities = state
+                    .ledger
+                    .user_liabilities(asset)
+                    .saturating_add(super::liquidity::user_pool_liability(
+                        state, ctx.height, asset,
+                    ));
+                if reserves < liabilities {
                     return Err(VmError::Invalid(
                         "payout would breach reserves >= liabilities".into(),
                     ));

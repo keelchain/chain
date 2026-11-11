@@ -132,7 +132,11 @@ export type Action =
   | { RotateCustodyVault: CustodyRotation }
   | { CancelCustodyRotation: { chain: Chain } }
   | { ObserveCustodySweep: SweepObservation }
-  | { RetireCustodyGeneration: { chain: Chain; custodian: Address; gen: Amount } };
+  | { RetireCustodyGeneration: { chain: Chain; custodian: Address; gen: Amount } }
+  /** Fund the house maker's pool; mints pool shares at the pool's USD value. */
+  | { DepositLiquidity: { asset: string; amount: Amount } }
+  /** Burn pool shares; the pro-rata slice of every pool asset is released after the delay. */
+  | { WithdrawLiquidity: { shares: Amount } };
 
 export interface CustodyRotation {
   chain: Chain;
@@ -184,7 +188,7 @@ const ACTION_VARIANTS = [
   "RegisterLightningNode", "ObserveLightningDeposit", "ObserveLightningPayout", "FundLightningPool", "AnnounceLightningSweep",
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
-  "ObserveCustodySweep", "RetireCustodyGeneration",
+  "ObserveCustodySweep", "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -367,6 +371,8 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
       unitEnum(w, CHAINS, b.chain); address(w, b.custodian); w.u64(b.from_gen); hash(w, b.tx_hash); w.string(b.asset);
       w.u128(b.amount); w.u128(b.fee); break;
     case "RetireCustodyGeneration": unitEnum(w, CHAINS, b.chain); address(w, b.custodian); w.u64(b.gen); break;
+    case "DepositLiquidity": w.string(b.asset); w.u128(b.amount); break;
+    case "WithdrawLiquidity": w.u128(b.shares); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

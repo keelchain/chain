@@ -212,9 +212,10 @@ admin; or a text proposal.
 
 One administrative key exists: `param_admin`, an optional address set at
 genesis and changeable only by a `SetParamAdmin` proposal. It may sign
-`SetParam { key, value }` for any of the roughly fifty scalar parameters
-and the seven `budget.*` keys, with the same validation a proposal would
-get (fee split must sum to 100%, block pacing bounds, and so on). It cannot
+`SetParam { key, value }` for any of the roughly fifty scalar parameters,
+the seven `budget.*` keys and the module-owned `clients.*` and
+`liquidity.*` keys (all of which a `ParamChange` proposal can also move
+since 0.2.0), with the same validation a proposal would get (fee split must sum to 100%, block pacing bounds, and so on). It cannot
 move funds, change sets, pause modules or upgrade software.
 
 At launch this key is the platform super admin's, held by the marketplace as
@@ -255,7 +256,20 @@ Every number is a chain parameter with a default in `keel-vm::Params`:
 
 Every fee is one balanced posting split into the system accounts
 `treasury` (50%), `validator_rewards` (40%) and `burn` (10%); rounding
-dust goes to the treasury. The split must always sum to 100%. USD values
+dust goes to the treasury.
+
+**Clients keep their fees (0.2.0).** An account attested by a live client
+pays none of the taker fee, the P2P release fee, the dispute fee or the
+withdrawal flat fee; the chain bills the client a KEEL price per flow
+instead (`clients.usage_fill_keel` per order that filled,
+`usage_release_keel` per release, `usage_ruling_keel` per ruling, and the
+existing `usage_outbound_keel`). Those charges never block the user: what
+the client cannot pay is recorded as owed (`UsageOwed`), collected from its
+next KEEL at the epoch boundary or its next charge, and no new deposit
+address or withdrawal is issued to its accounts while it is owed. With the
+fee waived the client's retail schedule (`SetClientFee`) is uncapped.
+`clients.protocol_fee_waived = 0` restores the previous pricing. Unattested
+accounts pay the table above. The split must always sum to 100%. USD values
 for the P2P surcharge and withdrawal fee come from the chain's own
 `<ASSET>-KUSD` order book, not an external oracle.
 
@@ -488,7 +502,10 @@ is reconciled, overpaid fee refunded. Failure refunds in full.
 At every block boundary, for every vault asset, the chain checks that the
 system's observed reserves are at least the sum of user liabilities. A
 breach emits `InvariantBreached` and halts outbounds of that asset; a
-parameter change cannot clear it, only an explicit resume. Lightning pools
+parameter change cannot clear it, only an explicit resume. Depositors'
+share of the liquidity pool's vault assets (section 11) counts as a user
+liability, and so does anything in `liquidity_unlocking`; the protocol's
+own share of the pool does not. Lightning pools
 (next section) are counted inside the same invariant.
 
 ### 9.5 Bitcoin Lightning (added 2026-09-10)
@@ -558,9 +575,37 @@ house inventory and expires after at most 60 blocks. This is how the
 platform provides a price from block one without a market-making bot
 having to post real orders.
 
+**Pooled liquidity (0.2.0).** The house maker's inventory is a pool anyone
+can fund. `DepositLiquidity { asset, amount }` moves the asset into
+`swap_pool` and mints shares on its USD value (KUSD at par, anything else
+at the last fill on its `<ASSET>-KUSD` book; deposits are refused while
+the pool holds an asset without a price). The protocol itself holds shares
+for whatever the pool held when the first depositor arrived, the genesis
+KEEL bucket. House fills grow the pool by the spread they capture. At
+every epoch the pool is marked at the same prices and
+`liquidity.protocol_share_bps` (50%) of the gain above the high-water
+mark is taken in kind, pro rata across the pool's assets, through the fee
+split, which the buyback then turns into KEEL in the same block; loss
+epochs take nothing and leave the mark. A deposit settles the share owed
+so far before it is priced in, and a withdrawal settles the leaver's share
+on the way out, so joining or leaving between epochs cannot dodge it.
+`WithdrawLiquidity { shares }` burns shares and moves the pro-rata slice of
+every pool asset to the owner's `liquidity_unlocking` account, released
+after `liquidity.withdraw_delay_blocks` (one epoch); pro rata in kind needs
+no price, so exits never depend on the mark. The coins leave `swap_pool`
+at once, so the next match sees the smaller clamp. Two limits protect
+depositors' money: a quote side may offer at most
+`liquidity.max_quote_inventory_bps` of the inventory, and a two-sided
+quote must keep `liquidity.min_spread_bps`; `liquidity.max_epoch_fee_bps`
+bounds what one mark may take, so a wash-traded last price cannot drain
+the pool. `GET /v1/liquidity` shows the pool, `GET /v1/liquidity/{addr}`
+a position. Every parameter is votable.
+
 **Swap.** There is no automated market maker or swap module on chain. The
-`swap_pool` name is the house maker's inventory account, not a
-constant-product pool. The marketplace's "swap" feature is an off-chain
+`swap_pool` name is the house maker's inventory account (pooled since
+0.2.0: depositors fund it and share the spread, prices still come from the
+operator's quotes, never from a curve), not a constant-product pool. The
+marketplace's "swap" feature is an off-chain
 desk that fills from the book (through the house maker) and settles as
 ordinary fills; from the chain's point of view it is a taker order with a
 tx id like any other. An on-chain AMM would be a new module and a

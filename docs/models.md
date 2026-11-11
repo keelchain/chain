@@ -13,7 +13,7 @@ question: **who holds the funds and who signs the withdrawals.**
 | Who signs withdrawals | The client's own signer | The observer set (2-of-3 on the testnet) |
 | Who signs user actions | The client, as custodian | The user, with Keel Wallet |
 | What users can verify | Proof of reserves for that client: vault addresses, reserve against the sum of balances, every movement with a transaction id | Their own account and every action they signed |
-| Client fees and margin | **Untouched.** Keel charges usage, never a share of the client's fees | A small wholesale protocol fee; the client sets its own retail fee on top and receives it in the same posting |
+| Client fees and margin | **Untouched.** Keel charges usage, never a share of the client's fees | **Untouched** (0.2.0). The chain waives its protocol fee for the client's users; the client sets its own retail fee and receives it in the same posting, and pays usage in KEEL per fill, release, ruling and withdrawal |
 | How Keel is paid | In KEEL, bought on the chain's own order book | In KEEL, the same way |
 
 A client can run both models at once: custodial accounts in its own vault,
@@ -180,11 +180,27 @@ bridged coins *in their wallet*, under a Bitcoin or Tron key of their own
 derived from the same seed, and move them into Keel only to trade
 (`wallet.md` §5b); nothing about the client's integration changes.
 
-**What Keel charges:** a wholesale protocol fee on escrow releases, order-book
-fills and withdrawals, small enough that the user pays one number and the
-client's margin stays what it was. The client sets its own retail fee on top
-(`SetClientFee`), and the chain pays that fee into the client's account in the
-same posting as the release. `clients.md` has the numbers.
+**What Keel charges:** usage in KEEL, per flow (`clients.usage_fill_keel`,
+`usage_release_keel`, `usage_ruling_keel`, `usage_outbound_keel`), never a
+share of the client's fees. The client's users pay no protocol fee; the
+client sets its own retail fee (`SetClientFee`), and the chain pays that
+fee into the client's account in the same posting as the release. A usage
+charge never blocks a user's trade: what the client cannot pay is owed and
+collected from its next KEEL, and the rails (addresses, withdrawals) stay
+closed meanwhile. `clients.md` has the numbers.
+
+**Where the trust is.** In Model A the client holds its own key and signer;
+no share of it lives on a Keel machine. Observers only watch the client's
+addresses, attest deposits (with light-client proofs on Bitcoin and
+Ethereum, quorum on Tron) and build transactions that the client's own
+signer checks against the chain's outbound rows before signing, from a node
+the client may run itself. What the client trusts Keel for is deposit
+detection, transaction construction and liveness, the same things it trusts
+a custody API provider for today; the coins never move without its key.
+Model B is the only model that custodies through Keel's threshold key, and
+a planned option (escrow-only custody, version 0.3.0) lets a seller back an
+offer from a wallet it holds on the native chain, so the vault holds coins
+only while a trade is in escrow.
 
 ## Control: can a client have signing power over the escrow?
 

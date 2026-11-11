@@ -512,10 +512,12 @@ fn membership_basket_pause_upgrade_and_listing_kinds() {
         YES,
     );
     ok(&r);
-    assert_eq!(
-        c.state.gov.upgrades,
-        vec![("v0.2.0".to_string(), 1_000_000)]
-    );
+    // The devnet genesis seeds the build's own version at height 0.
+    assert!(c
+        .state
+        .gov
+        .upgrades
+        .contains(&("v0.2.0".to_string(), 1_000_000)));
     let (r, _) = c.block(&[actors[ALICE].act(proposal(ProposalKind::SoftwareUpgrade {
         version: "v0".into(),
         height: 1,

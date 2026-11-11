@@ -1053,6 +1053,37 @@
       "nonce": 41,
       "signature": "871762a58be1c1a80d8cc8013afa9d4aa64a74ce707a4eef6d39f2373d6692cde16c78cc7436b6ed4c769ef649ac48425c515bd66ced421e4eaa4fe870567a08",
       "tx_id": "cbecd31760cff26561a6ccdce9f46179fdd38e305ac2ca420f2c703e9db5178f"
+    },
+    {
+      "action_borsh": "37040000004b55534480b2e60e000000000000000000000000",
+      "action_json": {
+        "DepositLiquidity": {
+          "amount": 250000000,
+          "asset": "KUSD"
+        }
+      },
+      "chain_id": 1,
+      "digest": "ed6d74dd9863b8f8e2b816526cb06152018c77ac490ac989f1f58a80e9d8be89",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff982a000000000000000100000037040000004b55534480b2e60e000000000000000000000000",
+      "name": "deposit_liquidity",
+      "nonce": 42,
+      "signature": "390f75443de8c5ec6b766cc7baf7fba28437df90ac13b89ee8e15434db28a2ff912029abb09ed48fb84fd14e19a2cff24a727c15cec0dcb0b7121ffb1103a102",
+      "tx_id": "41cd9464927c6e6c4eb4c9c758ccd4e9a2d729e3ae2b369ea471d71e68c5869e"
+    },
+    {
+      "action_borsh": "3815cd5b07000000000000000000000000",
+      "action_json": {
+        "WithdrawLiquidity": {
+          "shares": 123456789
+        }
+      },
+      "chain_id": 1,
+      "digest": "16122be282731a966c291ff6230593212e5deb1a77349d7151b8bc11f8958c9b",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff982b00000000000000010000003815cd5b07000000000000000000000000",
+      "name": "withdraw_liquidity",
+      "nonce": 43,
+      "signature": "c79260fa7052efaac091df7e86bfc51882eae6cdfb9fada616a1dde9d9c82b837f5cbf450a6217f5eadd7e1c6fd8a980943439320a4436cd3d17aa19177e860b",
+      "tx_id": "733981eacaf92081565c11cfa685559df213cf18d321bfa6d3ca429f06f76f3e"
     }
   ]
 }

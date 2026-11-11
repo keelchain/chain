@@ -486,6 +486,49 @@ pub enum Event {
         custodian: Address,
         gen: u64,
     },
+    // ---- liquidity (the pooled house-maker inventory)
+    LiquidityDeposited {
+        owner: Address,
+        asset: Asset,
+        amount: Amount,
+        usd_value: Amount,
+        shares: u128,
+    },
+    /// Shares burned; the in-kind legs sit in `liquidity_unlocking` until
+    /// `release_height`. `fee_usd` is the protocol share crystallised on
+    /// the withdrawer's unrealised gain.
+    LiquidityWithdrawQueued {
+        owner: Address,
+        shares: u128,
+        release_height: u64,
+        fee_usd: Amount,
+    },
+    LiquidityUnlocked {
+        owner: Address,
+        asset: Asset,
+        amount: Amount,
+    },
+    /// The protocol's share of the pool's gain above its high-water mark,
+    /// taken in kind through the fee split.
+    LiquidityFeeTaken {
+        height: u64,
+        gain_usd: Amount,
+        fee_usd: Amount,
+    },
+    /// The pool marked at the epoch boundary.
+    LiquidityValued {
+        height: u64,
+        value_usd: Amount,
+        shares: u128,
+        value_per_share: u128,
+    },
+    /// A client could not pay a usage price when it fell due; it is owed
+    /// and collected from the client's next KEEL.
+    UsageOwed {
+        client: Address,
+        amount: Amount,
+        kind: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

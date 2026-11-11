@@ -225,6 +225,8 @@ pub fn router(node: Node) -> Router {
             get(custody_addresses),
         )
         .route("/v1/treasury", get(treasury))
+        .route("/v1/liquidity", get(liquidity))
+        .route("/v1/liquidity/{addr}", get(liquidity_position))
         .route("/v1/sync/meta", get(sync_meta))
         .route("/v1/sync/snapshot", get(sync_snapshot))
         .route("/v1/ws", get(ws::ws))
@@ -277,10 +279,18 @@ async fn status(AxumState(node): AxumState<Node>) -> Json<Value> {
     }))
 }
 
+/// Every governance parameter: the scalar `Params` plus the module-owned
+/// `clients.*` and `liquidity.*` knobs as nested objects, so a one-level
+/// flatten yields the same dotted keys `ParamChange` takes.
 async fn params(AxumState(node): AxumState<Node>) -> Json<Value> {
     let state = node.state();
     let s = state.lock().expect("state lock");
-    Json(to_json(&s.params))
+    let mut v = to_json(&s.params);
+    if let Value::Object(map) = &mut v {
+        map.insert("clients".into(), to_json(&s.clients.params));
+        map.insert("liquidity".into(), to_json(&s.liquidity.params));
+    }
+    Json(v)
 }
 
 #[derive(Serialize)]
@@ -1331,8 +1341,100 @@ async fn client(
         },
         "earned": sum(&c.earned),
         "usage_paid": sum(&c.usage_paid),
+        "usage_owed": c.usage_owed.get(&address).copied().unwrap_or(0).to_string(),
         "attested_accounts": c.attested_by.values().filter(|a| **a == address).count(),
-        "usage_prices": { "address_keel": c.params.usage_address_keel.to_string(), "outbound_keel": c.params.usage_outbound_keel.to_string() },
+        "protocol_fee_waived": c.params.protocol_fee_waived == 1,
+        "usage_prices": {
+            "address_keel": c.params.usage_address_keel.to_string(),
+            "outbound_keel": c.params.usage_outbound_keel.to_string(),
+            "fill_keel": c.params.usage_fill_keel.to_string(),
+            "release_keel": c.params.usage_release_keel.to_string(),
+            "ruling_keel": c.params.usage_ruling_keel.to_string(),
+        },
+    })))
+}
+
+/// The pooled house-maker inventory: balances, shares, the mark and the
+/// governance knobs (docs/how-it-works.md §11).
+async fn liquidity(AxumState(node): AxumState<Node>) -> Json<Value> {
+    use keel_vm::modules::liquidity as liq;
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let holdings: Vec<Value> = liq::holdings(&s)
+        .into_iter()
+        .map(|(asset, balance)| {
+            json!({
+                "asset": asset.to_string(),
+                "balance": balance.to_string(),
+                "usd_value": liq::price_usd(&s, &asset, balance).map(|v| v.to_string()),
+            })
+        })
+        .collect();
+    let pool = s.liquidity.pools.get(liq::SWAP_POOL);
+    let total_shares = pool.map(|p| p.total_shares).unwrap_or(0);
+    let value_usd = liq::pool_value_usd(&s);
+    let value_per_share = value_usd.filter(|_| total_shares > 0).map(|v| {
+        keel_types::mul_div_floor(v, liq::VPS_SCALE, total_shares).unwrap_or(0)
+    });
+    let mut pending = std::collections::BTreeMap::<String, u128>::new();
+    if let Some(p) = pool {
+        for legs in p.unlocking.values() {
+            for u in legs {
+                *pending.entry(u.asset.to_string()).or_insert(0) += u.amount;
+            }
+        }
+    }
+    Json(json!({
+        "height": s.height,
+        "active": liq::active(&s, s.height),
+        "activation_version": liq::ACTIVATION_VERSION,
+        "pool": {
+            "balances": holdings,
+            "total_shares": total_shares.to_string(),
+            "value_usd": value_usd.map(|v| v.to_string()),
+            "value_per_share": value_per_share.map(|v| v.to_string()),
+            "vps_scale": liq::VPS_SCALE.to_string(),
+            "hwm": pool.map(|p| p.hwm.to_string()),
+            "holders": pool.map(|p| p.shares.len()).unwrap_or(0),
+            "protocol_shares": pool.and_then(|p| p.shares.get(&Address::SYSTEM)).copied().unwrap_or(0).to_string(),
+        },
+        "params": to_json(&s.liquidity.params),
+        "last_epoch": pool.and_then(|p| p.last_epoch.as_ref()).map(to_json),
+        "pending_unlocks": pending.iter().map(|(a, v)| json!({ "asset": a, "amount": v.to_string() })).collect::<Vec<_>>(),
+    }))
+}
+
+/// One depositor's position in the pool.
+async fn liquidity_position(
+    AxumState(node): AxumState<Node>,
+    Path(addr): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    use keel_vm::modules::liquidity as liq;
+    let address = parse_address(&addr)?;
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let (shares, legs) = liq::position(&s, &address);
+    let total = s
+        .liquidity
+        .pools
+        .get(liq::SWAP_POOL)
+        .map(|p| p.total_shares)
+        .unwrap_or(0);
+    let share_bps = if total > 0 {
+        keel_types::mul_div_floor(shares, 10_000, total).unwrap_or(0)
+    } else {
+        0
+    };
+    let value_usd = legs
+        .iter()
+        .try_fold(0u128, |acc, (a, amt)| liq::price_usd(&s, a, *amt).map(|v| acc + v));
+    Ok(Json(json!({
+        "address": address.to_hex(),
+        "shares": shares.to_string(),
+        "share_bps": share_bps,
+        "value_usd": value_usd.map(|v| v.to_string()),
+        "legs": legs.iter().map(|(a, amt)| json!({ "asset": a.to_string(), "amount": amt.to_string() })).collect::<Vec<_>>(),
+        "pending": liq::pending_unlocks(&s, &address).iter().map(|(h, a, amt)| json!({ "release_height": h, "asset": a.to_string(), "amount": amt.to_string() })).collect::<Vec<_>>(),
     })))
 }
 

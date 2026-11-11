@@ -358,7 +358,14 @@ fn start_trade(
         Side::Sell => (signer, offer.owner),
         Side::Buy => (offer.owner, signer),
     };
-    let fee = seller_fee(state, &offer.spec.asset, s.amount);
+    // 0.2.0: a seller attested by a live client pays no protocol fee; the
+    // client is billed at release instead.
+    let waived_for = super::clients::waives_fee(state, ctx.height, &seller, now);
+    let fee = if waived_for.is_some() {
+        0
+    } else {
+        seller_fee(state, &offer.spec.asset, s.amount)
+    };
     let escrowed = s
         .amount
         .checked_add(fee)
@@ -397,6 +404,9 @@ fn start_trade(
         },
     );
     state.p2p.open_trades.insert(id, deadline);
+    if let Some(client) = waived_for {
+        state.clients.waived_trades.insert(id, client);
+    }
     let mut events = vec![Event::TradeStarted {
         trade_id: id,
         offer_id: s.offer_id,
@@ -484,6 +494,10 @@ fn release_trade(
         t.fee,
     )?;
     finish_trade(state, trade_id, TradeStatus::Released);
+    if let Some(client) = state.clients.waived_trades.remove(&trade_id) {
+        let tag = keel_crypto::sha256(&[b"release", &trade_id.to_be_bytes()]);
+        retail.extend(super::clients::charge_usage_to(state, client, "release", &tag)?);
+    }
     retail.push(Event::TradeReleased {
         trade_id,
         to_buyer: t.amount,
@@ -528,6 +542,7 @@ fn cancel_trade(
     let t = state.p2p.trades.get_mut(&trade_id).expect("checked");
     t.status = TradeStatus::Cancelled;
     state.p2p.open_trades.remove(&trade_id);
+    state.clients.waived_trades.remove(&trade_id);
     Ok(vec![Event::TradeCancelled {
         trade_id,
         by: signer,

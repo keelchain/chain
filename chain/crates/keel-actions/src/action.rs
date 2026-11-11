@@ -232,6 +232,13 @@ pub enum Action {
         custodian: Address,
         gen: u64,
     },
+    // ---- liquidity (the pooled house-maker inventory)
+    /// Fund the house maker's pool with `amount` of `asset`; mints pool
+    /// shares at the pool's USD value (last fill on `<ASSET>-KUSD`).
+    DepositLiquidity { asset: Asset, amount: Amount },
+    /// Burn `shares`; the pro-rata slice of every pool asset is released
+    /// to the depositor after `liquidity.withdraw_delay_blocks`.
+    WithdrawLiquidity { shares: u128 },
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -356,6 +363,7 @@ impl Action {
             | Action::CancelCustodyRotation { .. }
             | Action::ObserveCustodySweep(_)
             | Action::RetireCustodyGeneration { .. } => "pools",
+            Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. } => "liquidity",
         }
     }
 }
