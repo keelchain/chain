@@ -63,6 +63,7 @@ Variables:
 | `TRON_API_URL`, `TRON_USDT_CONTRACT` | `https://nile.trongrid.io`, the Nile USDT contract |
 | `EXPLORER_NETWORKS` | JSON network list baked into the explorer build |
 | `KEEL_FAUCET_KEEL`, `KEEL_FAUCET_KUSD` | optional; coins per claim (default 100 each). Cooldown per address 24 h, 5 claims per IP per day |
+| `KEEL_FAUCET_FLOAT_CLAIMS` | optional; how many claims' worth of each asset the faucet should hold (default 500). Every deploy of host 0 tops the faucet up from the genesis account when it holds less than half of that, so it works again after a reset |
 | `AGE_RECIPIENT` | optional; an `age` public key; backups are encrypted to it (keep the identity off the boxes) |
 | `KEEL_CLIENTS` | optional; JSON list of clients to re-onboard after a reset and to pre-approve in governance votes: `[{"address":"<hex>","attester":true,"param_admin":false,"keel":100000,"kusd":100000}]` |
 | `KEEL_MONITORING` | `1` to run Prometheus, Alertmanager and Grafana on host 0 (`infra/testnet/monitoring`), scraping every host's node_exporter over the mesh |

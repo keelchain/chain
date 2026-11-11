@@ -201,6 +201,35 @@ sudo systemctl stop keel-btc-checkpoint-vote.timer 2>/dev/null || true; sudo sys
 if [ "$IS_HOST0" = true ]; then
   sudo systemctl restart keel-indexer
   sudo systemctl start keel-btc-checkpoint.timer
+  # The faucet is an ordinary account, so a reset leaves it empty and every
+  # claim is admitted and then fails with NOT_ENOUGH_FUNDS. Top it up from
+  # the genesis account whenever it holds less than half a float of
+  # KEEL_FAUCET_FLOAT_CLAIMS claims (default 500 claims of each asset).
+  log "faucet float"
+  FINFO=""
+  for _ in $(seq 1 30); do FINFO=$(curl -sf "http://127.0.0.1:$IDX_PORT/v1/faucet" || true); [ -n "$FINFO" ] && break; sleep 2; done
+  if [ -n "$FINFO" ]; then
+    FADDR=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["address"])' "$FINFO")
+    FS=$(sudo sed -n 's/^KEEL_OBSERVER_SECRET=//p' "$ETC/observer-$N.env")
+    for asset in KEEL KUSD; do
+      per=$(python3 -c 'import json,sys; print(int(json.loads(sys.argv[1])["amounts"][sys.argv[2]]))' "$FINFO" "$asset")
+      have=$(python3 -c 'import json,sys; print(int(json.loads(sys.argv[1])["balances"][sys.argv[2]]))' "$FINFO" "$asset")
+      want=$((per * ${KEEL_FAUCET_FLOAT_CLAIMS:-500}))
+      if [ "$have" -lt "$((want / 2))" ]; then
+        # whole coins -> six-decimal units
+        if "$BIN/keel" --rpc "$RPC" --chain-id "$CHAIN_ID" send --secret "$FS" --wait 30 transfer "$FADDR" "$asset" "$(((want - have) * 1000000))" >/dev/null; then
+          echo "faucet $FADDR topped up with $((want - have)) $asset (held $have, float $want)"
+        else
+          echo "faucet top-up of $asset failed; fund $FADDR by hand"
+        fi
+      else
+        echo "faucet holds $have $asset (float $want), no top-up"
+      fi
+    done
+    unset FS
+  else
+    echo "indexer did not answer /v1/faucet; the faucet was not topped up (faucet off, or the indexer is still starting)"
+  fi
   if [ "$FRESH" = true ] && [ "$SIGNER_MODE" = local ]; then
     # Deposits verify against a Bitcoin checkpoint; propose the first one now
     # (the oneshot waits for the vote and timelock, so do not block on it).

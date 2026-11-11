@@ -58,8 +58,8 @@ chain state itself.
 
 `faucet.keelchain.com` sends 100 KEEL and 100 KUSD to any account address,
 once per address a day and a few times per network address. It is an
-ordinary account funded from genesis; its sends are plain transfers on the
-explorer. Scripted: `POST https://testnet.keelchain.com/api/v1/faucet` with
+ordinary account that each deploy tops up from the genesis account; its
+sends are plain transfers on the explorer. Scripted: `POST https://testnet.keelchain.com/api/v1/faucet` with
 `{"address": "<64 hex>"}`; `GET /v1/faucet` for the amounts and what it
 holds, `GET /v1/faucet/claims` for history. Clients' operator accounts are
 funded through onboarding, not the faucet.
