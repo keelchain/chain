@@ -96,7 +96,10 @@ const TRUNCATABLE_UPTO: u32 = 5;
 /// `TRUNCATABLE_UPTO`): borsh writes fields in order, so an older body is
 /// the current body without its tail.
 fn legacy_body(schema: u32) -> Vec<u8> {
-    assert!(schema <= TRUNCATABLE_UPTO, "schema {schema} is not a truncation of the current layout");
+    assert!(
+        schema <= TRUNCATABLE_UPTO,
+        "schema {schema} is not a truncation of the current layout"
+    );
     let state = genesis_state();
     let full = borsh::to_vec(&state).unwrap();
     let liquidity = borsh::to_vec(&state.liquidity).unwrap();

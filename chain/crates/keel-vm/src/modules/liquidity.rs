@@ -101,7 +101,9 @@ pub struct EpochRecord {
     pub fee_usd: Amount,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
 pub struct Pool {
     pub total_shares: u128,
     /// Holder -> shares. `Address::SYSTEM` holds the protocol's own.
@@ -307,7 +309,9 @@ pub fn apply(
         return Err(VmError::Invalid("liquidity not active".into()));
     }
     match action {
-        Action::DepositLiquidity { asset, amount } => deposit(state, ctx, signer, tx_id, asset, *amount),
+        Action::DepositLiquidity { asset, amount } => {
+            deposit(state, ctx, signer, tx_id, asset, *amount)
+        }
         Action::WithdrawLiquidity { shares } => withdraw(state, ctx, signer, tx_id, *shares),
         _ => Err(VmError::Invalid("not a liquidity action".into())),
     }
@@ -364,7 +368,11 @@ fn crystallise(
         }
     }
     let after = pool_value.saturating_sub(taken_usd);
-    let pool = state.liquidity.pools.get_mut(SWAP_POOL).expect("pool exists");
+    let pool = state
+        .liquidity
+        .pools
+        .get_mut(SWAP_POOL)
+        .expect("pool exists");
     pool.hwm = vps(after, total_shares);
     Ok((gain, taken_usd))
 }
@@ -400,7 +408,12 @@ fn deposit(
         return Err(VmError::Invalid("pool cap reached".into()));
     }
     // The depositor must be able to pay before anything is crystallised.
-    if (state.ledger.balance(&tokens::deposit_key(signer, asset)).max(0) as Amount) < amount {
+    if (state
+        .ledger
+        .balance(&tokens::deposit_key(signer, asset))
+        .max(0) as Amount)
+        < amount
+    {
         return Err(VmError::Invalid("insufficient balance".into()));
     }
     let tag = format!("liq:dep:{}", tokens::hex(tx_id));
@@ -415,7 +428,11 @@ fn deposit(
     };
     // Shares with nothing behind them would skim the new deposit.
     if worthless {
-        let pool = state.liquidity.pools.get_mut(SWAP_POOL).expect("pool exists");
+        let pool = state
+            .liquidity
+            .pools
+            .get_mut(SWAP_POOL)
+            .expect("pool exists");
         pool.shares.clear();
         pool.total_shares = 0;
         pool.hwm = 0;
@@ -445,7 +462,11 @@ fn deposit(
         ],
     )?;
 
-    let pool = state.liquidity.pools.get_mut(SWAP_POOL).expect("pool exists");
+    let pool = state
+        .liquidity
+        .pools
+        .get_mut(SWAP_POOL)
+        .expect("pool exists");
     if system_minted > 0 {
         *pool.shares.entry(Address::SYSTEM).or_insert(0) += system_minted;
         pool.total_shares = pool.total_shares.saturating_add(system_minted);
@@ -514,7 +535,11 @@ fn withdraw(
             amount: leg,
         });
     }
-    let pool = state.liquidity.pools.get_mut(SWAP_POOL).expect("pool exists");
+    let pool = state
+        .liquidity
+        .pools
+        .get_mut(SWAP_POOL)
+        .expect("pool exists");
     let left = held - shares;
     if left == 0 {
         pool.shares.remove(&signer);
@@ -554,7 +579,11 @@ pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
     let tag = format!("liq:epoch:{}", ctx.height);
     let (gain, fee) = crystallise(state, &tag, value).unwrap_or_default();
     let after = value.saturating_sub(fee);
-    let pool = state.liquidity.pools.get_mut(SWAP_POOL).expect("pool exists");
+    let pool = state
+        .liquidity
+        .pools
+        .get_mut(SWAP_POOL)
+        .expect("pool exists");
     let shares = pool.total_shares;
     let value_per_share = vps(after, shares);
     pool.last_epoch = Some(EpochRecord {

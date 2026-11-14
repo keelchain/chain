@@ -719,7 +719,9 @@ fn settle(
     if let Some(client) = waived_for {
         if !plan.fills.is_empty() {
             let tag = keel_crypto::sha256(&[b"fill", &taker_id.0.to_be_bytes()]);
-            events.extend(super::clients::charge_usage_to(state, client, "fill", &tag)?);
+            events.extend(super::clients::charge_usage_to(
+                state, client, "fill", &tag,
+            )?);
         }
     }
     Ok(())

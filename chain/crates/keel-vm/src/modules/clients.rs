@@ -251,8 +251,8 @@ pub fn apply_set_fee(
     let uncapped = active(state, height) && p.protocol_fee_waived == 1;
     if !uncapped
         && (fee.p2p_bps > p.fee_cap_p2p_bps
-        || fee.taker_bps > p.fee_cap_taker_bps
-        || fee.withdraw_bps > p.fee_cap_withdraw_bps)
+            || fee.taker_bps > p.fee_cap_taker_bps
+            || fee.withdraw_bps > p.fee_cap_withdraw_bps)
     {
         return Err(VmError::Invalid(format!(
             "retail fee above the caps ({} / {} / {} bps)",

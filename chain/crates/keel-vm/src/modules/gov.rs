@@ -204,9 +204,7 @@ fn validate_kind(state: &State, kind: &ProposalKind) -> Result<(), VmError> {
             // before it a proposal on them is refused as it always was.
             let module_key = super::liquidity::active(state, state.height)
                 && module_param_get(state, key).is_some();
-            if state.params.get(key).is_none()
-                && !module_key
-                && !is_devnet_operator_key(state, key)
+            if state.params.get(key).is_none() && !module_key && !is_devnet_operator_key(state, key)
             {
                 return Err(VmError::Invalid(format!("unknown param {key}")));
             }
@@ -480,12 +478,9 @@ fn execute_kind(
                 let reserves = state.ledger.system_reserves(asset).max(0) as Amount;
                 // Depositors' share of the liquidity pool's vault assets
                 // is a user liability too (0 before the pool is active).
-                let liabilities = state
-                    .ledger
-                    .user_liabilities(asset)
-                    .saturating_add(super::liquidity::user_pool_liability(
-                        state, ctx.height, asset,
-                    ));
+                let liabilities = state.ledger.user_liabilities(asset).saturating_add(
+                    super::liquidity::user_pool_liability(state, ctx.height, asset),
+                );
                 if reserves < liabilities {
                     return Err(VmError::Invalid(
                         "payout would breach reserves >= liabilities".into(),

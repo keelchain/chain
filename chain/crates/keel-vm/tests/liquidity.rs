@@ -23,7 +23,14 @@ fn px(usd: u128) -> u128 {
 
 /// A real fill on `pair` so the pool can mark `base` at `price`: `maker`
 /// rests `qty` at `price`, `taker` buys it.
-fn set_price(c: &mut Chain, maker: &mut Actor, taker: &mut Actor, pair: &str, qty: u128, price: u128) {
+fn set_price(
+    c: &mut Chain,
+    maker: &mut Actor,
+    taker: &mut Actor,
+    pair: &str,
+    qty: u128,
+    price: u128,
+) {
     let (r, _) = c.block(&[maker.act(Action::PlaceOrder(PlaceOrder {
         pair: pair.into(),
         side: Side::Sell,
@@ -83,7 +90,12 @@ fn shares_of(c: &Chain, who: Address) -> u128 {
         .unwrap_or(0)
 }
 
-fn quote(c: &mut Chain, op: &mut Actor, bid: Option<(u128, u128)>, ask: Option<(u128, u128)>) -> keel_vm::Receipt {
+fn quote(
+    c: &mut Chain,
+    op: &mut Actor,
+    bid: Option<(u128, u128)>,
+    ask: Option<(u128, u128)>,
+) -> keel_vm::Receipt {
     let valid_until = c.height + 20;
     let (r, _) = c.block(&[op.act(Action::HouseQuote(HouseQuote {
         pair: "BTC-KUSD".into(),
@@ -97,7 +109,13 @@ fn quote(c: &mut Chain, op: &mut Actor, bid: Option<(u128, u128)>, ask: Option<(
 #[test]
 fn first_deposit_prices_the_pool_and_mints_protocol_shares() {
     let (mut state, mut alice, mut bob, _v) = setup(0);
-    fund_system(&mut state, &keel(), "swap_pool", 1_000 * KEEL, "genesis-keel");
+    fund_system(
+        &mut state,
+        &keel(),
+        "swap_pool",
+        1_000 * KEEL,
+        "genesis-keel",
+    );
     let mut c = Chain::new(state);
 
     // The pool holds KEEL without a price: nobody can be priced in fairly.
@@ -131,10 +149,7 @@ fn first_deposit_prices_the_pool_and_mints_protocol_shares() {
     let r = deposit(&mut c, &mut bob, usds(), 50 * KUSD);
     ok(&r);
     assert_eq!(shares_of(&c, bob.addr()), 50 * KUSD);
-    assert_eq!(
-        liquidity::pool_value_usd(&c.state),
-        Some(1_150 * KUSD)
-    );
+    assert_eq!(liquidity::pool_value_usd(&c.state), Some(1_150 * KUSD));
     audit_clean(&c.state);
 }
 
@@ -145,7 +160,14 @@ fn house_fill_grows_the_pool_and_the_epoch_takes_the_protocol_share() {
     state.gov_house_operator = Some(alice.addr());
     seed_pool_vault(&mut state, &btc(), BTC, "btc");
     let mut c = Chain::new(state);
-    set_price(&mut c, &mut alice, &mut bob, "BTC-KUSD", 1_000_000 * SAT, px(60_000));
+    set_price(
+        &mut c,
+        &mut alice,
+        &mut bob,
+        "BTC-KUSD",
+        1_000_000 * SAT,
+        px(60_000),
+    );
     // A resting KEEL ask so the buyback can sweep the KUSD fee leg.
     let (r, _) = c.block(&[alice.act(Action::PlaceOrder(PlaceOrder {
         pair: "KEEL-KUSD".into(),
@@ -188,13 +210,18 @@ fn house_fill_grows_the_pool_and_the_epoch_takes_the_protocol_share() {
     let fee_taken = events
         .iter()
         .find_map(|e| match e {
-            Event::LiquidityFeeTaken { gain_usd, fee_usd, .. } => Some((*gain_usd, *fee_usd)),
+            Event::LiquidityFeeTaken {
+                gain_usd, fee_usd, ..
+            } => Some((*gain_usd, *fee_usd)),
             _ => None,
         })
         .expect("fee taken");
     assert_eq!(fee_taken.0, value - hwm_value);
     let half = (value - hwm_value) / 2;
-    assert!(fee_taken.1 <= half && fee_taken.1 >= half - 2 * KUSD, "{fee_taken:?}");
+    assert!(
+        fee_taken.1 <= half && fee_taken.1 >= half - 2 * KUSD,
+        "{fee_taken:?}"
+    );
     // In kind: both pool assets paid their share into the split.
     assert!(sys(&c.state, &btc(), "treasury") > 0);
     assert!(sys(&c.state, &btc(), "validator_rewards") > 0);
@@ -217,7 +244,14 @@ fn house_fill_grows_the_pool_and_the_epoch_takes_the_protocol_share() {
     let hwm_after = pool.hwm;
 
     // A loss epoch: BTC marks at 50,000; nothing is taken, the mark stays.
-    set_price(&mut c, &mut alice, &mut bob, "BTC-KUSD", 1_000_000 * SAT, px(50_000));
+    set_price(
+        &mut c,
+        &mut alice,
+        &mut bob,
+        "BTC-KUSD",
+        1_000_000 * SAT,
+        px(50_000),
+    );
     let events = c.advance_to(60);
     assert!(!events
         .iter()
@@ -237,7 +271,14 @@ fn withdrawal_is_pro_rata_in_kind_after_the_delay_and_crystallises_gains() {
     state.gov_house_operator = Some(alice.addr());
     seed_pool_vault(&mut state, &btc(), BTC, "btc");
     let mut c = Chain::new(state);
-    set_price(&mut c, &mut alice, &mut bob, "BTC-KUSD", 1_000_000 * SAT, px(60_000));
+    set_price(
+        &mut c,
+        &mut alice,
+        &mut bob,
+        "BTC-KUSD",
+        1_000_000 * SAT,
+        px(60_000),
+    );
     ok(&deposit(&mut c, &mut bob, usds(), 6_000 * KUSD));
     // bob holds 6,000 of 66,000 shares: a tenth of the pool.
     let total = c.state.liquidity.pools[liquidity::SWAP_POOL].total_shares;
@@ -305,7 +346,10 @@ fn withdrawal_is_pro_rata_in_kind_after_the_delay_and_crystallises_gains() {
     assert!(!events
         .iter()
         .any(|e| matches!(e, Event::LiquidityUnlocked { .. })));
-    assert_eq!(acct(&c.state, bob.addr(), &btc(), "deposit"), bob_btc_before);
+    assert_eq!(
+        acct(&c.state, bob.addr(), &btc(), "deposit"),
+        bob_btc_before
+    );
     let events = c.advance_to(release);
     assert!(events.contains(&Event::LiquidityUnlocked {
         owner: bob.addr(),
@@ -339,7 +383,12 @@ fn quote_limits_bound_the_inventory_and_the_spread() {
     })]);
     ok(&r[0]);
     // 10 bps of spread is refused; a one-sided quote has no spread to check.
-    let r = quote(&mut c, &mut alice, Some((px(60_940), BTC)), Some((px(61_000), BTC)));
+    let r = quote(
+        &mut c,
+        &mut alice,
+        Some((px(60_940), BTC)),
+        Some((px(61_000), BTC)),
+    );
     assert!(matches!(err(&r), VmError::Invalid(m) if m.contains("spread")));
     ok(&quote(&mut c, &mut alice, None, Some((px(61_000), BTC))));
     // The ask offers the whole BTC but only a quarter of the inventory is
@@ -367,7 +416,14 @@ fn quote_limits_bound_the_inventory_and_the_spread() {
 fn reserve_invariant_counts_depositors_share_of_pool_vault_assets() {
     let (state, mut alice, mut bob, _v) = setup(0);
     let mut c = Chain::new(state);
-    set_price(&mut c, &mut alice, &mut bob, "BTC-KUSD", 1_000_000 * SAT, px(60_000));
+    set_price(
+        &mut c,
+        &mut alice,
+        &mut bob,
+        "BTC-KUSD",
+        1_000_000 * SAT,
+        px(60_000),
+    );
     ok(&deposit(&mut c, &mut alice, btc(), 50_000_000 * SAT));
     // The pool was empty before alice: every pool satoshi is hers, and the
     // books still balance: reserves cover users' balances plus the pool.
@@ -425,12 +481,22 @@ fn reserve_invariant_counts_depositors_share_of_pool_vault_assets() {
 fn nothing_happens_below_the_activation_height() {
     let (mut state, mut alice, mut bob, _v) = setup(0);
     state.gov.upgrades.clear();
-    state.gov.upgrades.push((liquidity::ACTIVATION_VERSION.into(), 6));
+    state
+        .gov
+        .upgrades
+        .push((liquidity::ACTIVATION_VERSION.into(), 6));
     state.liquidity.params.max_quote_inventory_bps = 1;
     state.gov_house_operator = Some(alice.addr());
     seed_pool_vault(&mut state, &btc(), BTC, "btc");
     let mut c = Chain::new(state);
-    set_price(&mut c, &mut alice, &mut bob, "BTC-KUSD", 1_000_000 * SAT, px(60_000));
+    set_price(
+        &mut c,
+        &mut alice,
+        &mut bob,
+        "BTC-KUSD",
+        1_000_000 * SAT,
+        px(60_000),
+    );
     // Height 3: refused; the clamp is the pre-activation whole balance.
     let r = deposit(&mut c, &mut alice, usds(), 100 * KUSD);
     assert!(matches!(err(&r), VmError::Invalid(m) if m.contains("not active")));
@@ -517,9 +583,21 @@ fn the_pool_is_deterministic() {
         state.gov_house_operator = Some(alice.addr());
         seed_pool_vault(&mut state, &btc(), BTC, "btc");
         let mut c = Chain::new(state);
-        set_price(&mut c, &mut alice, &mut bob, "BTC-KUSD", 1_000_000 * SAT, px(60_000));
+        set_price(
+            &mut c,
+            &mut alice,
+            &mut bob,
+            "BTC-KUSD",
+            1_000_000 * SAT,
+            px(60_000),
+        );
         ok(&deposit(&mut c, &mut bob, usds(), 2_000 * KUSD));
-        ok(&quote(&mut c, &mut alice, Some((px(59_000), BTC)), Some((px(61_000), BTC))));
+        ok(&quote(
+            &mut c,
+            &mut alice,
+            Some((px(59_000), BTC)),
+            Some((px(61_000), BTC)),
+        ));
         let (r, _) = c.block(&[bob.act(Action::PlaceOrder(PlaceOrder {
             pair: "BTC-KUSD".into(),
             side: Side::Buy,

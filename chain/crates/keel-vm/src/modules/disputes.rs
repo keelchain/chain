@@ -289,7 +289,9 @@ fn rule(
     let mut events = Vec::new();
     if let Some(client) = waived_for {
         let tag = keel_crypto::sha256(&[b"ruling", &trade_id.to_be_bytes()]);
-        events.extend(super::clients::charge_usage_to(state, client, "ruling", &tag)?);
+        events.extend(super::clients::charge_usage_to(
+            state, client, "ruling", &tag,
+        )?);
     }
     events.push(Event::DisputeRuled {
         trade_id,

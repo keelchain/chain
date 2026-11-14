@@ -496,7 +496,9 @@ fn release_trade(
     finish_trade(state, trade_id, TradeStatus::Released);
     if let Some(client) = state.clients.waived_trades.remove(&trade_id) {
         let tag = keel_crypto::sha256(&[b"release", &trade_id.to_be_bytes()]);
-        retail.extend(super::clients::charge_usage_to(state, client, "release", &tag)?);
+        retail.extend(super::clients::charge_usage_to(
+            state, client, "release", &tag,
+        )?);
     }
     retail.push(Event::TradeReleased {
         trade_id,
