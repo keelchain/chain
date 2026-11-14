@@ -35,8 +35,10 @@ impl ChainParams {
     pub fn confirmations(&self, chain: Chain) -> u32 {
         match chain {
             Chain::Bitcoin => self.confirmations_btc,
-            Chain::Ethereum => self.confirmations_eth,
-            Chain::Tron => self.confirmations_tron,
+            // BSC shares the EVM depth, Solana the Tron one
+            // (`vaults::confirmations` on the node).
+            Chain::Ethereum | Chain::Bsc => self.confirmations_eth,
+            Chain::Tron | Chain::Solana => self.confirmations_tron,
         }
     }
 }
@@ -46,7 +48,8 @@ impl ChainParams {
 pub struct VaultView {
     pub chain: Chain,
     pub epoch: u64,
-    pub public_key: [u8; 33],
+    /// 33 bytes (compressed secp256k1) or 32 (Ed25519, Solana).
+    pub public_key: Vec<u8>,
     pub chain_code: [u8; 32],
     pub signers: Vec<Address>,
     pub threshold: u32,
@@ -164,9 +167,13 @@ pub fn parse_vault(chain: Chain, v: &Value) -> anyhow::Result<Option<VaultView>>
     };
     let public_key =
         bytes_of(&vault["public_key"]).ok_or_else(|| anyhow::anyhow!("vault.public_key"))?;
-    let public_key: [u8; 33] = public_key
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("vault key must be 33 bytes"))?;
+    if public_key.len() != chain.key_length() {
+        anyhow::bail!(
+            "vault key must be {} bytes on {}",
+            chain.key_length(),
+            chain.as_str()
+        );
+    }
     let chain_code = bytes_of(&vault["chain_code"])
         .and_then(|b| <[u8; 32]>::try_from(b).ok())
         .ok_or_else(|| anyhow::anyhow!("vault.chain_code missing (not an HD vault)"))?;
@@ -322,6 +329,8 @@ pub fn chain_from_json(s: &str) -> Option<Chain> {
         "Bitcoin" => Some(Chain::Bitcoin),
         "Ethereum" => Some(Chain::Ethereum),
         "Tron" => Some(Chain::Tron),
+        "Bsc" => Some(Chain::Bsc),
+        "Solana" => Some(Chain::Solana),
         _ => None,
     })
 }
@@ -494,7 +503,7 @@ impl SttRpc for HttpSttRpc {
         Ok(Some(VaultView {
             chain,
             epoch,
-            public_key: fb.public_key,
+            public_key: fb.public_key.to_vec(),
             chain_code: fb.chain_code,
             signers: fb.signers.clone(),
             threshold: fb.threshold,

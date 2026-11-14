@@ -107,6 +107,7 @@ fn vectors() -> Vec<(&'static str, Action)> {
         (
             "observe_deposit",
             Action::ObserveDeposit(DepositObservation {
+                external_tx: None,
                 chain: Chain::Tron,
                 asset: Asset::new("TRON.USDT"),
                 tx_hash: [3u8; 32],
@@ -122,6 +123,16 @@ fn vectors() -> Vec<(&'static str, Action)> {
             "request_address",
             Action::RequestDepositAddress {
                 chain: Chain::Bitcoin,
+            },
+        ),
+        (
+            "request_address_bsc",
+            Action::RequestDepositAddress { chain: Chain::Bsc },
+        ),
+        (
+            "request_address_sol",
+            Action::RequestDepositAddress {
+                chain: Chain::Solana,
             },
         ),
         (
@@ -287,6 +298,7 @@ fn vectors() -> Vec<(&'static str, Action)> {
             Action::ObserveCustodyDeposit {
                 custodian: Keypair::from_seed(9).address(),
                 observation: DepositObservation {
+                    external_tx: None,
                     chain: Chain::Tron,
                     asset: Asset::vault("TRON", "USDT"),
                     tx_hash: [0x33; 32],

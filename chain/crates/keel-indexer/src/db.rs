@@ -780,12 +780,13 @@ impl Db {
             return Ok(());
         };
         sqlx::query(
-            "INSERT INTO outbounds (id, owner, asset, chain, to_addr, amount, fee_asset, fee_estimate, status, batch_id, tx_hash, created_height, updated_height)
-             VALUES ($1, $2, $3, $4, $5, $6::text::numeric, $7, $8::text::numeric, $9, $10, $11, $12, COALESCE($12, 0))
+            "INSERT INTO outbounds (id, owner, asset, chain, to_addr, amount, fee_asset, fee_estimate, status, batch_id, tx_hash, created_height, updated_height, external_tx)
+             VALUES ($1, $2, $3, $4, $5, $6::text::numeric, $7, $8::text::numeric, $9, $10, $11, $12, COALESCE($12, 0), $13)
              ON CONFLICT (id) DO UPDATE SET owner = COALESCE(outbounds.owner, EXCLUDED.owner), asset = COALESCE(outbounds.asset, EXCLUDED.asset), chain = COALESCE(EXCLUDED.chain, outbounds.chain),
                to_addr = COALESCE(EXCLUDED.to_addr, outbounds.to_addr), amount = COALESCE(outbounds.amount, EXCLUDED.amount), fee_asset = COALESCE(EXCLUDED.fee_asset, outbounds.fee_asset),
                fee_estimate = COALESCE(EXCLUDED.fee_estimate, outbounds.fee_estimate), status = EXCLUDED.status, batch_id = COALESCE(EXCLUDED.batch_id, outbounds.batch_id),
-               tx_hash = COALESCE(EXCLUDED.tx_hash, outbounds.tx_hash), created_height = COALESCE(outbounds.created_height, EXCLUDED.created_height)",
+               tx_hash = COALESCE(EXCLUDED.tx_hash, outbounds.tx_hash), created_height = COALESCE(outbounds.created_height, EXCLUDED.created_height),
+               external_tx = COALESCE(EXCLUDED.external_tx, outbounds.external_tx)",
         )
         .bind(id as i64)
         .bind(crate::types::field_addr(v, "owner"))
@@ -799,6 +800,7 @@ impl Db {
         .bind(field_u64(v, "batch_id").map(|x| x as i64))
         .bind(field_str(v, "tx_hash").map(|x| x.to_ascii_lowercase()))
         .bind(field_u64(v, "created_height").map(|x| x as i64))
+        .bind(field_str(v, "external_tx"))
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -1264,14 +1266,15 @@ async fn apply_patch(tx: &mut Transaction<'_, Postgres>, p: &Patch) -> Result<()
         }
         Patch::Deposit(d) => {
             sqlx::query(
-                "INSERT INTO deposits (key, chain, asset, owner, amount, status, tx_hash, external_index, deposit_index, external_height, votes, height, tx_id, release_height, updated_height)
-                 VALUES ($1, $2, $3, $4, $5::text::numeric, $6, $7, $8, $9, $10, $11, $12, $13, $14, $12)
+                "INSERT INTO deposits (key, chain, asset, owner, amount, status, tx_hash, external_index, deposit_index, external_height, votes, height, tx_id, release_height, updated_height, external_tx)
+                 VALUES ($1, $2, $3, $4, $5::text::numeric, $6, $7, $8, $9, $10, $11, $12, $13, $14, $12, $15)
                  ON CONFLICT (key) DO UPDATE SET chain = COALESCE(EXCLUDED.chain, deposits.chain), asset = COALESCE(EXCLUDED.asset, deposits.asset), owner = COALESCE(EXCLUDED.owner, deposits.owner),
                    amount = COALESCE(EXCLUDED.amount, deposits.amount), status = EXCLUDED.status, tx_hash = COALESCE(EXCLUDED.tx_hash, deposits.tx_hash),
                    external_index = COALESCE(EXCLUDED.external_index, deposits.external_index), deposit_index = COALESCE(EXCLUDED.deposit_index, deposits.deposit_index),
                    external_height = COALESCE(EXCLUDED.external_height, deposits.external_height), votes = COALESCE(EXCLUDED.votes, deposits.votes),
                    tx_id = COALESCE(EXCLUDED.tx_id, deposits.tx_id), release_height = COALESCE(EXCLUDED.release_height, deposits.release_height),
-                   updated_height = GREATEST(deposits.updated_height, EXCLUDED.updated_height)",
+                   updated_height = GREATEST(deposits.updated_height, EXCLUDED.updated_height),
+                   external_tx = COALESCE(EXCLUDED.external_tx, deposits.external_tx)",
             )
             .bind(&d.key)
             .bind(&d.chain)
@@ -1287,19 +1290,21 @@ async fn apply_patch(tx: &mut Transaction<'_, Postgres>, p: &Patch) -> Result<()
             .bind(d.height)
             .bind(&d.tx_id)
             .bind(d.release_height)
+            .bind(&d.external_tx)
             .execute(&mut **tx)
             .await
             .context("deposit patch")?;
         }
         Patch::Outbound(o) => {
             sqlx::query(
-                "INSERT INTO outbounds (id, owner, asset, chain, to_addr, amount, status, batch_id, tx_hash, refunded, created_height, confirmed_height, updated_height, tx_id)
-                 VALUES ($1, $2, $3, $4, $5, $6::text::numeric, COALESCE($7, 'queued'), $8, $9, $10::text::numeric, $11, $12, $13, $14)
+                "INSERT INTO outbounds (id, owner, asset, chain, to_addr, amount, status, batch_id, tx_hash, refunded, created_height, confirmed_height, updated_height, tx_id, external_tx)
+                 VALUES ($1, $2, $3, $4, $5, $6::text::numeric, COALESCE($7, 'queued'), $8, $9, $10::text::numeric, $11, $12, $13, $14, $15)
                  ON CONFLICT (id) DO UPDATE SET owner = COALESCE(EXCLUDED.owner, outbounds.owner), asset = COALESCE(EXCLUDED.asset, outbounds.asset), chain = COALESCE(EXCLUDED.chain, outbounds.chain),
                    to_addr = COALESCE(EXCLUDED.to_addr, outbounds.to_addr), amount = COALESCE(EXCLUDED.amount, outbounds.amount), status = COALESCE($7, outbounds.status),
                    batch_id = COALESCE(EXCLUDED.batch_id, outbounds.batch_id), tx_hash = COALESCE(EXCLUDED.tx_hash, outbounds.tx_hash), refunded = COALESCE(EXCLUDED.refunded, outbounds.refunded),
                    created_height = COALESCE(outbounds.created_height, EXCLUDED.created_height), confirmed_height = COALESCE(EXCLUDED.confirmed_height, outbounds.confirmed_height),
-                   updated_height = GREATEST(outbounds.updated_height, EXCLUDED.updated_height), tx_id = COALESCE(outbounds.tx_id, EXCLUDED.tx_id)",
+                   updated_height = GREATEST(outbounds.updated_height, EXCLUDED.updated_height), tx_id = COALESCE(outbounds.tx_id, EXCLUDED.tx_id),
+                   external_tx = COALESCE(EXCLUDED.external_tx, outbounds.external_tx)",
             )
             .bind(o.id)
             .bind(&o.owner)
@@ -1315,6 +1320,7 @@ async fn apply_patch(tx: &mut Transaction<'_, Postgres>, p: &Patch) -> Result<()
             .bind(o.confirmed_height)
             .bind(o.updated_height)
             .bind(&o.tx_id)
+            .bind(&o.external_tx)
             .execute(&mut **tx)
             .await
             .context("outbound patch")?;

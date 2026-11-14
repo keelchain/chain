@@ -13,7 +13,7 @@ import { Address } from './Address';
 
 export function chainOfAsset(asset: string): ExternalChain | null {
   const c = asset.split('.')[0];
-  return c === 'BTC' || c === 'TRON' || c === 'ETH' ? c : null;
+  return c === 'BTC' || c === 'TRON' || c === 'ETH' || c === 'BSC' || c === 'SOL' ? c : null;
 }
 
 export function SelfCustody({ networkId, address, refreshKey, onMoved }: { networkId: string; address: string; refreshKey: number; onMoved: () => void }) {

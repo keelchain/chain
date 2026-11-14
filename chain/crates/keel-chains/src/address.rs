@@ -95,23 +95,45 @@ pub fn btc_address(pubkey33: &[u8; 33], network: Network) -> Result<String, Erro
     Ok(BtcAddress::p2wpkh(&pk, network.bitcoin()).to_string())
 }
 
-/// The deposit address of index `index` for `chain` under a vault key.
+/// A 33-byte compressed secp256k1 key from a registered vault key.
+pub fn secp_key(vault_pubkey: &[u8]) -> Result<[u8; 33], Error> {
+    vault_pubkey
+        .try_into()
+        .map_err(|_| Error::Key("vault key must be 33 bytes (compressed secp256k1)".into()))
+}
+
+/// A 32-byte Ed25519 key from a registered vault key.
+pub fn ed25519_key(vault_pubkey: &[u8]) -> Result<[u8; 32], Error> {
+    vault_pubkey
+        .try_into()
+        .map_err(|_| Error::Key("vault key must be 32 bytes (ed25519)".into()))
+}
+
+/// The deposit address of index `index` for `chain` under a vault key: a
+/// BIP32 child of a 33-byte secp256k1 key, or a `sol::child` of a
+/// 32-byte Ed25519 key.
 pub fn deposit_address(
     chain: Chain,
     network: Network,
-    vault_pubkey: &[u8; 33],
+    vault_pubkey: &[u8],
     chain_code: &[u8; 32],
     index: u64,
 ) -> Result<String, Error> {
-    let child = hd::child_pubkey(vault_pubkey, chain_code, &hd::deposit_path(chain, index))?;
+    let path = hd::deposit_path(chain, index);
+    if chain.is_ed25519() {
+        let child = crate::sol::child_pubkey(&ed25519_key(vault_pubkey)?, chain_code, &path)?;
+        return Ok(crate::sol::address(&child));
+    }
+    let child = hd::child_pubkey(&secp_key(vault_pubkey)?, chain_code, &path)?;
     address_of(chain, network, &child.public_key)
 }
 
 pub fn address_of(chain: Chain, network: Network, pubkey33: &[u8; 33]) -> Result<String, Error> {
     match chain {
         Chain::Bitcoin => btc_address(pubkey33, network),
-        Chain::Ethereum => eth_address(pubkey33),
+        Chain::Ethereum | Chain::Bsc => eth_address(pubkey33),
         Chain::Tron => tron_address(pubkey33),
+        Chain::Solana => Err(Error::Unsupported(chain)),
     }
 }
 
@@ -121,8 +143,9 @@ pub fn validate_address(chain: Chain, network: Network, addr: &str) -> bool {
             .ok()
             .and_then(|a| a.require_network(network.bitcoin()).ok())
             .is_some(),
-        Chain::Ethereum => eth_decode(addr).is_ok(),
+        Chain::Ethereum | Chain::Bsc => eth_decode(addr).is_ok(),
         Chain::Tron => tron_decode(addr).is_ok(),
+        Chain::Solana => crate::sol::decode(addr).is_ok(),
     }
 }
 
@@ -195,5 +218,24 @@ mod tests {
         assert_ne!(a0, a1);
         assert!(e0.starts_with("0x"));
         assert!(t0.starts_with('T'));
+    }
+
+    /// One EVM address per account: the BSC deposit address of an index
+    /// is the Ethereum one, under the same vault key.
+    #[test]
+    fn bsc_and_ethereum_share_the_deposit_address() {
+        let pk = pubkey_of(7);
+        let cc = [9u8; 32];
+        for index in [0u64, 1, 2, 1 << 31] {
+            let e = deposit_address(Chain::Ethereum, Network::Mainnet, &pk, &cc, index).unwrap();
+            let b = deposit_address(Chain::Bsc, Network::Testnet, &pk, &cc, index).unwrap();
+            assert_eq!(e, b);
+            assert!(validate_address(Chain::Bsc, Network::Mainnet, &b));
+        }
+        assert!(!validate_address(
+            Chain::Bsc,
+            Network::Mainnet,
+            "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+        ));
     }
 }

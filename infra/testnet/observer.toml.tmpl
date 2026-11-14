@@ -19,6 +19,27 @@ max_proof_headers = 144
 fee_target_blocks = 2
 fallback_sat_per_vb = 2
 
+# BNB Smart Chain (attestation only, like Tron): the same key path as
+# Ethereum, so an account's address is one string on both chains.
+[bsc]
+rpc_url = "@BSC_RPC_URL@"
+network = "@EXTERNAL_NETWORK@"
+log_window = 2000
+native_scan_blocks = 64
+hot_index = 0
+tokens = [{ symbol = "USDT", contract = "@BSC_USDT_CONTRACT@" }]
+
+# Solana (attestation only): an Ed25519 vault key signed by FROST (the
+# `--scheme eddsa` share of the ceremony; the development signer derives
+# one from its seed in local mode).
+[solana]
+rpc_url = "@SOLANA_RPC_URL@"
+network = "@EXTERNAL_NETWORK@"
+priority_micro_lamports = 0
+signature_limit = 50
+hot_index = 0
+tokens = [{ symbol = "USDC", contract = "@SOLANA_USDC_MINT@", decimals = 6 }]
+
 [tron]
 api_url = "@TRON_API_URL@"
 @TRON_API_KEY_LINE@

@@ -292,7 +292,7 @@ fn rotate(
         .vault(r.chain, signer)
         .cloned()
         .ok_or_else(|| VmError::NotFound("register a custody vault on this chain first".into()))?;
-    if r.public_key.len() != 33 {
+    if r.public_key.len() != r.chain.key_length() {
         return Err(VmError::Invalid("bad vault public key length".into()));
     }
     if r.public_key == vault.public_key {

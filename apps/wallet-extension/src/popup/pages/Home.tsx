@@ -124,11 +124,11 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
             </>
           ) : (
             <>
-              <p className="muted small">Fund this account from {externalName(network.id, 'BTC')} or {externalName(network.id, 'TRON')}. The address belongs to the Keelchain vault; the chain credits you after that chain's confirmations. Coins sent on any other network do not arrive.{ownAddrs?.supported && <> <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show my own address instead</a></>}</p>
+              <p className="muted small">Fund this account from {externalName(network.id, 'BTC')}, {externalName(network.id, 'TRON')}, {externalName(network.id, 'BSC')} or {externalName(network.id, 'SOL')}. The address belongs to the Keelchain vault; the chain credits you after that chain's confirmations. Coins sent on any other network do not arrive.{ownAddrs?.supported && <> <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show my own address instead</a></>}</p>
               <div className="row">
                 {DEPOSIT_CHAINS.map((c) => (
                   <button key={c} className="mini" disabled={depositBusy !== null} onClick={() => receive(c)}>
-                    {depositBusy === c ? 'Requesting…' : c === 'BTC' ? externalName(network.id, 'BTC') : `${externalName(network.id, 'TRON')} (USDT, TRX)`}
+                    {depositBusy === c ? 'Requesting…' : c === 'BTC' ? externalName(network.id, 'BTC') : c === 'BSC' ? `${externalName(network.id, 'BSC')} (USDT, BNB)` : c === 'SOL' ? `${externalName(network.id, 'SOL')} (USDC, SOL)` : `${externalName(network.id, 'TRON')} (USDT, TRX)`}
                   </button>
                 ))}
               </div>
@@ -139,7 +139,7 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
             <div>
               <div className="label">{externalName(network.id, deposit.chain as ExternalChain)} deposit address · index {deposit.index}{deposit.fresh ? ' · just assigned' : ''}</div>
               <Address value={deposit.address} full />
-              <p className="notice small">{network.id === 'testnet' ? (deposit.chain === 'BTC' ? 'Bitcoin signet only: coins sent on Bitcoin mainnet, testnet3 or testnet4 never arrive. A signet faucet works. Credited as BTC.BTC after 2 confirmations.' : 'Tron Nile only: USDT or TRX sent on Tron mainnet or Shasta never arrive. USDT is credited as TRON.USDT, TRX as TRON.TRX, after 19 confirmations.') : 'Send only the assets of this chain, on this chain, to this address.'}</p>
+              <p className="notice small">{network.id === 'testnet' ? (deposit.chain === 'BTC' ? 'Bitcoin signet only: coins sent on Bitcoin mainnet, testnet3 or testnet4 never arrive. A signet faucet works. Credited as BTC.BTC after 2 confirmations.' : deposit.chain === 'BSC' ? 'BSC testnet only: USDT or BNB sent on BSC mainnet never arrive. USDT is credited as BSC.USDT, BNB as BSC.BNB, after 12 confirmations. This is also your Ethereum address: the two chains share it.' : deposit.chain === 'SOL' ? 'Solana devnet only: USDC or SOL sent on Solana mainnet never arrive. USDC is credited as SOL.USDC, SOL as SOL.SOL, once the transaction is finalized.' : 'Tron Nile only: USDT or TRX sent on Tron mainnet or Shasta never arrive. USDT is credited as TRON.USDT, TRX as TRON.TRX, after 19 confirmations.') : deposit.chain === 'BSC' ? 'Send only BNB or USDT on BNB Smart Chain to this address. It is also your Ethereum address: the two chains share it.' : 'Send only the assets of this chain, on this chain, to this address.'}</p>
             </div>
           )}
         </div>

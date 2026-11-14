@@ -50,6 +50,22 @@ log_window = 2000
 hot_index = 0
 tokens = [{ symbol = "USDT", contract = "0x…" }]
 
+[bsc]                                   # BNB Smart Chain: the [ethereum] shape, attestation only
+rpc_url = "https://data-seed-prebsc-1-s1.bnbchain.org:8545"
+network = "testnet"                     # chain id 97; mainnet = 56
+log_window = 2000
+native_scan_blocks = 64                 # newest full blocks read per pass for native BNB deposits
+hot_index = 0
+tokens = [{ symbol = "USDT", contract = "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd" }]
+
+[solana]                                # attestation only; Ed25519 vault key (FROST share)
+rpc_url = "https://api.devnet.solana.com"
+network = "testnet"                     # devnet; mainnet = mainnet-beta
+priority_micro_lamports = 0             # SetComputeUnitPrice when > 0
+signature_limit = 50                    # newest signatures read per address and pass
+hot_index = 0
+tokens = [{ symbol = "USDC", contract = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", decimals = 6 }]
+
 [tron]
 api_url = "https://nile.trongrid.io"   # TronGrid-style /v1 routes for deposits
 api_key = "…"
@@ -126,6 +142,36 @@ outbound signing and broadcast still work against anvil. The VM side
 also needs an ETH checkpoint (`set_eth_checkpoint`) and the token
 contracts (`set_token_contract`), which no genesis or governance path
 sets today (API.md).
+
+**BNB Smart Chain (attestation only).** The `[ethereum]` code path with
+`Proof::None`, which the VM accepts because BSC has no light client.
+ERC-20 (BEP-20) transfers come from `eth_getLogs` as on Ethereum; native
+BNB deposits are read from the newest `native_scan_blocks` full blocks of
+each pass (`eth_getBlockByNumber` with transactions, `to` in the book,
+`value > 0`, receipt status 1), so a transfer made by a contract (an
+internal transaction) is not credited. Payouts, consolidation and sweeps
+are the Ethereum ones with the chain id the node reports (97 testnet, 56
+mainnet); the signing policy reads the chain from that id. BSC shares
+Ethereum's key path (`m/60/<index>`), so the vault must be registered
+with the Ethereum key and an account's address is the same on both.
+
+**Solana (attestation only).** The vault key is Ed25519 (32 bytes), the
+`--scheme eddsa` FROST share of `keel-tss`; the development signer
+derives one from its seed. Deposit addresses are `keel_chains::sol`
+children of the registered key. Each pass reads the newest
+`signature_limit` finalized signatures of every watched address and of
+its associated token accounts, fetches each transaction once, and attests
+every positive balance delta (`preBalances`/`postBalances` for SOL,
+`preTokenBalances`/`postTokenBalances` for tokens) as a deposit keyed by
+`(SHA-256(signature), account index)`. Payouts are legacy messages paid by
+the hot address (a `TransferChecked` plus an idempotent associated-account
+creation for tokens), signed over the message bytes
+(`POST /sign {"scheme":"eddsa","message":…}`), broadcast with
+`sendTransaction` and settled from `getSignatureStatuses` at `finalized`;
+a broadcast still unknown after 90 seconds (the blockhash lifetime) is
+rebuilt. Consolidation of a deposit index is one message with two signers,
+the hot address paying and the index authorizing, so no gas funding is
+needed.
 
 **Tron (attestation only, mocked proof).** `Proof::None`; the VM accepts
 it because Tron has no light client (TIP-248 is still a draft). Depth is

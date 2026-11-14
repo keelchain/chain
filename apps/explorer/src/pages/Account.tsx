@@ -301,7 +301,7 @@ function ChainDeposits({ owner, chain, depositAddress, index, net, required }: {
             <tbody>
               {list.map((p) => (
                 <tr key={p.tx_hash}>
-                  <td><ExternalLink chain={p.chain} value={p.tx_hash} what="tx" /></td>
+                  <td><ExternalLink chain={p.chain} value={p.tx_hash} id={p.external_tx} what="tx" /></td>
                   <td>{p.asset}</td>
                   <td className="num"><Amount value={p.amount} asset={p.asset} /></td>
                   <td>

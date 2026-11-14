@@ -6,7 +6,10 @@
 //! ChaCha20-Poly1305 with the header bytes as associated data, so the
 //! metadata cannot be swapped without detection.
 
-use crate::ecdsa::{chain_code, vault_public_key, KeyShare};
+use crate::{
+    ecdsa::{chain_code, vault_public_key, KeyShare},
+    eddsa::{self, EddsaShare},
+};
 use cggmp21::key_share::AnyKeyShare as _;
 use chacha20poly1305::{
     aead::{Aead as _, KeyInit as _},
@@ -45,9 +48,20 @@ pub struct Header {
     pub index: u16,
     pub n: u16,
     pub t: u16,
-    /// Compressed secp256k1 vault key, hex.
+    /// Vault key, hex: compressed secp256k1 (33 bytes) for `ecdsa`,
+    /// Ed25519 (32 bytes) for `eddsa`.
     pub public_key: String,
     pub chain_code: Option<String>,
+    /// `ecdsa` (CGGMP21, the default of files written before Solana) or
+    /// `eddsa` (FROST).
+    #[serde(default)]
+    pub scheme: Option<String>,
+}
+
+impl Header {
+    pub fn scheme(&self) -> &str {
+        self.scheme.as_deref().unwrap_or("ecdsa")
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -85,9 +99,55 @@ fn header_bytes(h: &Header) -> Vec<u8> {
     serde_json::to_vec(h).unwrap_or_default()
 }
 
-/// Encrypt `share` under `passphrase` into the JSON document.
+/// Encrypt a CGGMP21 `share` under `passphrase` into the JSON document.
 pub fn encrypt_share(
     share: &KeyShare,
+    passphrase: &str,
+    iterations: u32,
+) -> Result<String, StoreError> {
+    let plaintext = serde_json::to_vec(share).map_err(|e| StoreError::Malformed(e.to_string()))?;
+    encrypt_bytes(
+        "ecdsa",
+        share.i,
+        share.n(),
+        share.min_signers(),
+        &vault_public_key(share),
+        chain_code(share),
+        &plaintext,
+        passphrase,
+        iterations,
+    )
+}
+
+/// Encrypt a FROST `share` under `passphrase` into the JSON document.
+pub fn encrypt_eddsa_share(
+    share: &EddsaShare,
+    passphrase: &str,
+    iterations: u32,
+) -> Result<String, StoreError> {
+    let plaintext = serde_json::to_vec(share).map_err(|e| StoreError::Malformed(e.to_string()))?;
+    encrypt_bytes(
+        "eddsa",
+        share.index,
+        share.n,
+        share.t,
+        &eddsa::vault_public_key(share),
+        Some(share.chain_code),
+        &plaintext,
+        passphrase,
+        iterations,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encrypt_bytes(
+    scheme: &str,
+    index: u16,
+    n: u16,
+    t: u16,
+    public_key: &[u8],
+    chain_code: Option<[u8; 32]>,
+    plaintext: &[u8],
     passphrase: &str,
     iterations: u32,
 ) -> Result<String, StoreError> {
@@ -100,20 +160,20 @@ pub fn encrypt_share(
         kdf: "pbkdf2-hmac-sha256".into(),
         salt: hex::encode(salt),
         iterations,
-        index: share.i,
-        n: share.n(),
-        t: share.min_signers(),
-        public_key: hex::encode(vault_public_key(share)),
-        chain_code: chain_code(share).map(hex::encode),
+        index,
+        n,
+        t,
+        public_key: hex::encode(public_key),
+        chain_code: chain_code.map(hex::encode),
+        scheme: Some(scheme.into()),
     };
     let key = pbkdf2_sha256(passphrase.as_bytes(), &salt, iterations);
-    let plaintext = serde_json::to_vec(share).map_err(|e| StoreError::Malformed(e.to_string()))?;
     let cipher = ChaCha20Poly1305::new((&key).into());
     let ct = cipher
         .encrypt(
             Nonce::from_slice(&nonce),
             chacha20poly1305::aead::Payload {
-                msg: &plaintext,
+                msg: plaintext,
                 aad: &header_bytes(&header),
             },
         )
@@ -128,6 +188,43 @@ pub fn encrypt_share(
 
 /// Decrypt a JSON document produced by [`encrypt_share`].
 pub fn decrypt_share(doc: &str, passphrase: &str) -> Result<KeyShare, StoreError> {
+    let (header, pt) = decrypt_bytes(doc, passphrase)?;
+    if header.scheme() != "ecdsa" {
+        return Err(StoreError::Invalid(format!(
+            "share file holds a {} key, not an ecdsa one",
+            header.scheme()
+        )));
+    }
+    let share: KeyShare =
+        serde_json::from_slice(&pt).map_err(|e| StoreError::Invalid(e.to_string()))?;
+    if share.i != header.index {
+        return Err(StoreError::Invalid(
+            "header index does not match the share".into(),
+        ));
+    }
+    Ok(share)
+}
+
+/// Decrypt a JSON document produced by [`encrypt_eddsa_share`].
+pub fn decrypt_eddsa_share(doc: &str, passphrase: &str) -> Result<EddsaShare, StoreError> {
+    let (header, pt) = decrypt_bytes(doc, passphrase)?;
+    if header.scheme() != "eddsa" {
+        return Err(StoreError::Invalid(format!(
+            "share file holds a {} key, not an eddsa one",
+            header.scheme()
+        )));
+    }
+    let share: EddsaShare =
+        serde_json::from_slice(&pt).map_err(|e| StoreError::Invalid(e.to_string()))?;
+    if share.index != header.index {
+        return Err(StoreError::Invalid(
+            "header index does not match the share".into(),
+        ));
+    }
+    Ok(share)
+}
+
+fn decrypt_bytes(doc: &str, passphrase: &str) -> Result<(Header, Vec<u8>), StoreError> {
     let f: ShareFile =
         serde_json::from_str(doc).map_err(|e| StoreError::Malformed(e.to_string()))?;
     if f.header.version != 1 || f.header.kdf != "pbkdf2-hmac-sha256" {
@@ -150,14 +247,7 @@ pub fn decrypt_share(doc: &str, passphrase: &str) -> Result<KeyShare, StoreError
             },
         )
         .map_err(|_| StoreError::Decrypt)?;
-    let share: KeyShare =
-        serde_json::from_slice(&pt).map_err(|e| StoreError::Invalid(e.to_string()))?;
-    if share.i != f.header.index {
-        return Err(StoreError::Invalid(
-            "header index does not match the share".into(),
-        ));
-    }
-    Ok(share)
+    Ok((f.header, pt))
 }
 
 /// Read only the (unauthenticated until decrypted) header of a share file.
@@ -179,6 +269,23 @@ pub fn save_share(path: &Path, share: &KeyShare, passphrase: &str) -> Result<(),
 pub fn load_share(path: &Path, passphrase: &str) -> Result<KeyShare, StoreError> {
     let doc = std::fs::read_to_string(path)?;
     decrypt_share(&doc, passphrase)
+}
+
+pub fn save_eddsa_share(
+    path: &Path,
+    share: &EddsaShare,
+    passphrase: &str,
+) -> Result<(), StoreError> {
+    let doc = encrypt_eddsa_share(share, passphrase, DEFAULT_ITERATIONS)?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, doc)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+pub fn load_eddsa_share(path: &Path, passphrase: &str) -> Result<EddsaShare, StoreError> {
+    let doc = std::fs::read_to_string(path)?;
+    decrypt_eddsa_share(&doc, passphrase)
 }
 
 #[cfg(test)]

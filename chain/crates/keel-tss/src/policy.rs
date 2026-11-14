@@ -4,27 +4,63 @@
 //! (`keel_chains::policy::verify`). The outbound rows come from the node
 //! this signer trusts; the check runs on the coordinator before it
 //! announces a session and on every joiner before it takes part.
+//!
+//! One policy serves both key families: the CGGMP21 share answers for the
+//! secp256k1 chains, the FROST share for Solana; a request for a family
+//! this signer has no share of is refused.
 
 use keel_chains::policy::{verify_with_pool, OutboundRef, PoolRef, SignContext};
-use keel_tss::ecdsa::{self, KeyShare};
+use keel_tss::{
+    ecdsa::{self, KeyShare},
+    eddsa::{self, EddsaShare},
+};
 use std::time::Duration;
 
 pub struct Policy {
     rpc: String,
-    vault_pubkey: [u8; 33],
-    chain_code: [u8; 32],
+    /// (compressed vault key, chain code) of the CGGMP21 share.
+    ecdsa: Option<([u8; 33], [u8; 32])>,
+    /// (vault key, chain code) of the FROST share.
+    eddsa: Option<([u8; 32], [u8; 32])>,
 }
 
 impl Policy {
-    pub fn new(rpc: &str, share: &KeyShare) -> anyhow::Result<Self> {
-        let chain_code = ecdsa::chain_code(share).ok_or_else(|| {
-            anyhow::anyhow!("the share has no chain code; policy needs an HD share")
-        })?;
+    pub fn new(
+        rpc: &str,
+        ecdsa_share: Option<&KeyShare>,
+        eddsa_share: Option<&EddsaShare>,
+    ) -> anyhow::Result<Self> {
+        let ecdsa = match ecdsa_share {
+            Some(share) => {
+                let chain_code = ecdsa::chain_code(share).ok_or_else(|| {
+                    anyhow::anyhow!("the share has no chain code; policy needs an HD share")
+                })?;
+                Some((ecdsa::vault_public_key(share), chain_code))
+            }
+            None => None,
+        };
+        let eddsa = eddsa_share.map(|s| (eddsa::vault_public_key(s), eddsa::chain_code(s)));
+        if ecdsa.is_none() && eddsa.is_none() {
+            anyhow::bail!("policy needs at least one share");
+        }
         Ok(Self {
             rpc: rpc.trim_end_matches('/').to_string(),
-            vault_pubkey: ecdsa::vault_public_key(share),
-            chain_code,
+            ecdsa,
+            eddsa,
         })
+    }
+
+    /// The vault key and chain code answering for the context's chain.
+    fn keys_for(&self, ctx: &SignContext) -> Result<(Vec<u8>, [u8; 32]), String> {
+        if ctx.chain().is_ed25519() {
+            self.eddsa
+                .map(|(pk, cc)| (pk.to_vec(), cc))
+                .ok_or_else(|| "no eddsa (FROST) share for a Solana request".to_string())
+        } else {
+            self.ecdsa
+                .map(|(pk, cc)| (pk.to_vec(), cc))
+                .ok_or_else(|| "no ecdsa (CGGMP21) share for this request".to_string())
+        }
     }
 
     /// Refuses a request without context, or whose context does not hold.
@@ -37,21 +73,22 @@ impl Policy {
         let ctx = ctx.ok_or_else(|| {
             "signing request carries no context and a policy is configured".to_string()
         })?;
+        let (vault_pubkey, chain_code) = self.keys_for(ctx)?;
         let rows = if ctx.batch_id().is_some() {
             self.outbounds()?
         } else {
             Vec::new()
         };
         let pool = match (ctx.needs_pool(), ctx.custodian()) {
-            (true, Some(c)) => Some(self.pool(c, ctx.chain())?),
+            (true, Some(c)) => Some(self.pool(c, ctx.chain(), &vault_pubkey)?),
             _ => None,
         };
         verify_with_pool(
             ctx,
             digest,
             path,
-            &self.vault_pubkey,
-            &self.chain_code,
+            &vault_pubkey,
+            &chain_code,
             &rows,
             pool.as_ref(),
         )
@@ -60,7 +97,12 @@ impl Policy {
     /// The custody vault's active generation (`GET /v1/custody/{addr}`):
     /// the only place a sweep may send. It must be a different key from
     /// the one this signer holds, or the "sweep" would go nowhere.
-    fn pool(&self, custodian: &str, chain: keel_actions::Chain) -> Result<PoolRef, String> {
+    fn pool(
+        &self,
+        custodian: &str,
+        chain: keel_actions::Chain,
+        own_key: &[u8],
+    ) -> Result<PoolRef, String> {
         let body: serde_json::Value = ureq::get(format!("{}/v1/custody/{custodian}", self.rpc))
             .config()
             .timeout_global(Some(Duration::from_secs(10)))
@@ -80,16 +122,16 @@ impl Policy {
                 })
             })
             .ok_or_else(|| "policy rpc: no active generation for that custodian".to_string())?;
-        let hex32 = |v: &serde_json::Value| -> Option<Vec<u8>> {
+        let hexbytes = |v: &serde_json::Value| -> Option<Vec<u8>> {
             v.as_str().and_then(|s| hex::decode(s).ok())
         };
-        let pk: [u8; 33] = hex32(&active["vault"]["public_key"])
-            .and_then(|b| b.try_into().ok())
+        let pk = hexbytes(&active["vault"]["public_key"])
+            .filter(|b| b.len() == chain.key_length())
             .ok_or_else(|| "policy rpc: bad active public key".to_string())?;
-        let cc: [u8; 32] = hex32(&active["vault"]["chain_code"])
+        let cc: [u8; 32] = hexbytes(&active["vault"]["chain_code"])
             .and_then(|b| b.try_into().ok())
             .ok_or_else(|| "policy rpc: bad active chain code".to_string())?;
-        if pk == self.vault_pubkey {
+        if pk == own_key {
             return Err("the active generation is this very key; nothing to sweep to".into());
         }
         Ok(PoolRef {
@@ -115,10 +157,9 @@ impl Policy {
         let mut rows = Vec::with_capacity(list.len());
         for o in list {
             let chain = match o.get("chain").and_then(|c| c.as_str()) {
-                Some("BTC") => keel_actions::Chain::Bitcoin,
-                Some("ETH") => keel_actions::Chain::Ethereum,
-                Some("TRON") => keel_actions::Chain::Tron,
-                other => return Err(format!("policy rpc: unknown chain {other:?}")),
+                Some(s) => keel_actions::Chain::parse(s)
+                    .ok_or_else(|| format!("policy rpc: unknown chain {s:?}"))?,
+                None => return Err("policy rpc: outbound without a chain".into()),
             };
             let amount = o
                 .get("amount")
@@ -140,6 +181,11 @@ impl Policy {
                     .unwrap_or("")
                     .to_string(),
                 batch_id: o.get("batch_id").and_then(|v| v.as_u64()),
+                asset: o
+                    .get("asset")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
             });
         }
         Ok(rows)

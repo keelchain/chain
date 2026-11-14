@@ -73,7 +73,7 @@ enum Cmd {
 
 fn parse_chain(s: &str) -> anyhow::Result<Chain> {
     keel_observer::rpc::chain_from_json(s)
-        .ok_or_else(|| anyhow::anyhow!("unknown chain {s} (BTC, ETH, TRON)"))
+        .ok_or_else(|| anyhow::anyhow!("unknown chain {s} (BTC, ETH, TRON, BSC, SOL)"))
 }
 
 #[tokio::main]
@@ -90,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
             let s = LocalSigner::from_seed(&seed)?;
             println!(
                 "{}",
-                serde_json::json!({ "public_key": hex::encode(s.public_key()), "chain_code": hex::encode(s.chain_code()), "listen": listen.to_string() })
+                serde_json::json!({ "public_key": hex::encode(s.public_key()), "chain_code": hex::encode(s.chain_code()), "ed25519_public_key": hex::encode(s.ed25519_public_key()), "ed25519_chain_code": hex::encode(s.ed25519_chain_code()), "listen": listen.to_string() })
             );
             keel_observer::tss::serve_local(&seed, listen).await?;
         }
@@ -116,6 +116,16 @@ async fn main() -> anyhow::Result<()> {
                     .unwrap_or(keel_chains::Network::Regtest),
                 Chain::Ethereum => cfg
                     .ethereum
+                    .as_ref()
+                    .map(|c| c.network)
+                    .unwrap_or(keel_chains::Network::Regtest),
+                Chain::Bsc => cfg
+                    .bsc
+                    .as_ref()
+                    .map(|c| c.network)
+                    .unwrap_or(keel_chains::Network::Regtest),
+                Chain::Solana => cfg
+                    .solana
                     .as_ref()
                     .map(|c| c.network)
                     .unwrap_or(keel_chains::Network::Regtest),
@@ -146,8 +156,7 @@ async fn main() -> anyhow::Result<()> {
             let key = Config::keypair_from_env()?;
             let (pk, cc) = match (local_seed, public_key, chain_code) {
                 (Some(seed), _, _) => {
-                    let s = LocalSigner::from_seed(&hex::decode(seed.trim())?)?;
-                    (s.public_key().to_vec(), s.chain_code())
+                    LocalSigner::from_seed(&hex::decode(seed.trim())?)?.vault_key(chain)
                 }
                 (None, Some(pk), Some(cc)) => (
                     hex::decode(pk.trim())?,

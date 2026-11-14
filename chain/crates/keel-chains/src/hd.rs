@@ -9,12 +9,17 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1};
 use bitcoin::NetworkKind;
 use keel_actions::Chain;
 
-/// SLIP-44 coin index used as the first path element per chain.
+/// SLIP-44 coin index used as the first path element per chain. Every
+/// EVM chain uses Ethereum's (60): with the same vault key and the same
+/// deposit index the address is the same string on each of them.
 pub fn chain_index(chain: Chain) -> u32 {
     match chain {
         Chain::Bitcoin => 0,
-        Chain::Ethereum => 60,
+        Chain::Ethereum | Chain::Bsc => 60,
         Chain::Tron => 195,
+        // Only the path shape: Solana children come from `sol::child`,
+        // not from BIP32.
+        Chain::Solana => 501,
     }
 }
 
@@ -118,5 +123,11 @@ mod tests {
         .is_err());
         assert_eq!(deposit_path(Chain::Bitcoin, 7), vec![0, 7]);
         assert_eq!(deposit_path(Chain::Tron, (1 << 31) + 5), vec![195, 1, 5]);
+        // BSC shares Ethereum's path.
+        assert_eq!(
+            deposit_path(Chain::Bsc, 9),
+            deposit_path(Chain::Ethereum, 9)
+        );
+        assert_eq!(deposit_path(Chain::Bsc, 9), vec![60, 9]);
     }
 }

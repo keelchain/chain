@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sqlx::Row;
 
-const CHAINS: &[&str] = &["BTC", "ETH", "TRON"];
+const CHAINS: &[&str] = &["BTC", "ETH", "TRON", "BSC", "SOL"];
 
 /// `bitcoin` / `Bitcoin` / `btc` → `BTC` (the node accepts the long names).
 pub fn canon_chain(s: &str) -> Option<&'static str> {
@@ -21,6 +21,8 @@ pub fn canon_chain(s: &str) -> Option<&'static str> {
         "btc" | "bitcoin" => Some("BTC"),
         "eth" | "ethereum" => Some("ETH"),
         "tron" | "trx" => Some("TRON"),
+        "bsc" | "bnb" => Some("BSC"),
+        "sol" | "solana" => Some("SOL"),
         _ => None,
     }
 }
@@ -29,6 +31,8 @@ fn node_chain_name(c: &str) -> &'static str {
     match c {
         "BTC" => "Bitcoin",
         "ETH" => "Ethereum",
+        "BSC" => "Bsc",
+        "SOL" => "Solana",
         _ => "Tron",
     }
 }
@@ -199,7 +203,7 @@ pub async fn deposits(
     Query(q): Query<StatusQuery>,
 ) -> ApiResult {
     let chain = canon_chain(&chain)
-        .ok_or_else(|| ApiError::bad_request("chain must be BTC, ETH or TRON"))?;
+        .ok_or_else(|| ApiError::bad_request("chain must be BTC, ETH, TRON, BSC or SOL"))?;
     let paging = q.paging();
     let limit = paging.limit();
     let before = Cursor::part(&paging.cursor(1)?, 0);
@@ -210,7 +214,7 @@ pub async fn deposits(
         .map(|o| o.trim_start_matches("0x").to_ascii_lowercase());
     let rows: Vec<Value> = sqlx::query(
         "SELECT to_jsonb(x) AS j FROM (
-           SELECT key, chain, asset, owner, amount::text AS amount, status, tx_hash, external_index AS index, deposit_index, external_height, votes, height AS first_height, updated_height AS last_height, release_height, tx_id
+           SELECT key, chain, asset, owner, amount::text AS amount, status, tx_hash, external_tx, external_index AS index, deposit_index, external_height, votes, height AS first_height, updated_height AS last_height, release_height, tx_id
            FROM deposits WHERE chain = $1 AND ($2::text IS NULL OR status = $2) AND ($3::text IS NULL OR owner = $3) AND height < $4
            ORDER BY height DESC, key LIMIT $5) x",
     )
@@ -236,7 +240,8 @@ pub async fn deposits(
         .unwrap_or(Value::Null);
     let required = match chain {
         "BTC" => field_u64(&params, "confirmations_btc"),
-        "ETH" => field_u64(&params, "confirmations_eth"),
+        // BSC shares the EVM depth with Ethereum.
+        "ETH" | "BSC" => field_u64(&params, "confirmations_eth"),
         _ => field_u64(&params, "confirmations_tron"),
     };
     let live = app.node.get("/v1/vaults/deposits").await.ok().flatten();
@@ -283,7 +288,7 @@ pub async fn outbounds(State(app): State<App>, Query(q): Query<StatusQuery>) -> 
         .map(|o| o.trim_start_matches("0x").to_ascii_lowercase());
     let rows: Vec<Value> = sqlx::query(
         "SELECT to_jsonb(x) AS j FROM (
-           SELECT id, owner, asset, chain, to_addr AS \"to\", amount::text AS amount, fee_asset, fee_estimate::text AS fee, status, batch_id, tx_hash, refunded::text AS refunded,
+           SELECT id, owner, asset, chain, to_addr AS \"to\", amount::text AS amount, fee_asset, fee_estimate::text AS fee, status, batch_id, tx_hash, external_tx, refunded::text AS refunded,
                   created_height AS queued_height, confirmed_height, updated_height, tx_id
            FROM outbounds WHERE ($1::text IS NULL OR status = $1) AND ($2::text IS NULL OR owner = $2) AND id < $3 ORDER BY id DESC LIMIT $4) x",
     )
@@ -476,7 +481,11 @@ mod tests {
         assert_eq!(canon_chain("Bitcoin"), Some("BTC"));
         assert_eq!(canon_chain("eth"), Some("ETH"));
         assert_eq!(canon_chain("TRX"), Some("TRON"));
-        assert_eq!(canon_chain("sol"), None);
+        assert_eq!(canon_chain("bnb"), Some("BSC"));
+        assert_eq!(node_chain_name("BSC"), "Bsc");
+        assert_eq!(canon_chain("solana"), Some("SOL"));
+        assert_eq!(node_chain_name("SOL"), "Solana");
+        assert_eq!(canon_chain("xyz"), None);
         assert_eq!(node_chain_name("TRON"), "Tron");
     }
 

@@ -477,6 +477,22 @@ amount, external height and a **proof**:
   the registered token contract, 12 confirmations.
 - Tron: no practical light client exists, so the observation is accepted on
   quorum alone, 19 confirmations.
+- BNB Smart Chain: attestation only as well (no beacon chain to follow);
+  BEP-20 transfers from the logs and native BNB from the blocks' own
+  transactions, `confirmations_eth` (12) deep. It shares Ethereum's key
+  path, so an account's BSC address is its Ethereum address and the two
+  vaults must be registered with one key.
+- Solana: attestation only. The vault key is Ed25519, held as FROST
+  threshold shares (the secp256k1 chains use CGGMP21; the two protocols
+  run side by side in the same signer with separate ceremonies and share
+  files). Deposit addresses come from Keel's own additive derivation
+  (`child = vault + H(chain_code, vault, index)·B`), since Ed25519 has no
+  non-hardened BIP32 children; a signer adds the same scalar to its
+  shares. Deposits are the balance deltas of finalized transactions (SOL
+  and SPL tokens such as USDC); the chain records `SHA-256(signature)` as
+  the 32-byte transaction hash and the signature itself as `external_tx`
+  beside it, bound into the attestation. Depth shares
+  `confirmations_tron`.
 
 Where a light client exists a proof is mandatory. The credit happens when a
 quorum of distinct *current* observers (`observer_threshold`, a count set
@@ -492,8 +508,9 @@ into the user's `sendout_escrow` and collects the flat fee. Every 20
 blocks the chain batches queued outbounds per chain; an observer leads the
 signing of each batch (`batch_id mod signers`, with the next signer taking
 over after a timeout), Bitcoin batches become one transaction with a
-one-in-flight guard, Ethereum and Tron pay each outbound from the hot
-address. Observers report the result (`ObserveOutbound`) and the quorum
+one-in-flight guard, Ethereum, BSC, Tron and Solana pay each outbound from
+the hot address (on Solana a token payout also creates the recipient's
+associated token account when it is missing, paid by the hot address). Observers report the result (`ObserveOutbound`) and the quorum
 settles on the majority verdict and the median reported fee; the escrow
 is reconciled, overpaid fee refunded. Failure refunds in full.
 
@@ -533,7 +550,8 @@ about 8 seconds, a payout settled in 4 seconds.
 ## 10. Adding support for a new network
 
 Today the set of external chains is a closed enum in the code: Bitcoin,
-Ethereum, Tron (Solana was explicitly dropped). Adding a fourth is a
+Ethereum, Tron, BNB Smart Chain, Solana (added 2026-11-11 with its own
+signing family). Adding one is a
 **software change** (chain adapter in `keel-chains`, a light client if the
 chain has one, observer support for watching and broadcasting), shipped
 through a `SoftwareUpgrade` proposal that names a version and a height at

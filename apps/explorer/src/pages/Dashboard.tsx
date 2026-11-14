@@ -63,8 +63,8 @@ interface ClientRecord {
   usage_prices: { address_keel: string; outbound_keel: string };
 }
 
-const CHAINS = ['Bitcoin', 'Ethereum', 'Tron'] as const;
-const CHAIN_CODE: Record<string, string> = { Bitcoin: 'BTC', Ethereum: 'ETH', Tron: 'TRON' };
+const CHAINS = ['Bitcoin', 'Ethereum', 'Tron', 'Bsc', 'Solana'] as const;
+const CHAIN_CODE: Record<string, string> = { Bitcoin: 'BTC', Ethereum: 'ETH', Tron: 'TRON', Bsc: 'BSC', Solana: 'SOL' };
 
 /** Decimal text to smallest units for `asset`, or null when malformed. */
 export function toUnits(text: string, decimals: number): bigint | null {
@@ -210,7 +210,7 @@ function VaultsSection({ w, p }: { w: WalletValue; p: ReturnType<typeof usePartn
               <span>
                 {chainName(r.chain)} → generation {r.gen} at height {formatInt(r.activate_at)} {r.sweep ? '(sweep)' : '(no sweep)'} · signer {r.signer_url}
               </span>
-              <button type="button" className="btn small" disabled={act.busy} onClick={() => void act.run({ CancelCustodyRotation: { chain: r.chain === 'BTC' ? 'Bitcoin' : r.chain === 'ETH' ? 'Ethereum' : 'Tron' } }, 'Cancel the scheduled rotation')}>
+              <button type="button" className="btn small" disabled={act.busy} onClick={() => void act.run({ CancelCustodyRotation: { chain: r.chain === 'BTC' ? 'Bitcoin' : r.chain === 'ETH' ? 'Ethereum' : r.chain === 'BSC' ? 'Bsc' : r.chain === 'SOL' ? 'Solana' : 'Tron' } }, 'Cancel the scheduled rotation')}>
                 Cancel
               </button>
             </div>

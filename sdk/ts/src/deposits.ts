@@ -10,11 +10,12 @@
  * each incoming transaction is at. They run in a browser (the wallet popup,
  * the explorer) as well as in Node; both APIs answer cross-origin requests.
  *
- * Ethereum has no free public API that works without a key, so it is listed
- * with its explorer only and its incoming transactions are not looked up.
+ * Ethereum and BSC have no free public API that works without a key, so they
+ * are listed with their explorers only and their incoming transactions are not
+ * looked up. BSC shares Ethereum's address: one `0x…` string serves both.
  */
 
-export type ExternalChain = "BTC" | "ETH" | "TRON";
+export type ExternalChain = "BTC" | "ETH" | "TRON" | "BSC" | "SOL";
 
 export interface ExternalNetwork {
   chain: ExternalChain;
@@ -24,32 +25,42 @@ export interface ExternalNetwork {
   api: string | null;
   /** Block explorer base for links. */
   explorer: string;
+  /** Solana cluster appended to explorer links (`?cluster=devnet`). */
+  cluster?: string;
 }
 
 /** The external networks a Keel network bridges. Anything that is not
- *  `mainnet` is the testnet set (Bitcoin signet, Tron Nile, Ethereum Sepolia). */
+ *  `mainnet` is the testnet set (Bitcoin signet, Tron Nile, Ethereum Sepolia, BSC testnet). */
 export function externalNetworks(keelNetwork: string): Record<ExternalChain, ExternalNetwork> {
   if (keelNetwork === "mainnet") {
     return {
       BTC: { chain: "BTC", name: "Bitcoin", api: "https://mempool.space/api", explorer: "https://mempool.space" },
       ETH: { chain: "ETH", name: "Ethereum", api: null, explorer: "https://etherscan.io" },
       TRON: { chain: "TRON", name: "Tron", api: "https://api.trongrid.io", explorer: "https://tronscan.org/#" },
+      BSC: { chain: "BSC", name: "BNB Smart Chain", api: null, explorer: "https://bscscan.com" },
+      SOL: { chain: "SOL", name: "Solana", api: null, explorer: "https://solscan.io" },
     };
   }
   return {
     BTC: { chain: "BTC", name: "Bitcoin signet", api: "https://mempool.space/signet/api", explorer: "https://mempool.space/signet" },
     ETH: { chain: "ETH", name: "Ethereum Sepolia", api: null, explorer: "https://sepolia.etherscan.io" },
     TRON: { chain: "TRON", name: "Tron Nile", api: "https://nile.trongrid.io", explorer: "https://nile.tronscan.org/#" },
+    BSC: { chain: "BSC", name: "BNB Smart Chain testnet", api: null, explorer: "https://testnet.bscscan.com" },
+    SOL: { chain: "SOL", name: "Solana devnet", api: null, explorer: "https://solscan.io", cluster: "devnet" },
   };
 }
 
 export function externalTxUrl(net: ExternalNetwork, txHash: string): string {
-  const hash = net.chain === "ETH" ? (txHash.startsWith("0x") ? txHash : `0x${txHash}`) : txHash.replace(/^0x/, "");
-  return net.chain === "TRON" ? `${net.explorer}/transaction/${hash}` : `${net.explorer}/tx/${hash}`;
+  const evm = net.chain === "ETH" || net.chain === "BSC";
+  const hash = evm ? (txHash.startsWith("0x") ? txHash : `0x${txHash}`) : txHash.replace(/^0x/, "");
+  const suffix = net.cluster ? `?cluster=${net.cluster}` : "";
+  return net.chain === "TRON" ? `${net.explorer}/transaction/${hash}` : `${net.explorer}/tx/${hash}${suffix}`;
 }
 
 export function externalAddressUrl(net: ExternalNetwork, address: string): string {
-  return `${net.explorer}/address/${address}`;
+  const suffix = net.cluster ? `?cluster=${net.cluster}` : "";
+  const path = net.chain === "SOL" ? "account" : "address";
+  return `${net.explorer}/${path}/${address}${suffix}`;
 }
 
 /** An incoming transaction to a deposit address, as the external chain sees it. */
@@ -225,6 +236,8 @@ async function withTronConfirmations(net: ExternalNetwork, txs: IncomingTx[], no
 export interface ChainDepositRow {
   chain: string;
   tx_hash: string;
+  /** The native id when `tx_hash` is only its hash (Solana: the signature). */
+  external_tx?: string | null;
   asset: string;
   amount: string | number;
   status: string;
@@ -244,6 +257,8 @@ export type DepositStage =
 export interface DepositProgress {
   chain: string;
   tx_hash: string;
+  /** What to show and link: the native id when the chain has one, else the hash. */
+  external_tx: string | null;
   asset: string;
   amount: string;
   stage: DepositStage;
@@ -271,6 +286,7 @@ export function depositProgress(incoming: IncomingTx[] | null, chainRows: ChainD
     byKey.set(key(r.chain, r.tx_hash), {
       chain: r.chain,
       tx_hash: r.tx_hash,
+      external_tx: r.external_tx ?? null,
       asset: r.asset,
       amount: String(r.amount),
       stage,
@@ -293,6 +309,7 @@ export function depositProgress(incoming: IncomingTx[] | null, chainRows: ChainD
     byKey.set(k, {
       chain: t.chain,
       tx_hash: t.tx_hash,
+      external_tx: null,
       asset: t.asset,
       amount: t.amount,
       stage,

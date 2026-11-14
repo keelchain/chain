@@ -97,19 +97,23 @@ export function AssetLink({ asset }: { asset: string }) {
   return <Link to={href(`/assets/${encodeURIComponent(asset)}`)}>{asset}</Link>;
 }
 
-export function ExternalLink({ chain, value, what }: { chain: string; value: string; what: 'tx' | 'address' }) {
+/** `id` is the transaction id as the external chain writes it when `value`
+ *  (the chain's 32-byte hash) is only its hash; it is what is shown and linked. */
+export function ExternalLink({ chain, value, what, id }: { chain: string; value: string; what: 'tx' | 'address'; id?: string | null }) {
   const { network } = useNetwork();
-  const url = what === 'tx' ? externalTxUrl(chain, value, network.id) : externalAddressUrl(chain, value, network.id);
+  const shown = id ?? value;
+  const url = what === 'tx' ? externalTxUrl(chain, shown, network.id) : externalAddressUrl(chain, shown, network.id);
+  const value_ = shown;
   return (
-    <span className="hex" title={value}>
+    <span className="hex" title={value_}>
       {url ? (
         <a href={url} target="_blank" rel="noreferrer noopener">
-          {truncateHex(value, 10, 8)} ↗
+          {truncateHex(value_, 10, 8)} ↗
         </a>
       ) : (
-        <span>{truncateHex(value, 10, 8)}</span>
+        <span>{truncateHex(value_, 10, 8)}</span>
       )}
-      <CopyButton text={value} />
+      <CopyButton text={value_} />
     </span>
   );
 }

@@ -46,7 +46,7 @@ enum Cmd {
     Status,
     /// Account nonce, budget and balances.
     Account { address: String },
-    /// An account's deposit address on an external chain (BTC, ETH, TRON),
+    /// An account's deposit address on an external chain (BTC, ETH, TRON, BSC, SOL),
     /// if it has requested one (`send deposit-address`).
     DepositAddress { chain: String, address: String },
     /// Order book levels.
@@ -83,7 +83,7 @@ enum Cmd {
 
 #[derive(Subcommand, Debug, Clone)]
 enum ActionCmd {
-    /// Ask the chain for a deposit address on an external chain (BTC, ETH, TRON).
+    /// Ask the chain for a deposit address on an external chain (BTC, ETH, TRON, BSC, SOL).
     DepositAddress {
         chain: String,
     },

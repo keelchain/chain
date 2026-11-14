@@ -5,6 +5,41 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: Solana (`Chain::Solana`, assets `SOL.SOL` with 9 decimals and
+  `SOL.USDC` with 6). The vault key is Ed25519, 32 bytes, and the signer
+  gains a second threshold protocol beside CGGMP21: FROST
+  (`keel-tss keygen --scheme eddsa`, a second share file, one `serve`
+  for both). Deposit addresses come from an additive child derivation
+  (`keel_chains::sol`) that a FROST signer applies to its shares. The
+  observer watches finalized transactions' balance deltas, pays out from
+  the hot address with `TransferChecked` and idempotent associated-account
+  creation, and consolidates deposit indexes with two-signer messages;
+  the signing policy parses the message and binds it to the batch's rows
+  or to the hot addresses. Attestation only; depth shares
+  `confirmations_tron`. SDK, wallet, explorer (solscan), indexer, the
+  ceremony (both keys) and the deploy (`SOLANA_RPC_URL`,
+  `SOLANA_USDC_MINT`) follow. The testnet bridges Solana devnet.
+- Chain: deposit and outbound observations carry `external_tx`, the
+  transaction id as the external chain writes it when the 32-byte
+  `tx_hash` is only its hash (Solana: the base58 signature; `null`
+  elsewhere). It is part of the attestation the observers vote on, kept
+  on the outbound, emitted in `DepositObserved` and `OutboundConfirmed`,
+  served by `/v1/vaults/deposits` and `/v1/vaults/outbounds`, stored by
+  the indexer, and used by the explorer and wallet for Solana links.
+  Snapshot schema 7 (schema 6 migrates); the action encoding changed, so
+  the next deploy resets the testnet.
+- Chain: BNB Smart Chain (`Chain::Bsc`, assets `BSC.BNB` and `BSC.USDT`,
+  18 decimals each). BSC shares Ethereum's key path and deposit indexes:
+  an account's BSC deposit address is its Ethereum address, asking on
+  either chain assigns both, and a BSC vault must be registered with the
+  Ethereum vault's key. Attestation only (no light client); the depth is
+  `confirmations_eth`. Observer: `[bsc]` config (the `[ethereum]` shape),
+  native BNB deposits read from full blocks, payouts and custody moves
+  through the EVM path keyed by chain id (56/97); the signing policy reads
+  the chain from the transaction's chain id. SDK, wallet (Receive button,
+  balances), explorer (bscscan links), indexer and the deploy
+  (`BSC_RPC_URL`, `BSC_USDT_CONTRACT`, the BSC vault registered with the
+  others) follow. The testnet bridges the BSC testnet (chain id 97).
 - 0.2.0 (activation by `SoftwareUpgrade { "0.2.0", H }`; fresh networks
   seed it at genesis): the pooled house-maker inventory (`DepositLiquidity`,
   `WithdrawLiquidity`, `liquidity.*` parameters, `GET /v1/liquidity`,

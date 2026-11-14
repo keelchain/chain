@@ -15,7 +15,7 @@ on:
         default: "1"
       chains:
         description: Chains to register the key for (comma separated)
-        default: "BTC,TRON"
+        default: "BTC,TRON,BSC,SOL"
 
 jobs:
   keygen:
@@ -67,10 +67,11 @@ jobs:
           keys = {f: json.load(open(f)) for f in sorted(glob.glob("keys/keygen-*.json"))}
           pks = {v["public_key"] for v in keys.values()}
           ccs = {v["chain_code"] for v in keys.values()}
+          eds = {(v.get("ed25519_public_key"), v.get("ed25519_chain_code")) for v in keys.values()}
           print(json.dumps(keys, indent=1))
-          if len(pks) != 1 or len(ccs) != 1:
-              sys.exit("hosts disagree on the vault key; the ceremony failed")
-          print("vault key", pks.pop())
+          if len(pks) != 1 or len(ccs) != 1 or len(eds) != 1:
+              sys.exit("hosts disagree on the vault keys; the ceremony failed")
+          print("vault key", pks.pop(), "solana key", eds.pop()[0])
           PY
       - name: SSH key
         env:

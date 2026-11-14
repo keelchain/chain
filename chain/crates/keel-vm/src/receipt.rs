@@ -168,6 +168,9 @@ pub enum Event {
         chain: String,
         tx_hash: String,
         votes: u32,
+        /// The native transaction id when `tx_hash` is only its hash
+        /// (Solana: the base58 signature).
+        external_tx: Option<String>,
     },
     DepositCredited {
         owner: Address,
@@ -188,6 +191,7 @@ pub enum Event {
     OutboundConfirmed {
         outbound_id: u64,
         tx_hash: String,
+        external_tx: Option<String>,
     },
     VaultRegistered {
         chain: String,

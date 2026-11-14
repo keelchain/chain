@@ -20,7 +20,7 @@
 //! chain maps assets to contracts; a wrong contract simply fails on the
 //! target chain), and expirations.
 
-use crate::{address, btc, eth::Eip1559Tx, hd, tron, Network};
+use crate::{address, btc, eth::Eip1559Tx, hd, sol, tron, Network};
 use bitcoin::{
     consensus, hashes::Hash as _, sighash::EcdsaSighashType, sighash::SighashCache, Amount,
     Transaction,
@@ -134,13 +134,37 @@ pub enum SignContext {
         index: u64,
         raw_data: String,
     },
+    /// A Solana payout: the legacy message (hex) paid by the hot address,
+    /// and the SPL mint (base58) of every token asset the batch pays. The
+    /// signer signs the message bytes; `digest` is their SHA-256.
+    Sol {
+        batch_id: u64,
+        message: String,
+        #[serde(default)]
+        mints: Vec<(String, String)>,
+    },
+    /// Hot address of a draining generation to the active generation's.
+    SolSweep {
+        custodian: String,
+        from_gen: u64,
+        message: String,
+    },
+    /// Deposit index `index` to a hot address (the active generation's
+    /// when `sweep`), paid by this key's own hot address.
+    SolConsolidate {
+        custodian: String,
+        index: u64,
+        sweep: bool,
+        message: String,
+    },
 }
 
 /// The active generation of a custody vault, as the signer fetches it from
 /// the chain (`GET /v1/custody/{custodian}`): where a sweep may send.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PoolRef {
-    pub active_pubkey: [u8; 33],
+    /// 33 bytes (secp256k1) or 32 (Ed25519), as registered.
+    pub active_pubkey: Vec<u8>,
     pub active_chain_code: [u8; 32],
 }
 
@@ -155,22 +179,38 @@ impl SignContext {
         match self {
             SignContext::Btc { batch_id, .. }
             | SignContext::Eth { batch_id, .. }
-            | SignContext::Tron { batch_id, .. } => Some(*batch_id),
+            | SignContext::Tron { batch_id, .. }
+            | SignContext::Sol { batch_id, .. } => Some(*batch_id),
             _ => None,
         }
     }
 
+    /// The EVM contexts serve Ethereum and BSC alike; the chain id they
+    /// carry (bound into the signed digest) says which.
     pub fn chain(&self) -> Chain {
         match self {
             SignContext::Btc { .. } | SignContext::BtcSweep { .. } => Chain::Bitcoin,
-            SignContext::Eth { .. }
-            | SignContext::EthSweep { .. }
-            | SignContext::EthConsolidate { .. }
-            | SignContext::EthGasFund { .. } => Chain::Ethereum,
+            SignContext::Eth { chain_id, .. }
+            | SignContext::EthSweep { chain_id, .. }
+            | SignContext::EthConsolidate { chain_id, .. }
+            | SignContext::EthGasFund { chain_id, .. } => crate::evm_chain_of_id(*chain_id),
             SignContext::Tron { .. }
             | SignContext::TronSweep { .. }
             | SignContext::TronConsolidate { .. }
             | SignContext::TronGasFund { .. } => Chain::Tron,
+            SignContext::Sol { .. }
+            | SignContext::SolSweep { .. }
+            | SignContext::SolConsolidate { .. } => Chain::Solana,
+        }
+    }
+
+    /// The message bytes an Ed25519 context signs (none for ECDSA).
+    pub fn message(&self) -> Option<&str> {
+        match self {
+            SignContext::Sol { message, .. }
+            | SignContext::SolSweep { message, .. }
+            | SignContext::SolConsolidate { message, .. } => Some(message),
+            _ => None,
         }
     }
 
@@ -183,7 +223,9 @@ impl SignContext {
             | SignContext::EthGasFund { custodian, .. }
             | SignContext::TronSweep { custodian, .. }
             | SignContext::TronConsolidate { custodian, .. }
-            | SignContext::TronGasFund { custodian, .. } => Some(custodian),
+            | SignContext::TronGasFund { custodian, .. }
+            | SignContext::SolSweep { custodian, .. }
+            | SignContext::SolConsolidate { custodian, .. } => Some(custodian),
             _ => None,
         }
     }
@@ -196,8 +238,10 @@ impl SignContext {
             SignContext::BtcSweep { .. }
                 | SignContext::EthSweep { .. }
                 | SignContext::TronSweep { .. }
+                | SignContext::SolSweep { .. }
                 | SignContext::EthConsolidate { sweep: true, .. }
                 | SignContext::TronConsolidate { sweep: true, .. }
+                | SignContext::SolConsolidate { sweep: true, .. }
         )
     }
 }
@@ -211,6 +255,10 @@ pub struct OutboundRef {
     pub amount: u128,
     pub status: String,
     pub batch_id: Option<u64>,
+    /// The asset paid (`SOL.USDC`); Solana needs it to tell a lamport
+    /// transfer from a token transfer. Empty when unknown.
+    #[serde(default)]
+    pub asset: String,
 }
 
 fn open_rows<'a>(
@@ -246,7 +294,7 @@ pub fn verify(
     ctx: &SignContext,
     digest: &[u8; 32],
     path: &[u32],
-    vault_pubkey: &[u8; 33],
+    vault_pubkey: &[u8],
     chain_code: &[u8; 32],
     rows: &[OutboundRef],
 ) -> Result<(), String> {
@@ -261,17 +309,22 @@ pub fn verify_with_pool(
     ctx: &SignContext,
     digest: &[u8; 32],
     path: &[u32],
-    vault_pubkey: &[u8; 33],
+    vault_pubkey: &[u8],
     chain_code: &[u8; 32],
     rows: &[OutboundRef],
     pool: Option<&PoolRef>,
 ) -> Result<(), String> {
+    if ctx.chain().is_ed25519() {
+        return verify_solana(ctx, digest, path, vault_pubkey, chain_code, rows, pool);
+    }
     if ctx.batch_id().is_some() {
         return verify_batch(ctx, digest, path, vault_pubkey, chain_code, rows);
     }
     if ctx.needs_pool() && pool.is_none() {
         return Err("sweep needs the pool's active generation".into());
     }
+    let vault_pubkey = address::secp_key(vault_pubkey).map_err(|e| e.to_string())?;
+    let vault_pubkey = &vault_pubkey;
     let key = hd::child_pubkey(vault_pubkey, chain_code, path)
         .map_err(|e| format!("signing path: {e}"))?
         .public_key;
@@ -279,13 +332,12 @@ pub fn verify_with_pool(
         .map_err(|e| e.to_string())?
         .public_key;
     let active_hot = |p: &PoolRef| -> Result<[u8; 33], String> {
-        Ok(hd::child_pubkey(
-            &p.active_pubkey,
-            &p.active_chain_code,
-            &hd::deposit_path(ctx.chain(), 0),
+        let pk = address::secp_key(&p.active_pubkey).map_err(|e| e.to_string())?;
+        Ok(
+            hd::child_pubkey(&pk, &p.active_chain_code, &hd::deposit_path(ctx.chain(), 0))
+                .map_err(|e| e.to_string())?
+                .public_key,
         )
-        .map_err(|e| e.to_string())?
-        .public_key)
     };
     match ctx {
         SignContext::BtcSweep {
@@ -411,7 +463,7 @@ pub fn verify_with_pool(
             let child = hd::child_pubkey(
                 vault_pubkey,
                 chain_code,
-                &hd::deposit_path(Chain::Ethereum, *index),
+                &hd::deposit_path(ctx.chain(), *index),
             )
             .map_err(|e| e.to_string())?
             .public_key;
@@ -572,16 +624,222 @@ pub fn tron_transfer_parts(decoded: &tron::Raw) -> Result<(Vec<u8>, [u8; 21], u1
     }
 }
 
+/// Solana: the message's transfers, read back from its bytes, must be
+/// exactly what the context allows. Every message is paid by the vault's
+/// hot address; a payout pays the open rows of its batch (lamports to the
+/// recipient, tokens to the recipient's associated account of the asset's
+/// mint), a sweep moves the hot address to the active generation's, a
+/// consolidation moves a deposit index to a hot address. The signing path
+/// must derive one of the message's signers.
+fn verify_solana(
+    ctx: &SignContext,
+    digest: &[u8; 32],
+    path: &[u32],
+    vault_pubkey: &[u8],
+    chain_code: &[u8; 32],
+    rows: &[OutboundRef],
+    pool: Option<&PoolRef>,
+) -> Result<(), String> {
+    let message = ctx.message().ok_or("not a Solana context")?;
+    let bytes = hex::decode(message).map_err(|e| format!("message: {e}"))?;
+    if keel_crypto_sha256(&bytes) != *digest {
+        return Err("digest is not the hash of the described message".into());
+    }
+    let msg = sol::Message::deserialize(&bytes).map_err(|e| format!("message: {e}"))?;
+    let vault = address::ed25519_key(vault_pubkey).map_err(|e| e.to_string())?;
+    let key =
+        sol::child_pubkey(&vault, chain_code, path).map_err(|e| format!("signing path: {e}"))?;
+    let own_hot = sol::child_pubkey(&vault, chain_code, &hd::deposit_path(Chain::Solana, 0))
+        .map_err(|e| e.to_string())?;
+    if !msg.signers().contains(&key) {
+        return Err("the signing path does not derive a signer of the message".into());
+    }
+    if msg.fee_payer() != Some(&own_hot) {
+        return Err("the message is not paid by the vault's hot address".into());
+    }
+    let transfers = msg.transfers().map_err(|e| e.to_string())?;
+    let ata = |owner: &[u8; 32], mint: &[u8; 32]| -> Result<[u8; 32], String> {
+        sol::associated_token_account(owner, mint).map_err(|e| e.to_string())
+    };
+    match ctx {
+        SignContext::Sol { mints, .. } => {
+            let rows = open_rows(rows, ctx)?;
+            let batch = ctx.batch_id().unwrap_or(0);
+            let mint_of = |asset: &str| -> Result<[u8; 32], String> {
+                let (_, m) = mints
+                    .iter()
+                    .find(|(a, _)| a == asset)
+                    .ok_or_else(|| format!("no mint for {asset} in the context"))?;
+                sol::decode(m).map_err(|e| format!("mint: {e}"))
+            };
+            let recipients: Vec<[u8; 32]> = rows
+                .iter()
+                .map(|r| sol::decode(&r.to).map_err(|e| format!("outbound {}: {e}", r.id)))
+                .collect::<Result<_, _>>()?;
+            let mut matched = vec![false; rows.len()];
+            for t in &transfers {
+                match t {
+                    sol::Transfer::Lamports { from, to, lamports } => {
+                        if *from != own_hot {
+                            return Err("lamports do not leave the hot address".into());
+                        }
+                        let hit = rows.iter().enumerate().find(|(j, r)| {
+                            !matched[*j]
+                                && r.asset == "SOL.SOL"
+                                && r.amount == *lamports as u128
+                                && recipients[*j] == *to
+                        });
+                        match hit {
+                            Some((j, _)) => matched[j] = true,
+                            None => {
+                                return Err(format!(
+                                    "transfer of {lamports} lamports pays nothing in batch {batch}"
+                                ))
+                            }
+                        }
+                    }
+                    sol::Transfer::Token {
+                        source,
+                        mint,
+                        destination,
+                        owner,
+                        amount,
+                        ..
+                    } => {
+                        if *owner != own_hot || *source != ata(&own_hot, mint)? {
+                            return Err("tokens do not leave the hot address's account".into());
+                        }
+                        let mut hit = None;
+                        for (j, r) in rows.iter().enumerate() {
+                            if matched[j] || r.asset == "SOL.SOL" || r.amount != *amount as u128 {
+                                continue;
+                            }
+                            if mint_of(&r.asset)? == *mint
+                                && ata(&recipients[j], mint)? == *destination
+                            {
+                                hit = Some(j);
+                                break;
+                            }
+                        }
+                        match hit {
+                            Some(j) => matched[j] = true,
+                            None => {
+                                return Err(format!(
+                                    "token transfer of {amount} pays nothing in batch {batch}"
+                                ))
+                            }
+                        }
+                    }
+                    sol::Transfer::CreateAccount { payer, owner, mint } => {
+                        if *payer != own_hot {
+                            return Err("account creation is paid by the hot address only".into());
+                        }
+                        let ok = rows.iter().enumerate().any(|(j, r)| {
+                            recipients[j] == *owner
+                                && r.asset != "SOL.SOL"
+                                && mint_of(&r.asset).ok() == Some(*mint)
+                        });
+                        if !ok {
+                            return Err("account created for someone the batch does not pay".into());
+                        }
+                    }
+                }
+            }
+            if let Some(j) = matched.iter().position(|m| !m) {
+                return Err(format!("outbound {} of the batch is not paid", rows[j].id));
+            }
+            Ok(())
+        }
+        SignContext::SolSweep { .. } | SignContext::SolConsolidate { .. } => {
+            if ctx.needs_pool() && pool.is_none() {
+                return Err("sweep needs the pool's active generation".into());
+            }
+            let target = match (ctx.needs_pool(), pool) {
+                (true, Some(p)) => {
+                    let active =
+                        address::ed25519_key(&p.active_pubkey).map_err(|e| e.to_string())?;
+                    sol::child_pubkey(
+                        &active,
+                        &p.active_chain_code,
+                        &hd::deposit_path(Chain::Solana, 0),
+                    )
+                    .map_err(|e| e.to_string())?
+                }
+                _ => own_hot,
+            };
+            let source = match ctx {
+                SignContext::SolConsolidate { index, .. } => {
+                    sol::child_pubkey(&vault, chain_code, &hd::deposit_path(Chain::Solana, *index))
+                        .map_err(|e| e.to_string())?
+                }
+                _ => own_hot,
+            };
+            if key != own_hot && key != source {
+                return Err(
+                    "the signing path is neither the hot address nor the moved index".into(),
+                );
+            }
+            if transfers.is_empty() {
+                return Err("the message moves nothing".into());
+            }
+            for t in &transfers {
+                match t {
+                    sol::Transfer::Lamports { from, to, .. } => {
+                        if *from != source || *to != target {
+                            return Err(
+                                "lamports must move from the index to the hot address".into()
+                            );
+                        }
+                    }
+                    sol::Transfer::Token {
+                        source: src,
+                        mint,
+                        destination,
+                        owner,
+                        ..
+                    } => {
+                        if *owner != source
+                            || *src != ata(&source, mint)?
+                            || *destination != ata(&target, mint)?
+                        {
+                            return Err(
+                                "tokens must move from the index's account to the hot address's"
+                                    .into(),
+                            );
+                        }
+                    }
+                    sol::Transfer::CreateAccount { payer, owner, .. } => {
+                        if *payer != own_hot || *owner != target {
+                            return Err(
+                                "only the target hot address's token account may be created".into(),
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        _ => Err("unexpected context".into()),
+    }
+}
+
+fn keel_crypto_sha256(bytes: &[u8]) -> [u8; 32] {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(bytes).into()
+}
+
 fn verify_batch(
     ctx: &SignContext,
     digest: &[u8; 32],
     path: &[u32],
-    vault_pubkey: &[u8; 33],
+    vault_pubkey: &[u8],
     chain_code: &[u8; 32],
     rows: &[OutboundRef],
 ) -> Result<(), String> {
     let rows = open_rows(rows, ctx)?;
     let batch = ctx.batch_id().unwrap_or(0);
+    let vault_pubkey = address::secp_key(vault_pubkey).map_err(|e| e.to_string())?;
+    let vault_pubkey = &vault_pubkey;
     let key = hd::child_pubkey(vault_pubkey, chain_code, path)
         .map_err(|e| format!("signing path: {e}"))?
         .public_key;
@@ -834,7 +1092,114 @@ mod tests {
             amount,
             status: "Batched".into(),
             batch_id: Some(batch),
+            asset: String::new(),
         }
+    }
+
+    fn sol_row(id: u64, to: &[u8; 32], asset: &str, amount: u128, batch: u64) -> OutboundRef {
+        OutboundRef {
+            id,
+            chain: Chain::Solana,
+            to: sol::address(to),
+            amount,
+            status: "Batched".into(),
+            batch_id: Some(batch),
+            asset: asset.into(),
+        }
+    }
+
+    /// Solana: a payout message is bound to its batch's rows, a
+    /// consolidation to the index and the hot address, nothing else signs.
+    #[test]
+    fn solana_messages_are_bound_to_rows_and_hot_addresses() {
+        use curve25519_dalek::scalar::Scalar;
+        let x = Scalar::from_bytes_mod_order([11u8; 32]);
+        let vault = sol::pubkey_of_scalar(&x);
+        let cc = [5u8; 32];
+        let hot_path = hd::deposit_path(Chain::Solana, 0);
+        let hot = sol::child_pubkey(&vault, &cc, &hot_path).unwrap();
+        let user = sol::pubkey_of_scalar(&Scalar::from_bytes_mod_order([12u8; 32]));
+        let mint = sol::decode("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU").unwrap();
+        let src = sol::associated_token_account(&hot, &mint).unwrap();
+        let dst = sol::associated_token_account(&user, &mint).unwrap();
+        let ixs = vec![
+            sol::transfer_lamports(&hot, &user, 1_000),
+            sol::create_associated_token_account(&hot, &user, &mint).unwrap(),
+            sol::transfer_checked(&src, &mint, &dst, &hot, 2_500_000, 6),
+        ];
+        let msg = sol::build_message(&hot, &ixs, [8u8; 32])
+            .unwrap()
+            .serialize();
+        let digest = keel_crypto_sha256(&msg);
+        let ctx = SignContext::Sol {
+            batch_id: 4,
+            message: hex::encode(&msg),
+            mints: vec![("SOL.USDC".into(), sol::address(&mint))],
+        };
+        assert_eq!(ctx.chain(), Chain::Solana);
+        let rows = vec![
+            sol_row(1, &user, "SOL.SOL", 1_000, 4),
+            sol_row(2, &user, "SOL.USDC", 2_500_000, 4),
+        ];
+        verify(&ctx, &digest, &hot_path, &vault, &cc, &rows).unwrap();
+        // A row the message does not pay, a wrong amount, a wrong digest.
+        let mut more = rows.clone();
+        more.push(sol_row(3, &user, "SOL.SOL", 7, 4));
+        assert!(verify(&ctx, &digest, &hot_path, &vault, &cc, &more).is_err());
+        let wrong = vec![sol_row(1, &user, "SOL.SOL", 999, 4), rows[1].clone()];
+        assert!(verify(&ctx, &digest, &hot_path, &vault, &cc, &wrong).is_err());
+        assert!(verify(&ctx, &[0u8; 32], &hot_path, &vault, &cc, &rows).is_err());
+        // The user's own path does not sign a payout.
+        let user_path = hd::deposit_path(Chain::Solana, 3);
+        assert!(verify(&ctx, &digest, &user_path, &vault, &cc, &rows).is_err());
+        // A 33-byte key is not a Solana vault.
+        assert!(verify(&ctx, &digest, &hot_path, &VAULT, &cc, &rows).is_err());
+
+        // Consolidation of index 3 into the hot address, paid by the hot
+        // address: both paths sign; the lamports go to the hot address.
+        let idx = sol::child_pubkey(&vault, &cc, &user_path).unwrap();
+        let cmsg = sol::build_message(&hot, &[sol::transfer_lamports(&idx, &hot, 500)], [8u8; 32])
+            .unwrap()
+            .serialize();
+        let cdigest = keel_crypto_sha256(&cmsg);
+        let cctx = SignContext::SolConsolidate {
+            custodian: "c".into(),
+            index: 3,
+            sweep: false,
+            message: hex::encode(&cmsg),
+        };
+        verify_with_pool(&cctx, &cdigest, &user_path, &vault, &cc, &[], None).unwrap();
+        verify_with_pool(&cctx, &cdigest, &hot_path, &vault, &cc, &[], None).unwrap();
+        // The same message under the wrong index is refused.
+        let wrong_ctx = SignContext::SolConsolidate {
+            custodian: "c".into(),
+            index: 4,
+            sweep: false,
+            message: hex::encode(&cmsg),
+        };
+        assert!(
+            verify_with_pool(&wrong_ctx, &cdigest, &user_path, &vault, &cc, &[], None).is_err()
+        );
+        // Paying anyone but the hot address is refused.
+        let bad = sol::build_message(&hot, &[sol::transfer_lamports(&idx, &user, 500)], [8u8; 32])
+            .unwrap()
+            .serialize();
+        let bctx = SignContext::SolConsolidate {
+            custodian: "c".into(),
+            index: 3,
+            sweep: false,
+            message: hex::encode(&bad),
+        };
+        assert!(verify_with_pool(
+            &bctx,
+            &keel_crypto_sha256(&bad),
+            &user_path,
+            &vault,
+            &cc,
+            &[],
+            None
+        )
+        .is_err());
     }
 
     fn btc_case() -> (
@@ -994,6 +1359,38 @@ mod tests {
         verify(&ctx, &tx.signing_hash(), &path, &VAULT, &CC, &rows).unwrap();
     }
 
+    /// The same EVM context pays a BSC batch when its chain id is BSC's:
+    /// the outbound rows it may pay are the BSC ones, never Ethereum's.
+    #[test]
+    fn bsc_payout_is_read_from_the_chain_id() {
+        let to = child(Chain::Bsc, 4);
+        let to_addr = address::eth_address(&to).unwrap();
+        let to20 = address::eth_decode(&to_addr).unwrap();
+        let tx = Eip1559Tx::native_transfer(97, 3, to20, 1_000, 30, 2);
+        let ctx = SignContext::Eth {
+            batch_id: 2,
+            chain_id: tx.chain_id,
+            nonce: tx.nonce,
+            max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
+            max_fee_per_gas: tx.max_fee_per_gas,
+            gas_limit: tx.gas_limit,
+            to: to_addr.clone(),
+            value: tx.value,
+            data: String::new(),
+        };
+        assert_eq!(ctx.chain(), Chain::Bsc);
+        // Same key path as Ethereum: the hot address is one address.
+        let path = hd::deposit_path(Chain::Bsc, 0);
+        assert_eq!(path, hd::deposit_path(Chain::Ethereum, 0));
+        let rows = vec![row(1, Chain::Bsc, &to_addr, 1_000, 2)];
+        verify(&ctx, &tx.signing_hash(), &path, &VAULT, &CC, &rows).unwrap();
+        let eth_rows = vec![row(1, Chain::Ethereum, &to_addr, 1_000, 2)];
+        assert!(verify(&ctx, &tx.signing_hash(), &path, &VAULT, &CC, &eth_rows).is_err());
+        assert_eq!(crate::evm_chain_of_id(56), Chain::Bsc);
+        assert_eq!(crate::evm_chain_of_id(1), Chain::Ethereum);
+        assert_eq!(crate::evm_chain_of_id(11_155_111), Chain::Ethereum);
+    }
+
     #[test]
     fn tron_transfer_is_bound_to_owner_and_outbound() {
         let owner_key = child(Chain::Tron, 0);
@@ -1048,7 +1445,7 @@ mod tests {
 
     fn pool() -> PoolRef {
         PoolRef {
-            active_pubkey: ACTIVE,
+            active_pubkey: ACTIVE.to_vec(),
             active_chain_code: ACC,
         }
     }

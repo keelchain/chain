@@ -6,10 +6,11 @@ use crate::{
     chains::{
         btc::{self, BitcoinRpc},
         eth::{self, BeaconApi, EthRpc, FinalityCache},
+        sol::{self, SolRpc},
         tron::{self, TronApi},
         AddressBook,
     },
-    config::{BitcoinConfig, EthereumConfig, TronConfig},
+    config::{BitcoinConfig, EthereumConfig, SolanaConfig, TronConfig},
     rpc::{ChainParams, Submitter},
     state::StateFile,
 };
@@ -87,7 +88,7 @@ pub async fn scan_bitcoin(
     Ok(submitted)
 }
 
-/// State kept across Ethereum passes.
+/// State kept across the passes of one EVM chain.
 pub struct EthScanner {
     pub cache: FinalityCache,
     pub native_balances: HashMap<u64, u128>,
@@ -102,12 +103,18 @@ impl Default for EthScanner {
     }
 }
 
-/// One Ethereum pass. With a beacon node the window only advances over
-/// finalized blocks whose finality update was captured, so every ERC-20
-/// deposit in a checkpoint block gets its proof; the rest are recorded
-/// as `unprovable:` (see README.md). Without a beacon node nothing can be
+/// One pass over an EVM chain (the book's: Ethereum or BSC).
+///
+/// Ethereum: with a beacon node the window only advances over finalized
+/// blocks whose finality update was captured, so every ERC-20 deposit in
+/// a checkpoint block gets its proof; the rest are recorded as
+/// `unprovable:` (see README.md). Without a beacon node nothing can be
 /// submitted for Ethereum.
-pub async fn scan_ethereum(
+///
+/// BSC (no light client): every ERC-20 transfer deep enough is attested
+/// with `Proof::None`, and native deposits are read from the newest
+/// blocks' top-level transactions (`native_scan_blocks` per pass).
+pub async fn scan_evm(
     ctx: &DepositContext<'_>,
     rpc: &dyn EthRpc,
     beacon: Option<&dyn BeaconApi>,
@@ -115,7 +122,13 @@ pub async fn scan_ethereum(
     book: &AddressBook,
     cfg: &EthereumConfig,
 ) -> anyhow::Result<usize> {
-    let required = ctx.params.confirmations(Chain::Ethereum) as u64;
+    let chain = book.chain;
+    let beacon = if chain.has_light_client() {
+        beacon
+    } else {
+        None
+    };
+    let required = ctx.params.confirmations(chain) as u64;
     let tip = eth::block_number(rpc).await?;
     if let Some(b) = beacon {
         match eth::fetch_finality_update(b).await {
@@ -123,14 +136,17 @@ pub async fn scan_ethereum(
             Err(e) => tracing::warn!(error = %e, "finality update unavailable"),
         }
     }
-    watch_native(rpc, book, &mut scanner.native_balances).await;
+    if chain.has_light_client() {
+        watch_native(rpc, book, &mut scanner.native_balances).await;
+    }
 
     let upper = match (beacon, scanner.cache.finalized_block()) {
         (Some(_), Some(f)) => f.min(tip.saturating_sub(required)),
         (Some(_), None) => return Ok(0),
         (None, _) => tip.saturating_sub(required),
     };
-    let from = match ctx.state.cursor("eth:last_block") {
+    let cursor = format!("{}:last_block", chain.as_str().to_ascii_lowercase());
+    let from = match ctx.state.cursor(&cursor) {
         Some(c) => c + 1,
         None => upper.saturating_sub(cfg.log_window).max(1),
     };
@@ -139,8 +155,39 @@ pub async fn scan_ethereum(
     }
     let to = upper.min(from + cfg.log_window - 1);
     let mut submitted = 0;
+    if !chain.has_light_client() {
+        let native_from = from.max(to.saturating_sub(cfg.native_scan_blocks.max(1) - 1));
+        let asset = Asset::new(crate::chains::native_asset(chain));
+        for t in eth::scan_native_transfers(rpc, book, native_from, to).await? {
+            let to_addr = keel_chains::address::eth_checksum(&t.to);
+            let Some(index) = book.index_of(&to_addr) else {
+                continue;
+            };
+            if !book.watches(index) {
+                continue;
+            }
+            let key = format!(
+                "deposit:{}:{}{}:native",
+                chain.as_str(),
+                book.key_prefix(),
+                t.tx_hash_hex
+            );
+            if ctx.state.is_submitted(&key) {
+                continue;
+            }
+            // Only a successful transaction moved the value.
+            match eth::receipt_status(rpc, &t.tx_hash_hex).await? {
+                Some(r) if r.success => {}
+                _ => continue,
+            }
+            let obs = eth::native_observation(chain, &t, asset.clone(), index, tip);
+            if ctx.submit(book, &key, obs).await? {
+                submitted += 1;
+            }
+        }
+    }
     for token in &cfg.tokens {
-        let asset = Asset::vault("ETH", &token.symbol);
+        let asset = Asset::vault(chain.as_str(), &token.symbol);
         for log in eth::scan_transfers(rpc, &token.contract, book, from, to).await? {
             let to_addr = keel_chains::address::eth_checksum(&log.to);
             let Some(index) = book.index_of(&to_addr) else {
@@ -150,7 +197,8 @@ pub async fn scan_ethereum(
                 continue;
             }
             let key = format!(
-                "deposit:ETH:{}{}:{}",
+                "deposit:{}:{}{}:{}",
+                chain.as_str(),
                 book.key_prefix(),
                 log.tx_hash_hex,
                 log.log_index
@@ -184,8 +232,16 @@ pub async fn scan_ethereum(
                 }
                 _ => None,
             };
-            let obs = eth::observation(&log, asset.clone(), index, position, tip, proof.as_ref());
-            if obs.proof == Proof::None {
+            let obs = eth::observation(
+                chain,
+                &log,
+                asset.clone(),
+                index,
+                position,
+                tip,
+                proof.as_ref(),
+            );
+            if obs.proof == Proof::None && chain.has_light_client() {
                 tracing::warn!(key, block = log.block_number, amount = log.amount, "ERC-20 deposit outside a finalized checkpoint block: no light-client proof, not submitted");
                 ctx.state.mark_submitted(&format!("unprovable:{key}"), "")?;
                 continue;
@@ -195,7 +251,7 @@ pub async fn scan_ethereum(
             }
         }
     }
-    ctx.state.set_cursor("eth:last_block", to)?;
+    ctx.state.set_cursor(&cursor, to)?;
     Ok(submitted)
 }
 
@@ -218,6 +274,76 @@ async fn watch_native(rpc: &dyn EthRpc, book: &AddressBook, last: &mut HashMap<u
         }
         last.insert(index, bal);
     }
+}
+
+/// One Solana pass (attestation only): the newest finalized signatures
+/// of every watched address and of its token accounts, each transaction
+/// read once, every positive balance delta to a watched address
+/// submitted once (`deposit:SOL:<sig>:<account index>`).
+pub async fn scan_solana(
+    ctx: &DepositContext<'_>,
+    rpc: &dyn SolRpc,
+    book: &AddressBook,
+    cfg: &SolanaConfig,
+) -> anyhow::Result<usize> {
+    let required = ctx.params.confirmations(Chain::Solana) as u64;
+    let tip = sol::slot(rpc).await?;
+    let prefix = book.key_prefix();
+    let mut views: std::collections::BTreeMap<String, Option<sol::TxView>> =
+        std::collections::BTreeMap::new();
+    let mut submitted = 0;
+    for (index, addr) in book.addresses() {
+        if !book.watches(index) {
+            continue;
+        }
+        let mut accounts = vec![addr.to_string()];
+        for t in &cfg.tokens {
+            accounts.push(sol::ata(addr, &t.contract)?);
+        }
+        for account in accounts {
+            for s in sol::signatures(rpc, &account, cfg.signature_limit).await? {
+                let seen = format!("seen:SOL:{prefix}{}", s.signature);
+                if s.failed || ctx.state.is_submitted(&seen) {
+                    continue;
+                }
+                if tip.saturating_sub(s.slot) < required {
+                    continue;
+                }
+                if !views.contains_key(&s.signature) {
+                    let v = sol::transaction(rpc, &s.signature).await?;
+                    views.insert(s.signature.clone(), v);
+                }
+                let Some(view) = views.get(&s.signature).and_then(|v| v.as_ref()) else {
+                    continue;
+                };
+                let sig = sol::decode_signature(&s.signature)?;
+                let mut all_done = true;
+                for d in sol::deposits_in(view, book) {
+                    let asset = match &d.mint {
+                        None => Asset::vault("SOL", "SOL"),
+                        Some(m) => match cfg.tokens.iter().find(|t| &t.contract == m) {
+                            Some(t) => Asset::vault("SOL", &t.symbol),
+                            None => continue,
+                        },
+                    };
+                    let key = format!("deposit:SOL:{prefix}{}:{}", s.signature, d.account_index);
+                    if ctx.state.is_submitted(&key) {
+                        continue;
+                    }
+                    let obs = sol::observation(&d, asset, &sig, &s.signature, view.slot, tip);
+                    if ctx.submit(book, &key, obs).await? {
+                        submitted += 1;
+                    } else {
+                        all_done = false;
+                    }
+                }
+                if all_done {
+                    ctx.state.mark_submitted(&seen, "")?;
+                }
+            }
+        }
+    }
+    Ok(submitted)
 }
 
 /// One Tron pass (attestation only).
@@ -317,7 +443,7 @@ mod tests {
         VaultView {
             chain,
             epoch: 1,
-            public_key: signer.public_key(),
+            public_key: signer.public_key().to_vec(),
             chain_code: signer.chain_code(),
             signers: vec![Keypair::from_seed(3).address()],
             threshold: 1,

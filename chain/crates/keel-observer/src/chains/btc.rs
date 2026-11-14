@@ -290,6 +290,7 @@ pub async fn build_observation(
         .ok_or_else(|| anyhow::anyhow!("gettxoutproof"))?;
     let (merkle_proof, tx_index, _root) = split_txoutproof(proof_hex, &utxo.txid)?;
     Ok(Some(DepositObservation {
+        external_tx: None,
         chain: Chain::Bitcoin,
         asset: Asset::vault("BTC", "BTC"),
         tx_hash: utxo.txid,

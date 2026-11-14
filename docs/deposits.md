@@ -5,17 +5,24 @@ threshold-signed key per chain whose child addresses are handed out to
 accounts. You send coins to your child address on the external chain, the
 observers watch it, and after that chain's confirmation depth the amount is
 credited to your Keelchain account as a vault asset (`BTC.BTC`, `TRON.USDT`,
-`TRON.TRX`, `ETH.ETH`, `ETH.USDT`). `KEEL` and `KUSD` never leave the chain:
-`KUSD` is minted only against vaulted USDT, `KEEL` is transferred.
+`TRON.TRX`, `BSC.USDT`, `BSC.BNB`, `SOL.SOL`, `SOL.USDC`, `ETH.ETH`,
+`ETH.USDT`). `KEEL` and `KUSD` never leave the chain: `KUSD` is minted only
+against vaulted USDT, `KEEL` is transferred.
 
-On the public testnet the external chains are **Bitcoin signet** and **Tron
-Nile**. Mainnet coins sent to a testnet address are lost.
+On the public testnet the external chains are **Bitcoin signet**, **Tron
+Nile**, the **BNB Smart Chain testnet** and **Solana devnet**. Mainnet coins
+sent to a testnet address are lost.
+
+BNB Smart Chain and Ethereum share one address: the chain derives both from
+the same key path, so the `0x…` string you get for BSC is the one you would
+get for Ethereum, and a deposit index assigned on one is the other's too.
 
 ## 1. Get your deposit address
 
 The chain assigns the address; it is not derived in the wallet. Three ways:
 
-**Keel Wallet.** Open the wallet, card *Receive*, press *Bitcoin* or *Tron*.
+**Keel Wallet.** Open the wallet, card *Receive*, press *Bitcoin*, *Tron*,
+*BNB Smart Chain* or *Solana*.
 The wallet asks the chain for an address the first time (a free signed
 action, no site involved) and shows it with a copy button from then on.
 
@@ -51,6 +58,18 @@ changes (`models.md`, "Rotating to a fresh pool").
 - **Tron Nile:** get test TRX and USDT from the Nile faucet
   (nileex.io) and send to the `T…` address. Credited after **19
   confirmations**, about one minute.
+- **BNB Smart Chain testnet:** get test BNB from the BNB Chain faucet and
+  USDT (the testnet BEP-20 at `0x3376…4dDd`) and send to the `0x…` address.
+  Credited after **12 confirmations** (`confirmations_eth`, shared with
+  Ethereum), about forty seconds. BNB is credited as `BSC.BNB` from the
+  transaction's own transfer: coins sent by a contract (an internal
+  transfer) are not seen.
+- **Solana devnet:** get devnet SOL from the Solana faucet (`solana airdrop`
+  or faucet.solana.com) and devnet USDC (mint `4zMM…ncDU`, from the Circle
+  faucet) and send to the base58 address. Credited once the transaction is
+  **finalized** (the observers read finalized transactions only; the chain's
+  own depth check uses `confirmations_tron` slots). USDC lands in the
+  address's associated token account, which the sending wallet creates.
 
 Any amount works. Deposits above `large_deposit_usd_micro` (50,000 USD
 equivalent) are held for `large_deposit_delay_blocks` before they are usable.
@@ -86,9 +105,11 @@ Coins can also stay **in your wallet**, under your own key, and be moved
 into Keel when you want to trade: `wallet.md` §5b.
 
 If nothing appears after a few minutes, check the network: the testnet
-addresses live on Bitcoin **signet** and Tron **Nile**. Coins sent on
-testnet3, testnet4, Shasta or a mainnet to the same address string are on a
-different ledger, the observers never see them, and they cannot be credited.
+addresses live on Bitcoin **signet**, Tron **Nile**, the **BSC testnet**
+(chain id 97) and Solana **devnet**. Coins sent on testnet3, testnet4,
+Shasta, Ethereum, Solana mainnet or any other mainnet to the same address
+string are on a different ledger, the observers never see them, and they
+cannot be credited.
 
 ## What has to be true on the chain side
 

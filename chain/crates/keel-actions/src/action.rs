@@ -235,10 +235,15 @@ pub enum Action {
     // ---- liquidity (the pooled house-maker inventory)
     /// Fund the house maker's pool with `amount` of `asset`; mints pool
     /// shares at the pool's USD value (last fill on `<ASSET>-KUSD`).
-    DepositLiquidity { asset: Asset, amount: Amount },
+    DepositLiquidity {
+        asset: Asset,
+        amount: Amount,
+    },
     /// Burn `shares`; the pro-rata slice of every pool asset is released
     /// to the depositor after `liquidity.withdraw_delay_blocks`.
-    WithdrawLiquidity { shares: u128 },
+    WithdrawLiquidity {
+        shares: u128,
+    },
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -476,14 +481,32 @@ pub enum Chain {
     Bitcoin,
     Ethereum,
     Tron,
+    /// BNB Smart Chain (2026-11-11): an EVM chain watched by attestation
+    /// only (no light client). It shares Ethereum's key path, so an
+    /// account's deposit address is the same string on both.
+    Bsc,
+    /// Solana (2026-11-11): Ed25519 keys (a 32-byte vault key signed by
+    /// FROST, not CGGMP21), attestation only, SOL and SPL tokens (USDC).
+    Solana,
 }
 
 impl Chain {
+    /// Every supported chain, in enum order.
+    pub const ALL: [Chain; 5] = [
+        Chain::Bitcoin,
+        Chain::Ethereum,
+        Chain::Tron,
+        Chain::Bsc,
+        Chain::Solana,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Chain::Bitcoin => "BTC",
             Chain::Ethereum => "ETH",
             Chain::Tron => "TRON",
+            Chain::Bsc => "BSC",
+            Chain::Solana => "SOL",
         }
     }
 
@@ -492,23 +515,61 @@ impl Chain {
             "BTC" => Some(Chain::Bitcoin),
             "ETH" => Some(Chain::Ethereum),
             "TRON" => Some(Chain::Tron),
+            "BSC" => Some(Chain::Bsc),
+            "SOL" => Some(Chain::Solana),
             _ => None,
         }
     }
 
     /// Confirmation depth before a deposit may be credited (inherited from
-    /// the custody gateway; governance can raise it).
+    /// the custody gateway; governance can raise it). BSC shares the
+    /// Ethereum depth (`confirmations_eth`): its 3-second blocks make 12
+    /// of them about forty seconds, past fast finality.
     pub fn default_confirmations(self) -> u32 {
         match self {
             Chain::Bitcoin => 2,
-            Chain::Ethereum => 12,
-            Chain::Tron => 19,
+            Chain::Ethereum | Chain::Bsc => 12,
+            // Slots. Observers report Solana transactions at `finalized`
+            // commitment, which already lies ~32 slots behind the tip;
+            // the chain's own depth check shares `confirmations_tron`.
+            Chain::Tron | Chain::Solana => 19,
         }
     }
 
     /// Whether non-observer validators can verify a light-client proof.
     pub fn has_light_client(self) -> bool {
         matches!(self, Chain::Bitcoin | Chain::Ethereum)
+    }
+
+    /// Ethereum-compatible chains: 20-byte keccak addresses, EIP-1559
+    /// transactions, ERC-20 tokens.
+    pub fn is_evm(self) -> bool {
+        matches!(self, Chain::Ethereum | Chain::Bsc)
+    }
+
+    /// Chains whose vault key is Ed25519 (32 bytes, signed by FROST)
+    /// rather than secp256k1 (33 bytes compressed, signed by CGGMP21).
+    pub fn is_ed25519(self) -> bool {
+        matches!(self, Chain::Solana)
+    }
+
+    /// Length of a vault public key on this chain.
+    pub fn key_length(self) -> usize {
+        if self.is_ed25519() {
+            32
+        } else {
+            33
+        }
+    }
+
+    /// The chain whose key path and deposit indexes this chain shares, so
+    /// one account has one address across the family. Every EVM chain
+    /// maps to Ethereum; the others stand alone.
+    pub fn address_family(self) -> Chain {
+        match self {
+            Chain::Bsc => Chain::Ethereum,
+            other => other,
+        }
     }
 }
 
@@ -547,6 +608,11 @@ pub struct DepositObservation {
     /// Current tip height on the observer's node (for depth).
     pub tip_height: u64,
     pub proof: Proof,
+    /// The transaction id as the external chain writes it, when it is not
+    /// the hex of `tx_hash`: a Solana signature (base58, 64 bytes) whose
+    /// SHA-256 is `tx_hash`. `None` on the chains whose id is a 32-byte
+    /// hash. Bound into the attestation, so the observers must agree.
+    pub external_tx: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -559,6 +625,9 @@ pub struct OutboundObservation {
     /// Network fee actually paid, in the chain's native smallest units.
     pub fee_paid: Amount,
     pub success: bool,
+    /// The native transaction id when it is not the hex of `tx_hash`
+    /// (Solana: the base58 signature).
+    pub external_tx: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]

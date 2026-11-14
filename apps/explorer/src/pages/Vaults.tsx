@@ -67,7 +67,7 @@ function VaultCard({ v }: { v: Vault }) {
         </table>
       </div>
       <div className="card-body small text-2">
-        Epoch {v.epoch} · {formatInt(v.address_count)} deposit addresses · fee rate {v.fee_rate} {v.chain === 'BTC' ? 'sat/vB' : v.chain === 'ETH' ? 'gwei' : 'sun/bandwidth'}{v.threshold && v.signers ? ` · ${v.threshold}-of-${v.signers.length} threshold signature` : ''}
+        Epoch {v.epoch} · {formatInt(v.address_count)} deposit addresses · fee rate {v.fee_rate} {v.chain === 'BTC' ? 'sat/vB' : v.chain === 'ETH' || v.chain === 'BSC' ? 'gwei' : v.chain === 'SOL' ? 'lamports/tx' : 'sun/bandwidth'}{v.threshold && v.signers ? ` · ${v.threshold}-of-${v.signers.length} threshold signature` : ''}
       </div>
     </Card>
   );
@@ -316,12 +316,12 @@ function OutboundsView() {
                   <td className="num">
                     <Amount value={o.amount} asset={o.asset} />
                   </td>
-                  <td className="num">{o.fee !== '0' ? <Amount value={o.fee} asset={o.chain === 'BTC' ? 'BTC.BTC' : o.chain === 'ETH' ? 'ETH.ETH' : 'TRON.TRX'} /> : <span className="muted">pending</span>}</td>
+                  <td className="num">{o.fee !== '0' ? <Amount value={o.fee} asset={o.chain === 'BTC' ? 'BTC.BTC' : o.chain === 'ETH' ? 'ETH.ETH' : o.chain === 'BSC' ? 'BSC.BNB' : o.chain === 'SOL' ? 'SOL.SOL' : 'TRON.TRX'} /> : <span className="muted">pending</span>}</td>
                   <td>
                     <ExternalLink chain={o.chain} value={o.to} what="address" />
                   </td>
                   <td>{o.batch_id ? `#${o.batch_id}` : <span className="muted">—</span>}</td>
-                  <td>{o.tx_hash ? <ExternalLink chain={o.chain} value={o.tx_hash} what="tx" /> : <span className="muted">not broadcast</span>}</td>
+                  <td>{o.tx_hash ? <ExternalLink chain={o.chain} value={o.tx_hash} id={o.external_tx} what="tx" /> : <span className="muted">not broadcast</span>}</td>
                   <td>
                     <BlockLink height={o.queued_height} />
                   </td>
@@ -436,7 +436,7 @@ export function VaultPage() {
                 {deposits.map((d) => (
                   <tr key={`${d.tx_hash}-${d.index}`}>
                     <td>
-                      <ExternalLink chain={d.chain} value={d.tx_hash} what="tx" />
+                      <ExternalLink chain={d.chain} value={d.tx_hash} id={d.external_tx} what="tx" />
                     </td>
                     <td>{d.asset}</td>
                     <td className="num">

@@ -10,7 +10,9 @@ export type Address = string | number[] | Uint8Array;
 export type Hash32 = string | number[] | Uint8Array;
 export type Side = "buy" | "sell";
 export type OrderType = "limit" | "market";
-export type Chain = "Bitcoin" | "Ethereum" | "Tron";
+/** External chains. `Bsc` (BNB Smart Chain) shares Ethereum's key path: an account's deposit
+ *  address is the same string on both. */
+export type Chain = "Bitcoin" | "Ethereum" | "Tron" | "Bsc" | "Solana";
 export type Role = "Validator" | "Observer" | "Arbitrator";
 export type VoteChoice = "Yes" | "No" | "Abstain" | "Veto";
 export type Ruling = "WinsSeller" | "WinsBuyer" | { Split: { buyer_bps: number } };
@@ -34,9 +36,12 @@ export interface StartTrade { offer_id: Amount; amount: Amount; fiat_amount: Amo
 export interface DepositObservation {
   chain: Chain; asset: string; tx_hash: Hash32; index: number; deposit_index: Amount; amount: Amount;
   external_height: Amount; tip_height: Amount; proof: Proof;
+  /** The native transaction id when `tx_hash` is only its hash (Solana: the base58 signature). */
+  external_tx?: string | null;
 }
 export interface OutboundObservation {
   outbound_id: Amount; tx_hash: Hash32; external_height: Amount; tip_height: Amount; fee_paid: Amount; success: boolean;
+  external_tx?: string | null;
 }
 export interface Withdraw { asset: string; to: string; amount: Amount }
 export interface VaultRegistration {
@@ -190,7 +195,7 @@ const ACTION_VARIANTS = [
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "ObserveCustodySweep", "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity",
 ] as const;
-const CHAINS = ["Bitcoin", "Ethereum", "Tron"] as const;
+const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
 const VOTES = ["Yes", "No", "Abstain", "Veto"] as const;
 const PROPOSAL_KINDS = [
@@ -319,9 +324,11 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "ObserveDeposit":
       unitEnum(w, CHAINS, b.chain); w.string(b.asset); hash(w, b.tx_hash); w.u32(b.index); w.u64(b.deposit_index);
       w.u128(b.amount); w.u64(b.external_height); w.u64(b.tip_height); proof(w, b.proof);
+      w.option(b.external_tx, (s) => w.string(s));
       break;
     case "ObserveOutbound":
       w.u64(b.outbound_id); hash(w, b.tx_hash); w.u64(b.external_height); w.u64(b.tip_height); w.u128(b.fee_paid); w.bool(b.success);
+      w.option(b.external_tx, (s) => w.string(s));
       break;
     case "ReportNetworkFee": unitEnum(w, CHAINS, b.chain); w.u64(b.fee_rate); break;
     case "Withdraw": w.string(b.asset); w.string(b.to); w.u128(b.amount); break;
@@ -356,6 +363,7 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
       address(w, b.custodian); const o = b.observation as DepositObservation;
       unitEnum(w, CHAINS, o.chain); w.string(o.asset); hash(w, o.tx_hash); w.u32(o.index); w.u64(o.deposit_index);
       w.u128(o.amount); w.u64(o.external_height); w.u64(o.tip_height); proof(w, o.proof);
+      w.option(o.external_tx, (s) => w.string(s));
       break;
     }
     case "WithdrawCustody": w.string(b.asset); w.string(b.to); w.u128(b.amount); break;

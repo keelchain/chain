@@ -23,6 +23,9 @@ pub struct Attestation {
     pub amount: Amount,
     pub asset: Asset,
     pub external_height: u64,
+    /// The native transaction id when `tx_hash` is its hash rather than
+    /// the id itself (Solana); part of what the observers vote on.
+    pub external_tx: Option<String>,
 }
 
 impl Attestation {
@@ -82,6 +85,7 @@ mod tests {
             amount,
             asset: Asset::vault("BTC", "BTC"),
             external_height: 100,
+            external_tx: None,
         }
     }
 
@@ -92,6 +96,9 @@ mod tests {
         let mut other = att(5);
         other.index = 2;
         assert_ne!(att(5).digest(), other.digest());
+        let mut named = att(5);
+        named.external_tx = Some("5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW".into());
+        assert_ne!(att(5).digest(), named.digest());
     }
 
     #[test]

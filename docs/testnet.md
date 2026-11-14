@@ -10,7 +10,7 @@ Live since 2026-09-24 at keelchain.com, deployed only by GitHub Actions
 | read API | https://testnet.keelchain.com/api/v1/… (`keel-indexer`, `docs/explorer-api.md`) |
 | node RPC | https://testnet.keelchain.com/rpc/v1/… (`keel-node`; status, accounts, params, `gov/roles`, `gov/proposals`, receipts, WebSocket at `/rpc/v1/ws`) |
 | chain | id 3, `_KEEL_CHAIN` namespace, external network signet; the validator set is the host set in `DEPLOY_HOSTS` (one host today; consensus is BFT, so four validators tolerate one fault and three tolerate none), 600-block epochs; genesis built by the deploy workflow from every host's public identity plus `infra/testnet/genesis-params.json` (voting 60 blocks, timelock 10, proposal deposit 1000 KEEL) |
-| vaults | BTC (signet, pruned bitcoind on host 0, shared with the other hosts over WireGuard) and TRON (Nile); one observer per host, quorum two thirds, the vault key held as CGGMP21 threshold shares created by the `TSS ceremony` workflow (development signer only in single-host `local` mode). Every signer checks each request against the chain's outbound rows before signing. Bitcoin checkpoints go through governance: host 0 proposes daily, every host votes on proposals whose header matches its Bitcoin view |
+| vaults | BTC (signet, pruned bitcoind on host 0, shared with the other hosts over WireGuard) TRON (Nile), BSC (the BNB Smart Chain testnet, chain id 97, the same address as Ethereum) and SOL (Solana devnet, an Ed25519 vault key signed by FROST); one observer per host, quorum two thirds, the vault key held as CGGMP21 threshold shares created by the `TSS ceremony` workflow (development signer only in single-host `local` mode). Every signer checks each request against the chain's outbound rows before signing. Bitcoin checkpoints go through governance: host 0 proposes daily, every host votes on proposals whose header matches its Bitcoin view |
 | assets | `KEEL` (6), `KUSD` (6), `BTC.BTC`, `ETH.ETH`, `ETH.USDT`, `TRON.TRX`, `TRON.USDT` |
 | wallet | Keel Wallet 1.2.0, `window.keel` |
 
@@ -20,7 +20,7 @@ directly.
 ## Funding an account
 
 See `docs/deposits.md`: request a deposit address (wallet *Receive*, CLI or
-SDK), send signet BTC or Nile USDT/TRX to it, and the chain credits the
+SDK), send signet BTC, Nile USDT/TRX, BSC-testnet USDT/BNB or devnet SOL/USDC to it, and the chain credits the
 vault asset after that chain's confirmations.
 
 ## Clients

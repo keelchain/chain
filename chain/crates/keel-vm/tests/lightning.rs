@@ -174,6 +174,7 @@ fn fund(state: &mut State, obs: &mut [Actor], amount: u128, height: u64) -> u64 
         "{end:?}"
     );
     let o = |fee| OutboundObservation {
+        external_tx: None,
         outbound_id: id,
         tx_hash: [0xbb; 32],
         external_height: 10,
@@ -570,6 +571,7 @@ fn sweeps_return_pool_balance_to_the_vault() {
     let (headers, proof) = btc_chain(4, &txids);
     let sweep_tx = txid(2).to_byte_array();
     let observation = || DepositObservation {
+        external_tx: None,
         chain: Chain::Bitcoin,
         asset: btc(),
         tx_hash: sweep_tx,

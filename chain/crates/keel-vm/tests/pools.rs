@@ -53,6 +53,7 @@ fn rotation(key: u8, url: &str, sweep: bool, activate_at: Option<u64>) -> Action
 
 fn obs(asset: Asset, deposit_index: u64, amount: u128, tx: u8) -> DepositObservation {
     DepositObservation {
+        external_tx: None,
         chain: ExtChain::Tron,
         asset,
         tx_hash: [tx; 32],

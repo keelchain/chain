@@ -70,13 +70,7 @@ pub fn chain_of_asset(asset: &str) -> Option<Chain> {
     chain_from_json(asset.split_once('.')?.0)
 }
 
-fn native_asset(chain: Chain) -> &'static str {
-    match chain {
-        Chain::Bitcoin => "BTC.BTC",
-        Chain::Ethereum => "ETH.ETH",
-        Chain::Tron => "TRON.TRX",
-    }
-}
+use crate::chains::native_asset;
 
 impl EventsView {
     /// Fold the receipts of block `height` (the `receipts` array of

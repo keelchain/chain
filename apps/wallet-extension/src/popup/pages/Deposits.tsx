@@ -10,8 +10,9 @@ import { fetchChainDeposits, fetchDepositAddress, fetchParams, type UiState } fr
 import { decimalsOf, formatAmount } from '../../core/format';
 import { DEPOSIT_CHAINS } from '../external';
 
-const REQUIRED_PARAM: Record<ExternalChain, string> = { BTC: 'confirmations_btc', ETH: 'confirmations_eth', TRON: 'confirmations_tron' };
-const REQUIRED_DEFAULT: Record<ExternalChain, number> = { BTC: 2, ETH: 12, TRON: 19 };
+// BSC shares the EVM depth with Ethereum (`confirmations_eth` on the chain).
+const REQUIRED_PARAM: Record<ExternalChain, string> = { BTC: 'confirmations_btc', ETH: 'confirmations_eth', TRON: 'confirmations_tron', BSC: 'confirmations_eth', SOL: 'confirmations_tron' };
+const REQUIRED_DEFAULT: Record<ExternalChain, number> = { BTC: 2, ETH: 12, TRON: 19, BSC: 12, SOL: 19 };
 
 export function Deposits({ state }: { state: UiState }) {
   const { network, address } = state;
@@ -95,7 +96,7 @@ export function Deposits({ state }: { state: UiState }) {
               <li key={`${p.chain}:${p.tx_hash}`}>
                 <span className="small">
                   {nets[p.chain as ExternalChain] ? (
-                    <a href={externalTxUrl(nets[p.chain as ExternalChain], p.tx_hash)} target="_blank" rel="noreferrer" title={p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</a>
+                    <a href={externalTxUrl(nets[p.chain as ExternalChain], p.external_tx ?? p.tx_hash)} target="_blank" rel="noreferrer" title={p.external_tx ?? p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</a>
                   ) : (
                     <span title={p.tx_hash}>{formatAmount(p.amount, decimalsOf(p.asset))} {p.asset}</span>
                   )}

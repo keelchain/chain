@@ -7,7 +7,8 @@ ConditionPathExists=/var/lib/keelchain/tss/share.enc
 
 [Service]
 EnvironmentFile=/etc/keelchain/tss-%i.env
-ExecStart=/opt/keelchain/bin/keel-tss serve --share /var/lib/keelchain/tss/share.enc --peers ${TSS_PEERS} --http ${TSS_HTTP} --policy-rpc http://127.0.0.1:5100
+# The Solana (FROST) share is served too once the ceremony wrote it.
+ExecStart=/bin/sh -c 'exec /opt/keelchain/bin/keel-tss serve --share /var/lib/keelchain/tss/share.enc $([ -f /var/lib/keelchain/tss/share-sol.enc ] && echo --eddsa-share /var/lib/keelchain/tss/share-sol.enc) --peers ${TSS_PEERS} --http ${TSS_HTTP} --policy-rpc http://127.0.0.1:5100'
 Restart=always
 RestartSec=5
 MemoryMax=300M

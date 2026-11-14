@@ -22,7 +22,7 @@ action's JSON they are 32-element byte arrays (serde form).
 | GET | `/v1/trades/{id}` | Trade (+ `dispute` when one exists), `arbitrator` (bound to rule it, or null) and `arbitrator_candidates[]` (copied from the offer at start) |
 | GET | `/v1/vaults/{chain}` | `{chain, vault, state}` (vault registrations for the chain; whole vaults sub-state) |
 | GET | `/v1/vaults/{chain}/addresses?from=0&limit=100` | deposit index → owner rows |
-| GET | `/v1/vaults/outbounds?status=` | `{outbounds:[Outbound]}` |
+| GET | `/v1/vaults/outbounds?status=` | `{outbounds:[Outbound]}`; an outbound carries `tx_hash` (hex, 32 bytes) and `external_tx` (the id as the external chain writes it when `tx_hash` is only its hash: a Solana signature in base58, else `null`) |
 | GET | `/v1/gov/proposals` | `{proposals:[Proposal], house_operator}` |
 | GET | `/v1/gov/proposals/{id}` | Proposal |
 | GET | `/v1/staking/validators` | `{consensus:[hex keys], staked:[{consensus_key,power}], staking}` |
@@ -55,7 +55,8 @@ selected per signer in nonce order.
 | `GET /v1/custody/{addr}/{chain}/addresses?from&limit&owner&gen` | deposit addresses of that vault with their owners, from the active generation's key (`gen` picks a draining one); rows carry `gen` |
 | `GET /v1/custody/{addr}/{chain}/addresses/lookup?address=` | which index, owner and generation a custody address belongs to, across every live generation |
 
-Outbound rows and batches under `/v1/vaults/outbounds` carry `custodian`
+Deposit rows (`/v1/vaults/deposits`) carry the same `tx_hash`/`external_tx`
+pair. Outbound rows and batches under `/v1/vaults/outbounds` carry `custodian`
 (null for the network vault).
 
 ## WebSocket

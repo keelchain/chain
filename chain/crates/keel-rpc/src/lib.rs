@@ -110,7 +110,7 @@ pub trait NodeApi: Send + Sync + 'static {
     fn subscribe(&self) -> broadcast::Receiver<BlockUpdate>;
     fn validators(&self) -> Vec<String>;
     /// Height and block time (ms) of the last `DepositCredited` this node
-    /// applied on `chain` ("BTC", "ETH", "TRON"); node-local bookkeeping.
+    /// applied on `chain` ("BTC", "ETH", "TRON", "BSC", "SOL"); node-local bookkeeping.
     fn last_credit(&self, chain: &str) -> Option<(u64, u64)> {
         let _ = chain;
         None
@@ -599,13 +599,15 @@ fn parse_chain(chain: &str) -> Result<keel_actions::Chain, (StatusCode, Json<Err
             "Bitcoin" => Some(keel_actions::Chain::Bitcoin),
             "Ethereum" => Some(keel_actions::Chain::Ethereum),
             "Tron" => Some(keel_actions::Chain::Tron),
+            "Bsc" => Some(keel_actions::Chain::Bsc),
+            "Solana" => Some(keel_actions::Chain::Solana),
             _ => None,
         })
         .ok_or_else(|| {
             err(
                 StatusCode::BAD_REQUEST,
                 "INVALID",
-                "unknown chain (BTC, ETH, TRON)",
+                "unknown chain (BTC, ETH, TRON, BSC, SOL)",
             )
         })
 }
@@ -704,10 +706,9 @@ fn custody_entries(
         .collect();
     gens.iter()
         .map(|g| {
-            let pk: Option<[u8; 33]> = g.public_key.as_slice().try_into().ok();
-            let own_address = pk.and_then(|pk| {
-                keel_chains::deposit_address(v.chain, network, &pk, &g.chain_code, 0).ok()
-            });
+            let own_address =
+                keel_chains::deposit_address(v.chain, network, &g.public_key, &g.chain_code, 0)
+                    .ok();
             json!({
                 "custodian": v.custodian.to_hex(),
                 "chain": v.chain.as_str(),
@@ -852,13 +853,14 @@ async fn custody_addresses(
             "no custody vault (or no such live generation) on this chain",
         )
     })?;
-    let pk: [u8; 33] = g.public_key.as_slice().try_into().map_err(|_| {
-        err(
+    if g.public_key.len() != chain.key_length() {
+        return Err(err(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
             "vault key is not usable",
-        )
-    })?;
+        ));
+    }
+    let pk = g.public_key.clone();
     let cc = g.chain_code;
     let gen = g.gen;
     let from = q.from.unwrap_or(0);
@@ -895,9 +897,10 @@ async fn custody_address_lookup(
     let s = state.lock().expect("state lock");
     let wanted = q.address.trim();
     for g in keel_vm::modules::pools::live(&s, chain, custodian) {
-        let Ok(pk) = <[u8; 33]>::try_from(g.public_key.as_slice()) else {
+        if g.public_key.len() != chain.key_length() {
             continue;
-        };
+        }
+        let pk = g.public_key.clone();
         let hit = s
             .custody
             .deposit_owner
@@ -962,9 +965,8 @@ fn derive(
     index: u64,
 ) -> Option<String> {
     let vault = v.active_vault(chain)?;
-    let pk: [u8; 33] = vault.public_key.as_slice().try_into().ok()?;
     let cc = vault.chain_code?;
-    keel_chains::deposit_address(chain, network, &pk, &cc, index).ok()
+    keel_chains::deposit_address(chain, network, &vault.public_key, &cc, index).ok()
 }
 
 /// One assigned deposit index: owner and derived address.
@@ -1063,6 +1065,7 @@ async fn deposits(
             "chain": a.chain.as_str(),
             "asset": a.asset.to_string(),
             "tx_hash": hex::encode(a.tx_hash),
+            "external_tx": a.external_tx,
             "index": a.index,
             "deposit_index": a.deposit_index,
             "owner": owner.map(|o| o.to_hex()),
@@ -1117,6 +1120,7 @@ fn outbound_json(o: &keel_vm::modules::vaults::Outbound) -> Value {
         "batch_id": o.batch_id,
         "created_height": o.created_height,
         "tx_hash": o.tx_hash.map(hex::encode),
+        "external_tx": o.external_tx,
         "votes": o.quorum.count(),
     })
 }
@@ -1373,9 +1377,9 @@ async fn liquidity(AxumState(node): AxumState<Node>) -> Json<Value> {
     let pool = s.liquidity.pools.get(liq::SWAP_POOL);
     let total_shares = pool.map(|p| p.total_shares).unwrap_or(0);
     let value_usd = liq::pool_value_usd(&s);
-    let value_per_share = value_usd.filter(|_| total_shares > 0).map(|v| {
-        keel_types::mul_div_floor(v, liq::VPS_SCALE, total_shares).unwrap_or(0)
-    });
+    let value_per_share = value_usd
+        .filter(|_| total_shares > 0)
+        .map(|v| keel_types::mul_div_floor(v, liq::VPS_SCALE, total_shares).unwrap_or(0));
     let mut pending = std::collections::BTreeMap::<String, u128>::new();
     if let Some(p) = pool {
         for legs in p.unlocking.values() {
@@ -1425,9 +1429,9 @@ async fn liquidity_position(
     } else {
         0
     };
-    let value_usd = legs
-        .iter()
-        .try_fold(0u128, |acc, (a, amt)| liq::price_usd(&s, a, *amt).map(|v| acc + v));
+    let value_usd = legs.iter().try_fold(0u128, |acc, (a, amt)| {
+        liq::price_usd(&s, a, *amt).map(|v| acc + v)
+    });
     Ok(Json(json!({
         "address": address.to_hex(),
         "shares": shares.to_string(),

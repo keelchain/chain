@@ -6,7 +6,7 @@ use crate::{
         btc::{self, BitcoinRpc},
         eth::{self, EthRpc},
     },
-    config::{BitcoinConfig, EthereumConfig, TronConfig},
+    config::{BitcoinConfig, EthereumConfig, SolanaConfig, TronConfig},
     rpc::Submitter,
 };
 use keel_actions::{Action, Chain};
@@ -29,9 +29,11 @@ pub async fn report_bitcoin(
     Ok(rate)
 }
 
-/// Wei per gas: base fee plus the median priority fee.
-pub async fn report_ethereum(
+/// Wei per gas: base fee plus the median priority fee. One report per EVM
+/// chain (`Ethereum` or `Bsc`).
+pub async fn report_evm(
     submitter: &Submitter,
+    chain: Chain,
     rpc: &dyn EthRpc,
     cfg: &EthereumConfig,
 ) -> anyhow::Result<u64> {
@@ -45,7 +47,7 @@ pub async fn report_ethereum(
         .submit(
             None,
             Action::ReportNetworkFee {
-                chain: Chain::Ethereum,
+                chain,
                 fee_rate: rate,
             },
         )
@@ -65,4 +67,20 @@ pub async fn report_tron(submitter: &Submitter, cfg: &TronConfig) -> anyhow::Res
         )
         .await?;
     Ok(cfg.fee_sun)
+}
+
+/// Solana fees are flat per signature plus the configured priority fee
+/// (lamports per transaction).
+pub async fn report_solana(submitter: &Submitter, cfg: &SolanaConfig) -> anyhow::Result<u64> {
+    let rate = crate::chains::sol::fee_estimate(cfg, 1);
+    submitter
+        .submit(
+            None,
+            Action::ReportNetworkFee {
+                chain: Chain::Solana,
+                fee_rate: rate,
+            },
+        )
+        .await?;
+    Ok(rate)
 }

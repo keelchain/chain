@@ -163,6 +163,10 @@ export const KNOWN_DECIMALS: Record<string, number> = {
   'ETH.USDC': 6,
   'TRON.USDT': 6,
   'TRON.TRX': 6,
+  'BSC.BNB': 18,
+  'BSC.USDT': 18,
+  'SOL.SOL': 9,
+  'SOL.USDC': 6,
 };
 
 /** Decimals for an asset id, or for a bare symbol (`BTC` → `BTC.BTC`). */

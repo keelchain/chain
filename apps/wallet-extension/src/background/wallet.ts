@@ -25,6 +25,9 @@ const DEPOSIT_CHAINS: Record<string, { path: string; action: string; label: stri
   BTC: { path: 'BTC', action: 'Bitcoin', label: 'Bitcoin' },
   ETH: { path: 'ETH', action: 'Ethereum', label: 'Ethereum' },
   TRON: { path: 'TRON', action: 'Tron', label: 'Tron' },
+  // The same address as Ethereum: the chain shares the key path between the two.
+  BSC: { path: 'BSC', action: 'Bsc', label: 'BNB Smart Chain' },
+  SOL: { path: 'SOL', action: 'Solana', label: 'Solana' },
 };
 
 export interface SelfAddresses {

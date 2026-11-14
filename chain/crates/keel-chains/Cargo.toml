@@ -15,6 +15,7 @@ bitcoin = { version = "0.32", features = ["serde", "rand-std"] }
 secp256k1 = { version = "0.29", features = ["global-context", "recovery"] }
 tiny-keccak = { version = "2", features = ["keccak"] }
 bs58 = { version = "0.5", features = ["check"] }
+curve25519-dalek = { version = "4.1", features = ["rand_core"] }
 sha2.workspace = true
 hex.workspace = true
 prost = "0.13"

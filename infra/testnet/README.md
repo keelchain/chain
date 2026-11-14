@@ -61,6 +61,8 @@ Variables:
 | `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, `BITCOIN_WALLET` | `http://127.0.0.1:38332` (host 0), `keel`, `keel-vault-watch` (suffixed with the host index) |
 | `INDEXER_PG_CONTAINER` | the Postgres container the indexer database lives in (recreated on reset) |
 | `TRON_API_URL`, `TRON_USDT_CONTRACT` | `https://nile.trongrid.io`, the Nile USDT contract |
+| `SOLANA_RPC_URL`, `SOLANA_USDC_MINT` | optional; a Solana JSON-RPC and the USDC mint. Defaults: the public devnet RPC (`https://api.devnet.solana.com`) and devnet USDC `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`. The Solana vault is an Ed25519 key: the ceremony's second (FROST) share, or the development signer's Ed25519 key in `local` mode |
+| `BSC_RPC_URL`, `BSC_USDT_CONTRACT` | optional; a BNB Smart Chain JSON-RPC and the chain's USDT (BEP-20) contract. Defaults: the public BSC testnet RPC (`https://data-seed-prebsc-1-s1.bnbchain.org:8545`, chain id 97) and its USDT `0x337610d27c682E347C9cD60BD4b3b107C9d34dDd`. The BSC vault is registered with the same key as the other chains, so an account's BSC address is its Ethereum address |
 | `EXPLORER_NETWORKS` | JSON network list baked into the explorer build |
 | `KEEL_FAUCET_KEEL`, `KEEL_FAUCET_KUSD` | optional; coins per claim (default 100 each). Cooldown per address 24 h, 5 claims per IP per day |
 | `KEEL_FAUCET_FLOAT_CLAIMS` | optional; how many claims' worth of each asset the faucet should hold (default 500). Every deploy of host 0 tops the faucet up from the genesis account when it holds less than half of that, so it works again after a reset |
@@ -244,7 +246,7 @@ piped into `gh`, never pasted into a terminal or a chat.
    ```bash
    gh workflow run deploy-testnet.yml -R $R --ref main -f reset_chain=true   # first run, or a new chain
    gh run watch -R $R
-   gh workflow run tss-ceremony.yml -R $R --ref main -f epoch=1 -f chains=BTC,TRON
+   gh workflow run tss-ceremony.yml -R $R --ref main -f epoch=1 -f chains=BTC,TRON,BSC,SOL
    gh run watch -R $R
    ```
 

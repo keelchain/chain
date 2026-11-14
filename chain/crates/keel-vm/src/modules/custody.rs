@@ -165,7 +165,7 @@ fn register(
     if !state.attest.attesters.contains(&signer) {
         return Err(VmError::Unauthorized);
     }
-    if r.public_key.len() != 33 {
+    if r.public_key.len() != r.chain.key_length() {
         return Err(VmError::Invalid("bad vault public key length".into()));
     }
     if r.chain_code.is_none() {
@@ -361,6 +361,7 @@ fn observe_deposit(
         amount: o.amount,
         asset: o.asset.clone(),
         external_height: o.external_height,
+        external_tx: o.external_tx.clone(),
     };
     let digest = attestation.digest();
     let entry = state
@@ -386,6 +387,7 @@ fn observe_deposit(
         chain: o.chain.as_str().into(),
         tx_hash: tokens::hex(&o.tx_hash),
         votes,
+        external_tx: o.external_tx.clone(),
     }];
     if !entry.quorum.reached(&observers, threshold) {
         return Ok(events);
@@ -515,6 +517,7 @@ fn withdraw(
             quorum: Quorum::default(),
             tx_hash: None,
             votes: Vec::new(),
+            external_tx: None,
         },
     );
     state.custody.outbound_vault.insert(outbound_id, custodian);
@@ -640,6 +643,7 @@ pub(crate) fn settle_outbound(
     fee_paid: Amount,
     success: bool,
     tx_hash: &[u8; 32],
+    external_tx: Option<String>,
 ) -> Result<Vec<Event>, VmError> {
     let group = format!("outbound:{}", ob.id);
     let mut events = Vec::new();
@@ -663,6 +667,7 @@ pub(crate) fn settle_outbound(
         events.push(Event::OutboundConfirmed {
             outbound_id: ob.id,
             tx_hash: tokens::hex(tx_hash),
+            external_tx,
         });
     } else {
         state.ledger.post(

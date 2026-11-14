@@ -108,6 +108,9 @@ pub struct Outbound {
     /// median fee and the majority verdict, not on the closing vote.
     #[serde(default)]
     pub votes: Vec<(Address, Amount, bool)>,
+    /// The native transaction id when `tx_hash` is only its hash (schema 7).
+    #[serde(default)]
+    pub external_tx: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -184,6 +187,8 @@ pub fn native_asset(chain: Chain) -> Asset {
         Chain::Bitcoin => Asset::vault("BTC", "BTC"),
         Chain::Ethereum => Asset::vault("ETH", "ETH"),
         Chain::Tron => Asset::vault("TRON", "TRX"),
+        Chain::Bsc => Asset::vault("BSC", "BNB"),
+        Chain::Solana => Asset::vault("SOL", "SOL"),
     }
 }
 
@@ -192,7 +197,7 @@ pub fn native_asset(chain: Chain) -> Asset {
 pub fn fee_size(chain: Chain, is_native: bool) -> u64 {
     match chain {
         Chain::Bitcoin => 200,
-        Chain::Ethereum => {
+        Chain::Ethereum | Chain::Bsc => {
             if is_native {
                 21_000
             } else {
@@ -200,14 +205,29 @@ pub fn fee_size(chain: Chain, is_native: bool) -> u64 {
             }
         }
         Chain::Tron => 1,
+        // Lamports per signature for SOL; a token payout may also have to
+        // create the recipient's associated token account (rent of about
+        // 2.04M lamports), so it locks that many base fees' worth.
+        Chain::Solana => {
+            if is_native {
+                1
+            } else {
+                410
+            }
+        }
     }
 }
 
+/// Required depth per chain. BSC reads `confirmations_eth`: one knob for
+/// the EVM family keeps `Params` at its layout (no schema bump), and
+/// twelve 3-second BSC blocks are past its fast finality. Solana shares
+/// `confirmations_tron` (slots): observers only report transactions the
+/// cluster finalized, which already lie about 32 slots behind the tip.
 pub fn confirmations(state: &State, chain: Chain) -> u32 {
     match chain {
         Chain::Bitcoin => state.params.confirmations_btc,
-        Chain::Ethereum => state.params.confirmations_eth,
-        Chain::Tron => state.params.confirmations_tron,
+        Chain::Ethereum | Chain::Bsc => state.params.confirmations_eth,
+        Chain::Tron | Chain::Solana => state.params.confirmations_tron,
     }
 }
 
@@ -248,10 +268,12 @@ pub fn valid_destination(chain: Chain, to: &str) -> bool {
                 && b58(to);
             bech || legacy
         }
-        Chain::Ethereum => {
+        Chain::Ethereum | Chain::Bsc => {
             to.len() == 42 && to.starts_with("0x") && to[2..].bytes().all(|c| c.is_ascii_hexdigit())
         }
         Chain::Tron => to.len() == 34 && to.starts_with('T') && b58(to),
+        // A 32-byte key in base58 is 32 to 44 characters.
+        Chain::Solana => (32..=44).contains(&to.len()) && b58(to),
     }
 }
 
@@ -275,6 +297,11 @@ pub fn apply(
     }
 }
 
+/// Assign (or return) the signer's deposit index on `chain`. Chains of one
+/// address family (Ethereum and BSC) share the counter and the index, so
+/// the account's address is the same string on each of them: asking on
+/// either chain assigns the index under both, and an index assigned on
+/// one before the other existed is reused by the other.
 fn request_address(
     state: &mut State,
     signer: Address,
@@ -287,11 +314,28 @@ fn request_address(
             index,
         }]);
     }
-    let next = state.vaults.next_deposit_index.entry(chain).or_insert(1);
-    let index = *next;
-    *next += 1;
-    state.vaults.deposit_owner.insert((chain, index), signer);
-    state.vaults.deposit_index_of.insert((signer, chain), index);
+    let family = chain.address_family();
+    let members: Vec<Chain> = Chain::ALL
+        .iter()
+        .copied()
+        .filter(|c| c.address_family() == family)
+        .collect();
+    let index = match members
+        .iter()
+        .find_map(|c| state.vaults.deposit_index(signer, *c))
+    {
+        Some(existing) => existing,
+        None => {
+            let next = state.vaults.next_deposit_index.entry(family).or_insert(1);
+            let index = *next;
+            *next += 1;
+            index
+        }
+    };
+    for c in members {
+        state.vaults.deposit_owner.insert((c, index), signer);
+        state.vaults.deposit_index_of.insert((signer, c), index);
+    }
     Ok(vec![Event::DepositAddressAssigned {
         owner: signer,
         chain: chain.as_str().into(),
@@ -438,6 +482,7 @@ fn observe_deposit(
         amount: o.amount,
         asset: o.asset.clone(),
         external_height: o.external_height,
+        external_tx: o.external_tx.clone(),
     };
     let digest = attestation.digest();
     let entry = state
@@ -463,6 +508,7 @@ fn observe_deposit(
         chain: o.chain.as_str().into(),
         tx_hash: tokens::hex(&o.tx_hash),
         votes,
+        external_tx: o.external_tx.clone(),
     }];
     if !entry.quorum.reached(&observers, threshold) {
         return Ok(events);
@@ -572,8 +618,9 @@ fn register_vault(
     r: &VaultRegistration,
 ) -> Result<Vec<Event>, VmError> {
     require_observer(state, &signer)?;
-    // Every supported chain signs with secp256k1: a compressed 33-byte key.
-    if r.public_key.len() != 33 {
+    // A compressed 33-byte secp256k1 key, or a 32-byte Ed25519 key on
+    // Solana.
+    if r.public_key.len() != r.chain.key_length() {
         return Err(VmError::Invalid("bad vault public key length".into()));
     }
     if r.signers.is_empty() || r.threshold == 0 || r.threshold as usize > r.signers.len() {
@@ -585,6 +632,23 @@ fn register_vault(
                 "vault epoch must exceed {}",
                 active.epoch
             )));
+        }
+    }
+    // One key for the whole address family: a BSC vault must be the same
+    // key as the Ethereum one (and the other way round), or an account's
+    // "same address on both" would not hold.
+    for other in Chain::ALL {
+        if other == r.chain || other.address_family() != r.chain.address_family() {
+            continue;
+        }
+        if let Some(sibling) = state.vaults.active_vault(other) {
+            if sibling.public_key != r.public_key || sibling.chain_code != r.chain_code {
+                return Err(VmError::Invalid(format!(
+                    "{} and {} share one vault key; register the same public key and chain code",
+                    r.chain.as_str(),
+                    other.as_str()
+                )));
+            }
         }
     }
     state.vaults.vaults.insert(
@@ -748,6 +812,7 @@ fn withdraw(
             quorum: Quorum::default(),
             tx_hash: None,
             votes: Vec::new(),
+            external_tx: None,
         },
     );
     let mut out = retail;
@@ -788,6 +853,7 @@ fn observe_outbound(
     ob.votes.push((signer, o.fee_paid, o.success));
     if ob.tx_hash.is_none() {
         ob.tx_hash = Some(o.tx_hash);
+        ob.external_tx = o.external_tx.clone();
     }
     if !ob.quorum.reached(&observers, threshold) {
         return Ok(Vec::new());
@@ -804,7 +870,13 @@ fn observe_outbound(
     if let Some(custodian) = state.custody.outbound_vault.get(&ob.id).copied() {
         // Drawn from a client's own vault: its reserve, its fee.
         return super::custody::settle_outbound(
-            state, &ob, custodian, fee_paid, success, &o.tx_hash,
+            state,
+            &ob,
+            custodian,
+            fee_paid,
+            success,
+            &o.tx_hash,
+            ob.external_tx.clone(),
         );
     }
     let group = format!("outbound:{}", ob.id);
@@ -822,6 +894,7 @@ fn observe_outbound(
             Event::OutboundConfirmed {
                 outbound_id: ob.id,
                 tx_hash: tokens::hex(&o.tx_hash),
+                external_tx: ob.external_tx.clone(),
             }
         } else {
             Event::OutboundFailed {
@@ -874,6 +947,7 @@ fn observe_outbound(
         events.push(Event::OutboundConfirmed {
             outbound_id: ob.id,
             tx_hash: tokens::hex(&o.tx_hash),
+            external_tx: ob.external_tx.clone(),
         });
     } else {
         // Failed on chain: everything back to the owner.
@@ -955,7 +1029,7 @@ pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
     // Batch queued outbounds per chain.
     let interval = state.params.outbound_batch_interval_blocks.max(1);
     if ctx.height.is_multiple_of(interval) {
-        for chain in [Chain::Bitcoin, Chain::Ethereum, Chain::Tron] {
+        for chain in Chain::ALL {
             let ids: Vec<OutboundId> = state
                 .vaults
                 .outbounds

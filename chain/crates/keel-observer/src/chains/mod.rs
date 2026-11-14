@@ -4,6 +4,7 @@
 
 pub mod btc;
 pub mod eth;
+pub mod sol;
 pub mod tron;
 
 use crate::rpc::VaultView;
@@ -82,13 +83,20 @@ impl AddressBook {
         hd::deposit_path(self.chain, index)
     }
 
+    /// The secp256k1 child key of `index` (the chains signed by CGGMP21).
     pub fn pubkey(&self, index: u64) -> anyhow::Result<[u8; 33]> {
-        Ok(hd::child_pubkey(
-            &self.vault.public_key,
+        let vault = keel_chains::address::secp_key(&self.vault.public_key)?;
+        Ok(hd::child_pubkey(&vault, &self.vault.chain_code, &self.path(index))?.public_key)
+    }
+
+    /// The Ed25519 child key of `index` (Solana).
+    pub fn ed25519_pubkey(&self, index: u64) -> anyhow::Result<[u8; 32]> {
+        let vault = keel_chains::address::ed25519_key(&self.vault.public_key)?;
+        Ok(keel_chains::sol::child_pubkey(
+            &vault,
             &self.vault.chain_code,
             &self.path(index),
-        )?
-        .public_key)
+        )?)
     }
 
     /// Owner of a deposit index, if the chain assigned it.
@@ -120,8 +128,19 @@ impl AddressBook {
 
 fn normalize(chain: Chain, addr: &str) -> String {
     match chain {
-        Chain::Ethereum | Chain::Bitcoin => addr.to_ascii_lowercase(),
+        Chain::Ethereum | Chain::Bsc | Chain::Bitcoin => addr.to_ascii_lowercase(),
         _ => addr.to_string(),
+    }
+}
+
+/// The chain's native asset as the chain names it (`CHAIN.SYMBOL`).
+pub fn native_asset(chain: Chain) -> &'static str {
+    match chain {
+        Chain::Bitcoin => "BTC.BTC",
+        Chain::Ethereum => "ETH.ETH",
+        Chain::Tron => "TRON.TRX",
+        Chain::Bsc => "BSC.BNB",
+        Chain::Solana => "SOL.SOL",
     }
 }
 
@@ -235,6 +254,7 @@ mod tests {
                     &secp256k1::SecretKey::from_slice(&[3u8; 32]).unwrap(),
                 )
                 .serialize()
+                .to_vec()
             },
             chain_code: [4u8; 32],
             signers: vec![],
@@ -265,5 +285,12 @@ mod tests {
             keel_chains::address::eth_address(&book.pubkey(1).unwrap()).unwrap(),
             a1
         );
+        // The BSC book of the same vault key lists the same addresses.
+        let mut bsc_vault = book.vault.clone();
+        bsc_vault.chain = Chain::Bsc;
+        let bsc = AddressBook::build(bsc_vault, Network::Testnet).unwrap();
+        assert_eq!(bsc.address(1), book.address(1));
+        assert_eq!(bsc.index_of(&a1), Some(1));
+        assert_eq!(native_asset(Chain::Bsc), "BSC.BNB");
     }
 }

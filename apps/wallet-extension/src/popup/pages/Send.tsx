@@ -51,7 +51,7 @@ export function Send({ state }: { state: UiState }) {
   const balance = options.find((o) => o.asset === chosen)?.balance ?? '0';
   const decimals = chosen ? decimalsOf(chosen) : 0;
   const chain = BRIDGED_ASSETS.find((b) => b.asset === chosen)?.chain;
-  const own = kind === 'wallet' && chain && chain !== 'ETH' ? ownAddrs?.addresses[chain] : undefined;
+  const own = kind === 'wallet' && (chain === 'BTC' || chain === 'TRON') ? ownAddrs?.addresses[chain] : undefined;
   const destination = kind === 'wallet' ? (own?.address ?? '') : to;
   const amountUnits = max ? balance : toUnits(amount, decimals);
   const nothingHeld = BigInt(balance) === 0n;

@@ -742,9 +742,11 @@ impl FinalityCache {
     }
 }
 
-/// The observation for one transfer, with or without a proof. Without a
-/// proof (`None`) the VM would reject it; callers log and skip.
+/// The observation for one ERC-20 transfer on `chain`, with or without a
+/// proof. On Ethereum the VM rejects `Proof::None`, so callers log and
+/// skip; on a chain without a light client (BSC) `None` is the proof.
 pub fn observation(
+    chain: Chain,
     log: &TransferLog,
     asset: Asset,
     deposit_index: u64,
@@ -753,7 +755,8 @@ pub fn observation(
     proof: Option<&EthDepositProof>,
 ) -> DepositObservation {
     DepositObservation {
-        chain: Chain::Ethereum,
+        external_tx: None,
+        chain,
         asset,
         tx_hash: log.tx_hash,
         index: log_position,
@@ -762,11 +765,110 @@ pub fn observation(
         external_height: log.block_number,
         tip_height: tip,
         proof: match proof {
-            Some(p) => Proof::Ethereum {
+            Some(p) if chain.has_light_client() => Proof::Ethereum {
                 proof: borsh::to_vec(p).unwrap_or_default(),
             },
-            None => Proof::None,
+            _ => Proof::None,
         },
+    }
+}
+
+/// A top-level transaction carrying native value to a book address.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeTransfer {
+    pub tx_hash: [u8; 32],
+    pub tx_hash_hex: String,
+    pub block_number: u64,
+    pub tx_index: u64,
+    pub from: [u8; 20],
+    pub to: [u8; 20],
+    pub amount: u128,
+}
+
+/// The `index` a native observation carries. A plain value transfer has
+/// no logs, but a transaction can carry value and emit a token transfer
+/// at log position 0 too, so native deposits take a slot no log uses.
+pub const NATIVE_DEPOSIT_INDEX: u32 = u32::MAX;
+
+/// Parse `eth_getBlockByNumber(…, true)` into the native transfers paying
+/// any address of the book (`to` in the book, `value > 0`). Internal
+/// transfers (from contracts) are not visible here and are not credited.
+pub fn parse_native_transfers(block: &Value, book: &AddressBook) -> Vec<NativeTransfer> {
+    let number = json_quantity(&block["number"]).unwrap_or(0) as u64;
+    let mut out = Vec::new();
+    for tx in block["transactions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
+        let (Some(from), Some(to), Some(amount)) = (
+            json_hex20(&tx["from"]),
+            json_hex20(&tx["to"]),
+            json_quantity(&tx["value"]),
+        ) else {
+            continue;
+        };
+        if amount == 0
+            || book
+                .index_of(&keel_chains::address::eth_checksum(&to))
+                .is_none()
+        {
+            continue;
+        }
+        let Some(tx_hash) = json_hex32(&tx["hash"]) else {
+            continue;
+        };
+        out.push(NativeTransfer {
+            tx_hash,
+            tx_hash_hex: tx["hash"].as_str().unwrap_or_default().to_string(),
+            block_number: json_quantity(&tx["blockNumber"])
+                .map(|n| n as u64)
+                .unwrap_or(number),
+            tx_index: json_quantity(&tx["transactionIndex"]).unwrap_or(0) as u64,
+            from,
+            to,
+            amount,
+        });
+    }
+    out
+}
+
+/// Native transfers to the book in `[from, to]`, one full block per call.
+pub async fn scan_native_transfers(
+    rpc: &dyn EthRpc,
+    book: &AddressBook,
+    from: u64,
+    to: u64,
+) -> anyhow::Result<Vec<NativeTransfer>> {
+    let mut out = Vec::new();
+    for b in from..=to {
+        let block = rpc
+            .call("eth_getBlockByNumber", json!([format!("0x{b:x}"), true]))
+            .await?;
+        out.extend(parse_native_transfers(&block, book));
+    }
+    Ok(out)
+}
+
+/// The attestation-only observation of a native transfer.
+pub fn native_observation(
+    chain: Chain,
+    t: &NativeTransfer,
+    asset: Asset,
+    deposit_index: u64,
+    tip: u64,
+) -> DepositObservation {
+    DepositObservation {
+        external_tx: None,
+        chain,
+        asset,
+        tx_hash: t.tx_hash,
+        index: NATIVE_DEPOSIT_INDEX,
+        deposit_index,
+        amount: t.amount,
+        external_height: t.block_number,
+        tip_height: tip,
+        proof: Proof::None,
     }
 }
 
@@ -833,6 +935,7 @@ pub fn bytes(b: &[u8]) -> Bytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc::VaultView;
 
     const LOGS: &str = r#"[{"address":"0x5fbdb2315678afecb367f032d93f642f64180aa3","topics":["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef","0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266","0x0000000000000000000000007e5f4552091a69125d5dfcb7b8c2659029395bdf"],"data":"0x00000000000000000000000000000000000000000000000000000000000f4240","blockNumber":"0x10","transactionHash":"0x8f2b3c7e2f3a2d1c0b9a8f7e6d5c4b3a2918070605040302010f0e0d0c0b0a09","transactionIndex":"0x2","blockHash":"0xaa","logIndex":"0x5","removed":false}]"#;
 
@@ -996,7 +1099,15 @@ mod tests {
     #[test]
     fn observation_carries_the_borsh_proof() {
         let logs = parse_transfer_logs(&serde_json::from_str(LOGS).unwrap()).unwrap();
-        let o = observation(&logs[0], Asset::vault("ETH", "USDT"), 4, 1, 40, None);
+        let o = observation(
+            Chain::Ethereum,
+            &logs[0],
+            Asset::vault("ETH", "USDT"),
+            4,
+            1,
+            40,
+            None,
+        );
         assert_eq!(o.index, 1);
         assert_eq!(o.deposit_index, 4);
         assert_eq!(o.proof, Proof::None);
@@ -1013,7 +1124,8 @@ mod tests {
                 &secp,
                 &secp256k1::SecretKey::from_slice(&[5u8; 32]).unwrap(),
             )
-            .serialize(),
+            .serialize()
+            .to_vec(),
             chain_code: [1u8; 32],
             signers: vec![],
             threshold: 1,
@@ -1050,5 +1162,74 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(logs.len(), 1);
+    }
+
+    #[test]
+    fn native_transfers_are_read_from_full_blocks() {
+        let vault = VaultView {
+            chain: Chain::Bsc,
+            epoch: 1,
+            public_key: {
+                let secp = secp256k1::Secp256k1::new();
+                secp256k1::PublicKey::from_secret_key(
+                    &secp,
+                    &secp256k1::SecretKey::from_slice(&[3u8; 32]).unwrap(),
+                )
+                .serialize()
+                .to_vec()
+            },
+            chain_code: [4u8; 32],
+            signers: vec![],
+            threshold: 1,
+            next_deposit_index: 3,
+            owners: BTreeMap::from([(1, keel_types::Address::tagged(1))]),
+            custodian: None,
+            signer_url: None,
+            gen: 0,
+            status: "Active".into(),
+            sweep: false,
+            drain_until: 0,
+            swept_any: false,
+            pending_sweeps: Vec::new(),
+        };
+        let book = AddressBook::build(vault, keel_chains::Network::Testnet).unwrap();
+        let ours = book.address(1).unwrap().to_ascii_lowercase();
+        let block = json!({
+            "number": "0x10",
+            "transactions": [
+                { "hash": format!("0x{}", "11".repeat(32)), "from": format!("0x{}", "aa".repeat(20)), "to": ours, "value": "0x2a", "blockNumber": "0x10", "transactionIndex": "0x0" },
+                { "hash": format!("0x{}", "22".repeat(32)), "from": format!("0x{}", "aa".repeat(20)), "to": ours, "value": "0x0", "blockNumber": "0x10", "transactionIndex": "0x1" },
+                { "hash": format!("0x{}", "33".repeat(32)), "from": format!("0x{}", "aa".repeat(20)), "to": format!("0x{}", "bb".repeat(20)), "value": "0x5", "blockNumber": "0x10", "transactionIndex": "0x2" },
+                { "hash": format!("0x{}", "44".repeat(32)), "from": format!("0x{}", "aa".repeat(20)), "to": null, "value": "0x5" }
+            ]
+        });
+        let found = parse_native_transfers(&block, &book);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].amount, 42);
+        assert_eq!(found[0].block_number, 16);
+        assert_eq!(
+            book.index_of(&keel_chains::address::eth_checksum(&found[0].to)),
+            Some(1)
+        );
+        let o = native_observation(Chain::Bsc, &found[0], Asset::vault("BSC", "BNB"), 1, 40);
+        assert_eq!(o.chain, Chain::Bsc);
+        assert_eq!(o.index, NATIVE_DEPOSIT_INDEX);
+        assert_eq!(o.proof, Proof::None);
+        // On BSC an ERC-20 log needs no proof either.
+        let fh = json!([{ "transactionHash": format!("0x{}", "55".repeat(32)), "blockNumber": "0x11", "transactionIndex": "0x0", "logIndex": "0x0", "address": format!("0x{}", "cc".repeat(20)), "removed": false,
+            "topics": [format!("0x{}", hex::encode(transfer_topic())), format!("0x{}{}", "00".repeat(12), "aa".repeat(20)), format!("0x{}{}", "00".repeat(12), "bb".repeat(20))],
+            "data": format!("0x{}", "00".repeat(31) + "09") }]);
+        let logs = parse_transfer_logs(&fh).unwrap();
+        let o = observation(
+            Chain::Bsc,
+            &logs[0],
+            Asset::vault("BSC", "USDT"),
+            1,
+            0,
+            40,
+            None,
+        );
+        assert_eq!(o.proof, Proof::None);
+        assert_eq!(o.chain, Chain::Bsc);
     }
 }

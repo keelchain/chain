@@ -29,7 +29,7 @@ export type Address = string | number[];
 export type Hash32 = string | number[];
 export type Side = 'buy' | 'sell';
 export type OrderType = 'limit' | 'market';
-export type Chain = 'Bitcoin' | 'Ethereum' | 'Tron';
+export type Chain = 'Bitcoin' | 'Ethereum' | 'Tron' | 'Bsc' | 'Solana';
 export type Role = 'Validator' | 'Observer' | 'Arbitrator';
 export type VoteChoice = 'Yes' | 'No' | 'Abstain' | 'Veto';
 

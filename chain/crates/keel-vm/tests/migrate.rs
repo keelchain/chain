@@ -86,10 +86,17 @@ fn schema_zero_fixture_loads() {
     assert_eq!(schema, SCHEMA);
 }
 
-/// The genesis state serialized in an older top-level layout. Every schema
-/// so far only appended fields to `State`, and borsh writes fields in
-/// order, so an older body is the current body without its tail.
+/// Schemas up to this one only appended fields to `State`, so an older body
+/// is the current body without its tail. Schema 7 changed layouts inside
+/// `vaults`/`custody` (`external_tx`), so `legacy_body` cannot reproduce
+/// schema 6 any more; its fixture is kept as checked in.
+const TRUNCATABLE_UPTO: u32 = 5;
+
+/// The genesis state serialized in an older top-level layout (schemas up to
+/// `TRUNCATABLE_UPTO`): borsh writes fields in order, so an older body is
+/// the current body without its tail.
 fn legacy_body(schema: u32) -> Vec<u8> {
+    assert!(schema <= TRUNCATABLE_UPTO, "schema {schema} is not a truncation of the current layout");
     let state = genesis_state();
     let full = borsh::to_vec(&state).unwrap();
     let liquidity = borsh::to_vec(&state.liquidity).unwrap();
@@ -149,7 +156,7 @@ fn legacy_body(schema: u32) -> Vec<u8> {
 #[ignore]
 fn write_legacy_fixtures() {
     std::fs::create_dir_all(fixtures_dir()).unwrap();
-    for schema in 0..SCHEMA {
+    for schema in 0..=TRUNCATABLE_UPTO {
         let path = fixtures_dir().join(format!("snapshot-schema{schema}-devnet.bin"));
         std::fs::write(&path, legacy_body(schema)).unwrap();
     }

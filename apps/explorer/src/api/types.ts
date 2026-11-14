@@ -342,6 +342,8 @@ export interface Deposit {
   chain: string;
   asset: string;
   tx_hash: string;
+  /** The native transaction id when `tx_hash` is only its hash (Solana: the signature). */
+  external_tx?: string | null;
   index: number;
   owner: Hex;
   deposit_index: number;
@@ -374,6 +376,7 @@ export interface Outbound {
   status: OutboundStatus;
   batch_id?: number | null;
   tx_hash?: string | null;
+  external_tx?: string | null;
   queued_height: number;
   confirmed_height?: number | null;
 }

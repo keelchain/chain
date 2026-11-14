@@ -168,6 +168,10 @@ const ASSETS: AssetDef[] = [
   { asset: 'ETH.USDC', decimals: 6, kind: 'vault', chain: 'ETH', usd: 1 },
   { asset: 'TRON.USDT', decimals: 6, kind: 'vault', chain: 'TRON', usd: 1 },
   { asset: 'TRON.TRX', decimals: 6, kind: 'vault', chain: 'TRON', usd: 0.118 },
+  { asset: 'BSC.BNB', decimals: 18, kind: 'vault', chain: 'BSC', usd: 610 },
+  { asset: 'BSC.USDT', decimals: 18, kind: 'vault', chain: 'BSC', usd: 1 },
+  { asset: 'SOL.SOL', decimals: 9, kind: 'vault', chain: 'SOL', usd: 160 },
+  { asset: 'SOL.USDC', decimals: 6, kind: 'vault', chain: 'SOL', usd: 1 },
 ];
 
 const ASSET_BY_NAME = new Map(ASSETS.map((a) => [a.asset, a]));
@@ -188,9 +192,9 @@ const MARKETS: MarketDef[] = [
   { pair: 'TRX-KUSD', base: 'TRON.TRX', quote: 'KUSD', price: 0.118, tick: 0.00001, vol: 0.02 },
 ];
 
-const CHAINS = ['BTC', 'ETH', 'TRON'] as const;
-const CHAIN_ENUM: Record<string, string> = { BTC: 'Bitcoin', ETH: 'Ethereum', TRON: 'Tron' };
-const CHAIN_NATIVE: Record<string, string> = { BTC: 'BTC.BTC', ETH: 'ETH.ETH', TRON: 'TRON.TRX' };
+const CHAINS = ['BTC', 'ETH', 'TRON', 'BSC', 'SOL'] as const;
+const CHAIN_ENUM: Record<string, string> = { BTC: 'Bitcoin', ETH: 'Ethereum', TRON: 'Tron', BSC: 'Bsc', SOL: 'Solana' };
+const CHAIN_NATIVE: Record<string, string> = { BTC: 'BTC.BTC', ETH: 'ETH.ETH', TRON: 'TRON.TRX', BSC: 'BSC.BNB', SOL: 'SOL.SOL' };
 
 const FIATS = ['USD', 'EUR', 'GBP', 'NGN', 'EGP', 'INR', 'BRL', 'TRY'];
 const PAYMENT_METHODS = ['Bank transfer', 'Revolut', 'Wise', 'PayPal', 'Cash deposit', 'M-Pesa', 'Vodafone Cash', 'SEPA instant', 'Zelle', 'Amazon gift card'];
@@ -894,7 +898,7 @@ export class MockExplorerApi implements ExplorerApi {
           const usd = rng.int(20, 12_000);
           const amount = units(usd / a.usd, a.decimals);
           const nat = ASSET_BY_NAME.get(CHAIN_NATIVE[chain]!)!;
-          const fee = units((chain === 'BTC' ? 2.1 : chain === 'ETH' ? 1.4 : 1.0) / nat.usd, nat.decimals);
+          const fee = units((chain === 'BTC' ? 2.1 : chain === 'ETH' ? 1.4 : chain === 'BSC' ? 0.05 : chain === 'SOL' ? 0.001 : 1.0) / nat.usd, nat.decimals);
           const owner = this.user(rng);
           const to = chain === 'BTC' ? `${this.networkId === 'mainnet' ? 'bc1q' : 'tb1q'}${rng.bech32(38)}` : chain === 'ETH' ? `0x${rng.hex(20)}` : `T${rng.base58(33)}`;
           const status: Outbound['status'] = bStatus === 'signing' || bStatus === 'broadcast' ? 'batched' : bStatus === 'failed' ? 'failed' : 'confirmed';

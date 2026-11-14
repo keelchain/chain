@@ -157,6 +157,10 @@ for k, v in {
   '@BITCOIN_RPC_PASSWORD@': '$BITCOIN_RPC_PASSWORD', '@EXTERNAL_NETWORK@': '$EXT', '@BITCOIN_WALLET@': '${BITCOIN_WALLET:-keel-vault-watch}-$N',
   '@TRON_API_URL@': '${TRON_API_URL:-https://nile.trongrid.io}', '@TRON_API_KEY_LINE@': '$TRON_KEY_LINE',
   '@TRON_USDT_CONTRACT@': '${TRON_USDT_CONTRACT:-TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf}',
+  '@BSC_RPC_URL@': '${BSC_RPC_URL:-https://data-seed-prebsc-1-s1.bnbchain.org:8545}',
+  '@BSC_USDT_CONTRACT@': '${BSC_USDT_CONTRACT:-0x337610d27c682E347C9cD60BD4b3b107C9d34dDd}',
+  '@SOLANA_RPC_URL@': '${SOLANA_RPC_URL:-https://api.devnet.solana.com}',
+  '@SOLANA_USDC_MINT@': '${SOLANA_USDC_MINT:-4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU}',
 }.items(): t = t.replace(k, v)
 sys.stdout.write(t)
 PY
@@ -180,10 +184,18 @@ sudo systemctl enable $UNITS >/dev/null 2>&1
 sudo systemctl restart "keel-validator@$N"; wait_rpc
 echo "node at height $(height)"
 
-if [ "$SIGNER_MODE" = local ] && [ "$IS_HOST0" = true ] && { [ "$FRESH" = true ] || ! sudo test -f "$LIB/vaults-registered"; }; then
-  log "registering vaults (BTC, TRON) with the development signer"
-  sleep 10
-  for chain in BTC TRON; do
+if [ "$SIGNER_MODE" = local ] && [ "$IS_HOST0" = true ]; then
+  # Register every chain whose vault the node does not have yet: all of
+  # them on a fresh chain, only a newly supported one (BSC and SOL,
+  # 2026-11-11) on a running chain. The same development seed signs for
+  # every chain (its secp256k1 key for the EVM vaults, which therefore share
+  # one address per account; its Ed25519 key for Solana).
+  WAITED=0
+  for chain in BTC TRON BSC SOL; do
+    HAVE=$(curl -s "$RPC/v1/vaults/$chain" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if d.get("vault") else "no")' 2>/dev/null || echo no)
+    [ "$HAVE" = yes ] && continue
+    [ "$WAITED" = 1 ] || { log "registering missing vaults with the development signer"; sleep 10; WAITED=1; }
+    echo "registering the $chain vault"
     sudo bash -c "set -a; . $ETC/observer-$N.env; set +a; $BIN/keel-observer register-vault --config $ETC/observer-$N.toml --chain $chain --local-seed \$(sed -n 's/^tss_url = \"local:\\(.*\\)\"/\\1/p' $ETC/observer-$N.toml)"
     sleep 8
   done

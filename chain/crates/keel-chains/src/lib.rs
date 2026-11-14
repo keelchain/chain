@@ -9,6 +9,7 @@ pub mod btc;
 pub mod eth;
 pub mod hd;
 pub mod policy;
+pub mod sol;
 pub mod tron;
 
 pub use address::{deposit_address, validate_address};
@@ -42,6 +43,33 @@ impl Network {
             Network::Mainnet => 1,
             _ => 11_155_111,
         }
+    }
+
+    /// BNB Smart Chain id: mainnet 56, everything else the BSC testnet 97.
+    pub fn bsc_chain_id(self) -> u64 {
+        match self {
+            Network::Mainnet => 56,
+            _ => 97,
+        }
+    }
+
+    /// Solana cluster: mainnet-beta, everything else devnet.
+    pub fn solana_cluster(self) -> &'static str {
+        match self {
+            Network::Mainnet => "mainnet-beta",
+            _ => "devnet",
+        }
+    }
+}
+
+/// Which EVM chain an EIP-155 chain id belongs to: BSC for 56 (mainnet)
+/// and 97 (testnet), Ethereum for everything else (mainnet, Sepolia, and
+/// the local devnets). The chain id is bound into every signed EVM
+/// transaction, so the signing policy reads the chain from it.
+pub fn evm_chain_of_id(chain_id: u64) -> keel_actions::Chain {
+    match chain_id {
+        56 | 97 => keel_actions::Chain::Bsc,
+        _ => keel_actions::Chain::Ethereum,
     }
 }
 

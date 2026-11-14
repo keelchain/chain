@@ -1,13 +1,17 @@
 /** The external chains the popup shows, and their network names per Keel network. */
 import { externalNetworks, type ExternalChain } from '@keelchain/sdk';
 
-export const DEPOSIT_CHAINS: ExternalChain[] = ['BTC', 'TRON'];
+export const DEPOSIT_CHAINS: ExternalChain[] = ['BTC', 'TRON', 'BSC', 'SOL'];
 
 /** The bridged assets a user can hold in Keel, by chain. */
 export const BRIDGED_ASSETS: { asset: string; chain: ExternalChain }[] = [
   { asset: 'BTC.BTC', chain: 'BTC' },
   { asset: 'TRON.USDT', chain: 'TRON' },
   { asset: 'TRON.TRX', chain: 'TRON' },
+  { asset: 'BSC.USDT', chain: 'BSC' },
+  { asset: 'BSC.BNB', chain: 'BSC' },
+  { asset: 'SOL.USDC', chain: 'SOL' },
+  { asset: 'SOL.SOL', chain: 'SOL' },
 ];
 
 /** Name of the external network a Keel network bridges: the testnet bridges signet and Nile. */

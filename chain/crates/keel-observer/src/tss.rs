@@ -1,12 +1,16 @@
 //! The signer behind the vault key: the `keel-tss serve` daemon over HTTP,
 //! or a single-key development signer that derives BIP32 children from a
-//! seed (only for regtest/devnet runs and tests).
+//! seed (only for regtest/devnet runs and tests). Both answer for the
+//! secp256k1 chains (ECDSA over a digest) and for Solana (Ed25519 over a
+//! message, under `keel_chains::sol`'s child derivation).
 
 use async_trait::async_trait;
 use bitcoin::bip32::{ChildNumber, Xpriv};
-use keel_chains::policy::SignContext;
+use curve25519_dalek::scalar::Scalar;
+use keel_chains::{policy::SignContext, sol};
 use secp256k1::{Message, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
+use sha2::Digest as _;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TssSignature {
@@ -35,6 +39,14 @@ pub trait TssClient: Send + Sync {
         path: &[u32],
         context: Option<&SignContext>,
     ) -> anyhow::Result<TssSignature>;
+
+    /// Ed25519-sign `message` with the Solana child at `path`.
+    async fn sign_message(
+        &self,
+        message: &[u8],
+        path: &[u32],
+        context: Option<&SignContext>,
+    ) -> anyhow::Result<[u8; 64]>;
 }
 
 #[derive(Serialize)]
@@ -43,13 +55,22 @@ struct SignRequest<'a> {
     path: &'a [u32],
     #[serde(skip_serializing_if = "Option::is_none")]
     context: Option<&'a SignContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scheme: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct SignResponse {
+    #[serde(default)]
     r: String,
+    #[serde(default)]
     s: String,
+    #[serde(default)]
     v: u8,
+    #[serde(default)]
+    signature: String,
 }
 
 pub struct HttpTss {
@@ -81,6 +102,8 @@ impl TssClient for HttpTss {
                 digest: hex::encode(digest),
                 path,
                 context,
+                scheme: None,
+                message: None,
             })
             .send()
             .await?;
@@ -103,6 +126,38 @@ impl TssClient for HttpTss {
             v: r.v,
         })
     }
+
+    async fn sign_message(
+        &self,
+        message: &[u8],
+        path: &[u32],
+        context: Option<&SignContext>,
+    ) -> anyhow::Result<[u8; 64]> {
+        let digest: [u8; 32] = sha2::Sha256::digest(message).into();
+        let resp = self
+            .client
+            .post(&self.url)
+            .json(&SignRequest {
+                digest: hex::encode(digest),
+                path,
+                context,
+                scheme: Some("eddsa"),
+                message: Some(hex::encode(message)),
+            })
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            anyhow::bail!(
+                "tss: {} {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            );
+        }
+        let r: SignResponse = resp.json().await?;
+        hex::decode(&r.signature)?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("tss returned a non-64-byte signature"))
+    }
 }
 
 /// Development signer: one BIP32 master key, children derived the same
@@ -110,13 +165,53 @@ impl TssClient for HttpTss {
 /// `(public_key, chain_code)` as the vault to use it end to end.
 pub struct LocalSigner {
     master: Xpriv,
+    /// The Solana vault: a raw Ed25519 scalar, a nonce prefix and a chain
+    /// code, all drawn from the same seed.
+    ed_scalar: Scalar,
+    ed_prefix: [u8; 32],
+    ed_chain_code: [u8; 32],
 }
 
 impl LocalSigner {
     pub fn from_seed(seed: &[u8]) -> anyhow::Result<Self> {
+        let wide: [u8; 64] = sha2::Sha512::new()
+            .chain_update(b"keel-local-ed25519")
+            .chain_update(seed)
+            .finalize()
+            .into();
         Ok(Self {
             master: Xpriv::new_master(bitcoin::Network::Regtest, seed)?,
+            ed_scalar: Scalar::from_bytes_mod_order_wide(&wide),
+            ed_prefix: keel_crypto::sha256(&[b"keel-local-ed25519-prefix", seed]),
+            ed_chain_code: keel_crypto::sha256(&[b"keel-local-ed25519-chain-code", seed]),
         })
+    }
+
+    /// The Ed25519 vault key (Solana).
+    pub fn ed25519_public_key(&self) -> [u8; 32] {
+        sol::pubkey_of_scalar(&self.ed_scalar)
+    }
+
+    pub fn ed25519_chain_code(&self) -> [u8; 32] {
+        self.ed_chain_code
+    }
+
+    /// The vault key and chain code to register for `chain`.
+    pub fn vault_key(&self, chain: keel_actions::Chain) -> (Vec<u8>, [u8; 32]) {
+        if chain.is_ed25519() {
+            (self.ed25519_public_key().to_vec(), self.ed_chain_code)
+        } else {
+            (self.public_key().to_vec(), self.chain_code())
+        }
+    }
+
+    pub fn sign_message_sync(&self, message: &[u8], path: &[u32]) -> anyhow::Result<[u8; 64]> {
+        let (t, _) = sol::child(&self.ed25519_public_key(), &self.ed_chain_code, path)?;
+        Ok(sol::sign_with_scalar(
+            &(self.ed_scalar + t),
+            &self.ed_prefix,
+            message,
+        ))
     }
 
     pub fn public_key(&self) -> [u8; 33] {
@@ -167,18 +262,18 @@ pub async fn serve_local(seed: &[u8], listen: std::net::SocketAddr) -> anyhow::R
     struct Req {
         digest: String,
         path: Vec<u32>,
-    }
-    #[derive(serde::Serialize)]
-    struct Resp {
-        r: String,
-        s: String,
-        v: u8,
+        #[serde(default)]
+        scheme: Option<String>,
+        #[serde(default)]
+        message: Option<String>,
     }
     let signer = Arc::new(LocalSigner::from_seed(seed)?);
     tracing::info!(
         %listen,
         public_key = hex::encode(signer.public_key()),
         chain_code = hex::encode(signer.chain_code()),
+        ed25519_public_key = hex::encode(signer.ed25519_public_key()),
+        ed25519_chain_code = hex::encode(signer.ed25519_chain_code()),
         "development signer serving /sign"
     );
     let app = Router::new().route(
@@ -186,18 +281,29 @@ pub async fn serve_local(seed: &[u8], listen: std::net::SocketAddr) -> anyhow::R
         post(move |Json(req): Json<Req>| {
             let signer = signer.clone();
             async move {
+                let bad = |m: String| (axum::http::StatusCode::BAD_REQUEST, m);
+                if req.scheme.as_deref() == Some("eddsa") {
+                    let message = hex::decode(req.message.unwrap_or_default())
+                        .map_err(|e| bad(format!("message: {e}")))?;
+                    let sig = signer
+                        .sign_message_sync(&message, &req.path)
+                        .map_err(|e| bad(e.to_string()))?;
+                    return Ok::<_, (axum::http::StatusCode, String)>(Json(
+                        serde_json::json!({ "signature": hex::encode(sig) }),
+                    ));
+                }
                 let digest: [u8; 32] = hex::decode(&req.digest)
                     .ok()
                     .and_then(|d| d.try_into().ok())
-                    .ok_or((axum::http::StatusCode::BAD_REQUEST, "digest".to_string()))?;
+                    .ok_or_else(|| bad("digest".to_string()))?;
                 let sig = signer
                     .sign_sync(digest, &req.path)
-                    .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e.to_string()))?;
-                Ok::<_, (axum::http::StatusCode, String)>(Json(Resp {
-                    r: hex::encode(sig.r),
-                    s: hex::encode(sig.s),
-                    v: sig.v,
-                }))
+                    .map_err(|e| bad(e.to_string()))?;
+                Ok(Json(serde_json::json!({
+                    "r": hex::encode(sig.r),
+                    "s": hex::encode(sig.s),
+                    "v": sig.v,
+                })))
             }
         }),
     );
@@ -215,6 +321,15 @@ impl TssClient for LocalSigner {
         _context: Option<&SignContext>,
     ) -> anyhow::Result<TssSignature> {
         self.sign_sync(digest, path)
+    }
+
+    async fn sign_message(
+        &self,
+        message: &[u8],
+        path: &[u32],
+        _context: Option<&SignContext>,
+    ) -> anyhow::Result<[u8; 64]> {
+        self.sign_message_sync(message, path)
     }
 }
 
@@ -254,5 +369,25 @@ mod tests {
             &pk,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn local_signer_signs_solana_children_keel_chains_derives() {
+        let signer = LocalSigner::from_seed(&[7u8; 32]).unwrap();
+        let path = keel_chains::hd::deposit_path(keel_actions::Chain::Solana, 3);
+        let child = sol::child_pubkey(
+            &signer.ed25519_public_key(),
+            &signer.ed25519_chain_code(),
+            &path,
+        )
+        .unwrap();
+        let msg = b"solana message";
+        let sig = signer.sign_message_sync(msg, &path).unwrap();
+        assert!(sol::verify(&child, msg, &sig));
+        assert!(!sol::verify(&signer.ed25519_public_key(), msg, &sig));
+        let (pk, cc) = signer.vault_key(keel_actions::Chain::Solana);
+        assert_eq!(pk.len(), 32);
+        assert_eq!(cc, signer.ed25519_chain_code());
+        assert_eq!(signer.vault_key(keel_actions::Chain::Bitcoin).0.len(), 33);
     }
 }

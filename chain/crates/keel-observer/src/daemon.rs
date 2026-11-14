@@ -6,6 +6,7 @@ use crate::{
     chains::{
         btc::{self, BitcoinRpc, HttpBitcoin},
         eth::{BeaconApi, EthRpc, HttpBeacon, HttpEth},
+        sol::{HttpSol, SolRpc},
         tron::{HttpTron, TronApi},
         AddressBook,
     },
@@ -28,7 +29,9 @@ use tokio::sync::RwLock;
 pub struct Books {
     pub bitcoin: Option<AddressBook>,
     pub ethereum: Option<AddressBook>,
+    pub bsc: Option<AddressBook>,
     pub tron: Option<AddressBook>,
+    pub solana: Option<AddressBook>,
     pub params: ChainParams,
     /// Client-owned custody vaults, watched like the network vault; their
     /// outbounds are signed by each vault's own signer.
@@ -40,7 +43,9 @@ pub struct Nodes {
     pub bitcoin: Option<Arc<dyn BitcoinRpc>>,
     pub ethereum: Option<Arc<dyn EthRpc>>,
     pub beacon: Option<Arc<dyn BeaconApi>>,
+    pub bsc: Option<Arc<dyn EthRpc>>,
     pub tron: Option<Arc<dyn TronApi>>,
+    pub solana: Option<Arc<dyn SolRpc>>,
 }
 
 /// The node client named by the config, with the receipts fallback wired
@@ -137,10 +142,18 @@ impl Daemon {
                 .as_ref()
                 .and_then(|c| c.beacon_url.as_deref())
                 .map(|u| Arc::new(HttpBeacon::new(u)) as Arc<dyn BeaconApi>),
+            bsc: cfg
+                .bsc
+                .as_ref()
+                .map(|c| Arc::new(HttpEth::new(c)) as Arc<dyn EthRpc>),
             tron: cfg
                 .tron
                 .as_ref()
                 .map(|c| Arc::new(HttpTron::new(c)) as Arc<dyn TronApi>),
+            solana: cfg
+                .solana
+                .as_ref()
+                .map(|c| Arc::new(HttpSol::new(c)) as Arc<dyn SolRpc>),
         };
         tracing::info!(chain_id = status.chain_id, height = status.height, observer = %submitter.address(), "connected to the Keel node");
         Ok(Self {
@@ -185,9 +198,19 @@ impl Daemon {
                 books.ethereum = Some(AddressBook::build(v, c.network)?);
             }
         }
+        if let Some(c) = &self.cfg.bsc {
+            if let Some(v) = self.rpc.vault(Chain::Bsc).await? {
+                books.bsc = Some(AddressBook::build(v, c.network)?);
+            }
+        }
         if self.cfg.tron.is_some() {
             if let Some(v) = self.rpc.vault(Chain::Tron).await? {
                 books.tron = Some(AddressBook::build(v, Network::Mainnet)?);
+            }
+        }
+        if let Some(c) = &self.cfg.solana {
+            if let Some(v) = self.rpc.vault(Chain::Solana).await? {
+                books.solana = Some(AddressBook::build(v, c.network)?);
             }
         }
         // Client vaults: same derivation, the network observer set as the
@@ -203,12 +226,20 @@ impl Daemon {
                     Some(c) => (c.network, books.ethereum.as_ref()),
                     None => continue,
                 },
+                Chain::Bsc => match &self.cfg.bsc {
+                    Some(c) => (c.network, books.bsc.as_ref()),
+                    None => continue,
+                },
                 Chain::Tron => {
                     if self.cfg.tron.is_none() {
                         continue;
                     }
                     (Network::Mainnet, books.tron.as_ref())
                 }
+                Chain::Solana => match &self.cfg.solana {
+                    Some(c) => (c.network, books.solana.as_ref()),
+                    None => continue,
+                },
             };
             view.signers = network_book
                 .map(|b| b.vault.signers.clone())
@@ -248,14 +279,20 @@ impl Daemon {
         tracing::debug!(
             btc = books.bitcoin.as_ref().map(AddressBook::len),
             eth = books.ethereum.as_ref().map(AddressBook::len),
+            bsc = books.bsc.as_ref().map(AddressBook::len),
             tron = books.tron.as_ref().map(AddressBook::len),
+            solana = books.solana.as_ref().map(AddressBook::len),
             custody = books.custody.len(),
             "address books synced"
         );
         Ok(())
     }
 
-    pub async fn deposits_once(&self, eth_scanner: &mut EthScanner) -> anyhow::Result<()> {
+    pub async fn deposits_once(
+        &self,
+        eth_scanner: &mut EthScanner,
+        bsc_scanner: &mut EthScanner,
+    ) -> anyhow::Result<()> {
         let books = self.books.read().await;
         let ctx = DepositContext {
             submitter: &self.submitter,
@@ -274,9 +311,16 @@ impl Daemon {
         {
             let beacon = self.nodes.beacon.as_deref();
             if let Err(e) =
-                deposits::scan_ethereum(&ctx, rpc.as_ref(), beacon, eth_scanner, book, cfg).await
+                deposits::scan_evm(&ctx, rpc.as_ref(), beacon, eth_scanner, book, cfg).await
             {
                 tracing::warn!(error = %e, "ethereum deposit scan failed");
+            }
+        }
+        if let (Some(rpc), Some(book), Some(cfg)) = (&self.nodes.bsc, &books.bsc, &self.cfg.bsc) {
+            if let Err(e) =
+                deposits::scan_evm(&ctx, rpc.as_ref(), None, bsc_scanner, book, cfg).await
+            {
+                tracing::warn!(error = %e, "bsc deposit scan failed");
             }
         }
         for book in &books.custody {
@@ -290,8 +334,13 @@ impl Daemon {
                 Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
                     (Some(rpc), Some(cfg)) => {
                         let beacon = self.nodes.beacon.as_deref();
-                        deposits::scan_ethereum(&ctx, rpc.as_ref(), beacon, eth_scanner, book, cfg)
-                            .await
+                        deposits::scan_evm(&ctx, rpc.as_ref(), beacon, eth_scanner, book, cfg).await
+                    }
+                    _ => continue,
+                },
+                Chain::Bsc => match (&self.nodes.bsc, &self.cfg.bsc) {
+                    (Some(rpc), Some(cfg)) => {
+                        deposits::scan_evm(&ctx, rpc.as_ref(), None, bsc_scanner, book, cfg).await
                     }
                     _ => continue,
                 },
@@ -301,9 +350,22 @@ impl Daemon {
                     }
                     _ => continue,
                 },
+                Chain::Solana => match (&self.nodes.solana, &self.cfg.solana) {
+                    (Some(rpc), Some(cfg)) => {
+                        deposits::scan_solana(&ctx, rpc.as_ref(), book, cfg).await
+                    }
+                    _ => continue,
+                },
             };
             if let Err(e) = r {
                 tracing::warn!(error = %e, chain = book.chain.as_str(), "custody deposit pass failed");
+            }
+        }
+        if let (Some(rpc), Some(book), Some(cfg)) =
+            (&self.nodes.solana, &books.solana, &self.cfg.solana)
+        {
+            if let Err(e) = deposits::scan_solana(&ctx, rpc.as_ref(), book, cfg).await {
+                tracing::warn!(error = %e, "solana deposit scan failed");
             }
         }
         if let (Some(api), Some(book), Some(cfg)) = (&self.nodes.tron, &books.tron, &self.cfg.tron)
@@ -338,14 +400,26 @@ impl Daemon {
         if let (Some(rpc), Some(book), Some(cfg)) =
             (&self.nodes.ethereum, &books.ethereum, &self.cfg.ethereum)
         {
-            if let Err(e) = outbound::process_ethereum(&ctx, rpc.as_ref(), book, cfg, &rows).await {
+            if let Err(e) = outbound::process_evm(&ctx, rpc.as_ref(), book, cfg, &rows).await {
                 tracing::warn!(error = %e, "ethereum outbound pass failed");
+            }
+        }
+        if let (Some(rpc), Some(book), Some(cfg)) = (&self.nodes.bsc, &books.bsc, &self.cfg.bsc) {
+            if let Err(e) = outbound::process_evm(&ctx, rpc.as_ref(), book, cfg, &rows).await {
+                tracing::warn!(error = %e, "bsc outbound pass failed");
             }
         }
         if let (Some(api), Some(book), Some(cfg)) = (&self.nodes.tron, &books.tron, &self.cfg.tron)
         {
             if let Err(e) = outbound::process_tron(&ctx, api.as_ref(), book, cfg, &rows).await {
                 tracing::warn!(error = %e, "tron outbound pass failed");
+            }
+        }
+        if let (Some(rpc), Some(book), Some(cfg)) =
+            (&self.nodes.solana, &books.solana, &self.cfg.solana)
+        {
+            if let Err(e) = outbound::process_solana(&ctx, rpc.as_ref(), book, cfg, &rows).await {
+                tracing::warn!(error = %e, "solana outbound pass failed");
             }
         }
         // Client vaults: built and broadcast here, signed by the client's
@@ -407,15 +481,23 @@ impl Daemon {
                     }
                     _ => continue,
                 },
-                Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
-                    (Some(rpc), Some(cfg)) => {
-                        outbound::process_ethereum(&ctx, rpc.as_ref(), book, cfg, rows).await
+                Chain::Ethereum | Chain::Bsc => {
+                    match (self.evm_node(book.chain), self.evm_cfg(book.chain)) {
+                        (Some(rpc), Some(cfg)) => {
+                            outbound::process_evm(&ctx, rpc.as_ref(), book, cfg, rows).await
+                        }
+                        _ => continue,
                     }
-                    _ => continue,
-                },
+                }
                 Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
                     (Some(api), Some(cfg)) => {
                         outbound::process_tron(&ctx, api.as_ref(), book, cfg, rows).await
+                    }
+                    _ => continue,
+                },
+                Chain::Solana => match (&self.nodes.solana, &self.cfg.solana) {
+                    (Some(rpc), Some(cfg)) => {
+                        outbound::process_solana(&ctx, rpc.as_ref(), book, cfg, rows).await
                     }
                     _ => continue,
                 },
@@ -425,6 +507,23 @@ impl Daemon {
             }
         }
         Ok(())
+    }
+
+    /// The EVM node and config of `chain` (Ethereum or BSC).
+    fn evm_node(&self, chain: Chain) -> Option<&Arc<dyn EthRpc>> {
+        match chain {
+            Chain::Ethereum => self.nodes.ethereum.as_ref(),
+            Chain::Bsc => self.nodes.bsc.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn evm_cfg(&self, chain: Chain) -> Option<&crate::config::EthereumConfig> {
+        match chain {
+            Chain::Ethereum => self.cfg.ethereum.as_ref(),
+            Chain::Bsc => self.cfg.bsc.as_ref(),
+            _ => None,
+        }
     }
 
     /// The first candidate generation whose coins cover a batch (its
@@ -447,28 +546,31 @@ impl Daemon {
                         .map(|u| u.iter().map(|x| x.value as u128).sum::<u128>()),
                     None => None,
                 },
-                Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
-                    (Some(rpc), Some(cfg)) => {
-                        let hot = book.address(cfg.hot_index)?;
-                        let asset = rows.first().map(|r| r.asset.as_str()).unwrap_or("ETH.ETH");
-                        if asset == "ETH.ETH" {
-                            crate::chains::eth::balance(rpc.as_ref(), hot).await.ok()
-                        } else {
-                            let symbol = asset.split_once('.').map(|(_, s)| s).unwrap_or(asset);
-                            match cfg.tokens.iter().find(|t| t.symbol == symbol) {
-                                Some(t) => crate::chains::eth::token_balance(
-                                    rpc.as_ref(),
-                                    &t.contract,
-                                    hot,
-                                )
-                                .await
-                                .ok(),
-                                None => None,
+                Chain::Ethereum | Chain::Bsc => {
+                    match (self.evm_node(book.chain), self.evm_cfg(book.chain)) {
+                        (Some(rpc), Some(cfg)) => {
+                            let hot = book.address(cfg.hot_index)?;
+                            let native = crate::chains::native_asset(book.chain);
+                            let asset = rows.first().map(|r| r.asset.as_str()).unwrap_or(native);
+                            if asset == native {
+                                crate::chains::eth::balance(rpc.as_ref(), hot).await.ok()
+                            } else {
+                                let symbol = asset.split_once('.').map(|(_, s)| s).unwrap_or(asset);
+                                match cfg.tokens.iter().find(|t| t.symbol == symbol) {
+                                    Some(t) => crate::chains::eth::token_balance(
+                                        rpc.as_ref(),
+                                        &t.contract,
+                                        hot,
+                                    )
+                                    .await
+                                    .ok(),
+                                    None => None,
+                                }
                             }
                         }
+                        _ => None,
                     }
-                    _ => None,
-                },
+                }
                 Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
                     (Some(api), Some(cfg)) => {
                         let hot = book.address(cfg.hot_index)?;
@@ -494,6 +596,33 @@ impl Daemon {
                     }
                     _ => None,
                 },
+                Chain::Solana => match (&self.nodes.solana, &self.cfg.solana) {
+                    (Some(rpc), Some(cfg)) => {
+                        let hot = book.address(cfg.hot_index)?;
+                        let asset = rows.first().map(|r| r.asset.as_str()).unwrap_or("SOL.SOL");
+                        if asset == "SOL.SOL" {
+                            crate::chains::sol::balance(rpc.as_ref(), hot)
+                                .await
+                                .ok()
+                                .map(|b| b as u128)
+                        } else {
+                            let symbol = asset.split_once('.').map(|(_, s)| s).unwrap_or(asset);
+                            match cfg.tokens.iter().find(|t| t.symbol == symbol) {
+                                Some(t) => match crate::chains::sol::ata(hot, &t.contract) {
+                                    Ok(a) => {
+                                        crate::chains::sol::token_account_balance(rpc.as_ref(), &a)
+                                            .await
+                                            .ok()
+                                            .map(|b| b as u128)
+                                    }
+                                    Err(_) => None,
+                                },
+                                None => None,
+                            }
+                        }
+                    }
+                    _ => None,
+                },
             };
             match have {
                 Some(h) if h >= needed => return Some(book),
@@ -506,7 +635,7 @@ impl Daemon {
     }
 
     /// Custody moves: sweeps of draining generations, consolidation of
-    /// Ethereum/Tron deposit indexes, empty-generation reports.
+    /// EVM/Tron deposit indexes, empty-generation reports.
     pub async fn moves_once(&self) -> anyhow::Result<()> {
         let books = self.books.read().await;
         for from in &books.custody {
@@ -533,15 +662,23 @@ impl Daemon {
                     }
                     _ => continue,
                 },
-                Chain::Ethereum => match (&self.nodes.ethereum, &self.cfg.ethereum) {
-                    (Some(rpc), Some(cfg)) => {
-                        crate::moves::ethereum(&ctx, rpc.as_ref(), from, active, cfg).await
+                Chain::Ethereum | Chain::Bsc => {
+                    match (self.evm_node(from.chain), self.evm_cfg(from.chain)) {
+                        (Some(rpc), Some(cfg)) => {
+                            crate::moves::evm(&ctx, rpc.as_ref(), from, active, cfg).await
+                        }
+                        _ => continue,
                     }
-                    _ => continue,
-                },
+                }
                 Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
                     (Some(api), Some(cfg)) => {
                         crate::moves::tron(&ctx, api.as_ref(), from, active, cfg).await
+                    }
+                    _ => continue,
+                },
+                Chain::Solana => match (&self.nodes.solana, &self.cfg.solana) {
+                    (Some(rpc), Some(cfg)) => {
+                        crate::moves::solana(&ctx, rpc.as_ref(), from, active, cfg).await
                     }
                     _ => continue,
                 },
@@ -566,14 +703,26 @@ impl Daemon {
         if let (Some(from), Some(rpc), Some(cfg)) =
             (&books.ethereum, &self.nodes.ethereum, &self.cfg.ethereum)
         {
-            if let Err(e) = crate::moves::ethereum(&ctx, rpc.as_ref(), from, None, cfg).await {
+            if let Err(e) = crate::moves::evm(&ctx, rpc.as_ref(), from, None, cfg).await {
                 tracing::warn!(error = %e, "network vault ethereum consolidation failed");
+            }
+        }
+        if let (Some(from), Some(rpc), Some(cfg)) = (&books.bsc, &self.nodes.bsc, &self.cfg.bsc) {
+            if let Err(e) = crate::moves::evm(&ctx, rpc.as_ref(), from, None, cfg).await {
+                tracing::warn!(error = %e, "network vault bsc consolidation failed");
             }
         }
         if let (Some(from), Some(api), Some(cfg)) = (&books.tron, &self.nodes.tron, &self.cfg.tron)
         {
             if let Err(e) = crate::moves::tron(&ctx, api.as_ref(), from, None, cfg).await {
                 tracing::warn!(error = %e, "network vault tron consolidation failed");
+            }
+        }
+        if let (Some(from), Some(rpc), Some(cfg)) =
+            (&books.solana, &self.nodes.solana, &self.cfg.solana)
+        {
+            if let Err(e) = crate::moves::solana(&ctx, rpc.as_ref(), from, None, cfg).await {
+                tracing::warn!(error = %e, "network vault solana consolidation failed");
             }
         }
         Ok(())
@@ -587,15 +736,27 @@ impl Daemon {
             }
         }
         if let (Some(rpc), Some(cfg)) = (&self.nodes.ethereum, &self.cfg.ethereum) {
-            match fees::report_ethereum(&self.submitter, rpc.as_ref(), cfg).await {
+            match fees::report_evm(&self.submitter, Chain::Ethereum, rpc.as_ref(), cfg).await {
                 Ok(r) => tracing::info!(wei_per_gas = r, "ethereum fee reported"),
                 Err(e) => tracing::warn!(error = %e, "ethereum fee report failed"),
+            }
+        }
+        if let (Some(rpc), Some(cfg)) = (&self.nodes.bsc, &self.cfg.bsc) {
+            match fees::report_evm(&self.submitter, Chain::Bsc, rpc.as_ref(), cfg).await {
+                Ok(r) => tracing::info!(wei_per_gas = r, "bsc fee reported"),
+                Err(e) => tracing::warn!(error = %e, "bsc fee report failed"),
             }
         }
         if let Some(cfg) = &self.cfg.tron {
             match fees::report_tron(&self.submitter, cfg).await {
                 Ok(r) => tracing::info!(sun = r, "tron fee reported"),
                 Err(e) => tracing::warn!(error = %e, "tron fee report failed"),
+            }
+        }
+        if let Some(cfg) = &self.cfg.solana {
+            match fees::report_solana(&self.submitter, cfg).await {
+                Ok(r) => tracing::info!(lamports = r, "solana fee reported"),
+                Err(e) => tracing::warn!(error = %e, "solana fee report failed"),
             }
         }
         Ok(())
@@ -619,9 +780,10 @@ impl Daemon {
         let deposits = {
             let d = self.clone();
             tokio::spawn(async move {
-                let mut scanner = EthScanner::default();
+                let mut eth_scanner = EthScanner::default();
+                let mut bsc_scanner = EthScanner::default();
                 loop {
-                    if let Err(e) = d.deposits_once(&mut scanner).await {
+                    if let Err(e) = d.deposits_once(&mut eth_scanner, &mut bsc_scanner).await {
                         tracing::warn!(error = %e, "deposit pass failed");
                     }
                     tokio::time::sleep(Duration::from_secs(iv.deposits_secs.max(1))).await;

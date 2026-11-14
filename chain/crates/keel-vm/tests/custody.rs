@@ -38,6 +38,7 @@ fn registration(epoch: u64) -> CustodyVaultRegistration {
 
 fn obs(asset: Asset, deposit_index: u64, amount: u128, tx: u8) -> DepositObservation {
     DepositObservation {
+        external_tx: None,
         chain: ExtChain::Tron,
         asset,
         tx_hash: [tx; 32],
@@ -211,6 +212,7 @@ fn custody_vault_lifecycle() {
     // amount leaves the reserve, the fee is booked as the client's
     // expense and its TRX reserve is now short, which halts TRX outbounds.
     let (r, end) = c.block(&[v.act(Action::ObserveOutbound(OutboundObservation {
+        external_tx: None,
         outbound_id: id,
         tx_hash: [9; 32],
         external_height: 300,
@@ -261,6 +263,7 @@ fn custody_vault_lifecycle() {
     ok(&r[0]);
     let id2 = id + 1;
     let (r, _) = c.block(&[v.act(Action::ObserveOutbound(OutboundObservation {
+        external_tx: None,
         outbound_id: id2,
         tx_hash: [10; 32],
         external_height: 320,
@@ -282,6 +285,7 @@ fn custody_vault_lifecycle() {
     ok(&r[0]);
     let id3 = id2 + 1;
     let (r, end) = c.block(&[v.act(Action::ObserveOutbound(OutboundObservation {
+        external_tx: None,
         outbound_id: id3,
         tx_hash: [11; 32],
         external_height: 340,

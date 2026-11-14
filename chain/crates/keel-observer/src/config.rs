@@ -23,8 +23,18 @@ pub struct Config {
     pub bitcoin: Option<BitcoinConfig>,
     #[serde(default)]
     pub ethereum: Option<EthereumConfig>,
+    /// BNB Smart Chain (2026-11-11): the same shape as `[ethereum]` (an
+    /// EVM JSON-RPC, ERC-20 tokens, a hot index). Watched by attestation
+    /// only: `beacon_url` is ignored, native BNB deposits are credited
+    /// from the blocks' top-level transfers.
+    #[serde(default)]
+    pub bsc: Option<EthereumConfig>,
     #[serde(default)]
     pub tron: Option<TronConfig>,
+    /// Solana (2026-11-11): a JSON-RPC endpoint, the SPL tokens to watch,
+    /// a hot index. Attestation only; the vault key is Ed25519 (FROST).
+    #[serde(default)]
+    pub solana: Option<SolanaConfig>,
     #[serde(default)]
     pub outbound: OutboundConfig,
     /// Lightning hot pool via a local LND node (2026-09-10).
@@ -173,10 +183,18 @@ pub struct EthereumConfig {
     /// assigned to a user).
     #[serde(default)]
     pub hot_index: u64,
+    /// On a chain without a light client (BSC), native deposits are read
+    /// from full blocks; at most this many of the newest blocks of a pass
+    /// are fetched, so a cold start does not pull the whole log window.
+    #[serde(default = "default_native_scan_blocks")]
+    pub native_scan_blocks: u64,
 }
 
 fn default_log_window() -> u64 {
     2000
+}
+fn default_native_scan_blocks() -> u64 {
+    64
 }
 fn default_priority_wei() -> u128 {
     1_000_000_000
@@ -187,8 +205,35 @@ fn default_priority_wei() -> u128 {
 pub struct TokenConfig {
     /// Asset symbol on KEEL without the chain prefix (`USDT` → `ETH.USDT`).
     pub symbol: String,
-    /// Contract address (`0x…` for Ethereum, `T…` for Tron).
+    /// Contract address (`0x…` for Ethereum, `T…` for Tron, the mint for
+    /// Solana).
     pub contract: String,
+    /// Token decimals, needed by Solana's `TransferChecked` (default 6).
+    #[serde(default)]
+    pub decimals: Option<u8>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SolanaConfig {
+    /// JSON-RPC base (`https://api.devnet.solana.com`).
+    pub rpc_url: String,
+    pub network: Network,
+    /// SPL tokens custodied on this chain: symbol → mint.
+    #[serde(default)]
+    pub tokens: Vec<TokenConfig>,
+    /// Priority fee, micro-lamports per compute unit (0 = none).
+    #[serde(default)]
+    pub priority_micro_lamports: u64,
+    /// Newest signatures read per address and pass.
+    #[serde(default = "default_signature_limit")]
+    pub signature_limit: u64,
+    #[serde(default)]
+    pub hot_index: u64,
+}
+
+fn default_signature_limit() -> u64 {
+    50
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -287,12 +332,28 @@ log_window = 2000
 hot_index = 0
 tokens = [{ symbol = "USDT", contract = "0x5FbDB2315678afecb367f032d93F642f64180aa3" }]
 
+[bsc]
+rpc_url = "https://data-seed-prebsc-1-s1.bnbchain.org:8545"   # BSC testnet (chain id 97)
+network = "testnet"
+log_window = 2000
+native_scan_blocks = 64
+hot_index = 0
+tokens = [{ symbol = "USDT", contract = "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd" }]
+
 [tron]
 api_url = "http://127.0.0.1:8090"
 fee_sun = 15000000
 fee_limit_sun = 100000000
 hot_index = 0
 tokens = [{ symbol = "USDT", contract = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf" }]
+
+[solana]
+rpc_url = "https://api.devnet.solana.com"
+network = "testnet"                        # devnet; mainnet = mainnet-beta
+priority_micro_lamports = 0
+signature_limit = 50
+hot_index = 0
+tokens = [{ symbol = "USDC", contract = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", decimals = 6 }]
 
 [outbound]
 enabled = true
@@ -316,6 +377,14 @@ mod tests {
         let c = Config::parse(EXAMPLE).unwrap();
         assert_eq!(c.bitcoin.as_ref().unwrap().network, Network::Regtest);
         assert_eq!(c.ethereum.as_ref().unwrap().tokens[0].symbol, "USDT");
+        let bsc = c.bsc.as_ref().unwrap();
+        assert_eq!(bsc.tokens[0].symbol, "USDT");
+        assert!(bsc.beacon_url.is_none());
+        assert_eq!(bsc.native_scan_blocks, 64);
+        let sol = c.solana.as_ref().unwrap();
+        assert_eq!(sol.tokens[0].symbol, "USDC");
+        assert_eq!(sol.tokens[0].decimals, Some(6));
+        assert_eq!(sol.signature_limit, 50);
         assert_eq!(c.tron.as_ref().unwrap().fee_sun, 15_000_000);
         assert_eq!(c.intervals.fees_secs, 300);
         assert!(Config::parse("keel_rpc_url = 1").is_err());

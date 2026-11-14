@@ -105,6 +105,7 @@ fn tron_obs(
     tip: u64,
 ) -> DepositObservation {
     DepositObservation {
+        external_tx: None,
         chain: Chain::Tron,
         asset: tron_usdt(),
         tx_hash: [tx; 32],
@@ -208,6 +209,180 @@ fn deposit_addresses_are_sequential_and_stable() {
     audit_clean(&state);
 }
 
+/// BSC and Ethereum are one address family: asking on either assigns the
+/// same index under both, and the owner lookup answers for both chains.
+#[test]
+fn bsc_and_ethereum_share_one_deposit_index() {
+    let (mut state, mut alice, mut bob, _) = setup();
+    let r = ok(
+        &mut state,
+        1,
+        &[
+            alice.act(Action::RequestDepositAddress { chain: Chain::Bsc }),
+            alice.act(Action::RequestDepositAddress {
+                chain: Chain::Ethereum,
+            }),
+            bob.act(Action::RequestDepositAddress {
+                chain: Chain::Ethereum,
+            }),
+            bob.act(Action::RequestDepositAddress { chain: Chain::Bsc }),
+        ],
+    );
+    assert_eq!(
+        state.vaults.deposit_index(alice.addr(), Chain::Bsc),
+        Some(1)
+    );
+    assert_eq!(
+        state.vaults.deposit_index(alice.addr(), Chain::Ethereum),
+        Some(1)
+    );
+    assert_eq!(
+        state.vaults.deposit_index(bob.addr(), Chain::Ethereum),
+        Some(2)
+    );
+    assert_eq!(state.vaults.deposit_index(bob.addr(), Chain::Bsc), Some(2));
+    // Asking on the sibling chain returned the index, allocating none.
+    assert_eq!(
+        r[1].events,
+        vec![Event::DepositAddressAssigned {
+            owner: alice.addr(),
+            chain: "ETH".into(),
+            index: 1
+        }]
+    );
+    assert_eq!(state.vaults.next_deposit_index[&Chain::Ethereum], 3);
+    assert!(!state.vaults.next_deposit_index.contains_key(&Chain::Bsc));
+    assert_eq!(state.vaults.deposit_owner[&(Chain::Bsc, 2)], bob.addr());
+    assert_eq!(
+        state.vaults.deposit_owner[&(Chain::Ethereum, 2)],
+        bob.addr()
+    );
+    // (keel-chains' own tests check that one vault key derives the same
+    // address string for that index on both chains.)
+    audit_clean(&state);
+}
+
+/// A BSC vault must carry the Ethereum vault's key (and the other way
+/// round), or the shared address would not hold.
+#[test]
+fn bsc_vault_must_match_the_ethereum_key() {
+    let (mut state, _alice, _bob, mut obs) = setup();
+    let signers: Vec<Address> = obs.iter().map(|o| o.addr()).collect();
+    let reg = |chain, key: u8, cc: Option<[u8; 32]>| VaultRegistration {
+        chain,
+        epoch: 1,
+        public_key: vec![key; 33],
+        chain_code: cc,
+        signers: signers.clone(),
+        threshold: 2,
+    };
+    let (r, _) = apply_block(
+        &mut state,
+        &ctx(1),
+        &[
+            obs[0].act(Action::RegisterVault(reg(
+                Chain::Ethereum,
+                3,
+                Some([9; 32]),
+            ))),
+            obs[0].act(Action::RegisterVault(reg(Chain::Bsc, 4, Some([9; 32])))),
+            obs[0].act(Action::RegisterVault(reg(Chain::Bsc, 3, Some([8; 32])))),
+            obs[0].act(Action::RegisterVault(reg(Chain::Bsc, 3, Some([9; 32])))),
+            // Tron stands alone: any key.
+            obs[0].act(Action::RegisterVault(reg(Chain::Tron, 5, None))),
+        ],
+    );
+    assert!(r[0].ok);
+    assert!(
+        matches!(r[1].error, Some(VmError::Invalid(ref m)) if m.contains("share one vault key"))
+    );
+    assert!(
+        matches!(r[2].error, Some(VmError::Invalid(ref m)) if m.contains("share one vault key"))
+    );
+    assert!(r[3].ok, "{:?}", r[3].error);
+    assert!(r[4].ok);
+    assert_eq!(
+        state.vaults.active_vault(Chain::Bsc).unwrap().public_key,
+        vec![3u8; 33]
+    );
+    assert_eq!(vaults::native_asset(Chain::Bsc).as_str(), "BSC.BNB");
+    assert!(vaults::valid_destination(
+        Chain::Bsc,
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+    ));
+    assert!(!vaults::valid_destination(
+        Chain::Bsc,
+        "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+    ));
+}
+
+/// Solana: a 32-byte Ed25519 vault key (a 33-byte one is refused), base58
+/// destinations, SOL as the native asset, USDC as a vault asset.
+#[test]
+fn solana_vault_takes_an_ed25519_key() {
+    let (mut state, mut alice, _bob, mut obs) = setup();
+    let signers: Vec<Address> = obs.iter().map(|o| o.addr()).collect();
+    let reg = |len: usize| VaultRegistration {
+        chain: Chain::Solana,
+        epoch: 1,
+        public_key: vec![9u8; len],
+        chain_code: Some([1; 32]),
+        signers: signers.clone(),
+        threshold: 2,
+    };
+    let (r, _) = apply_block(
+        &mut state,
+        &ctx(1),
+        &[
+            obs[0].act(Action::RegisterVault(reg(33))),
+            obs[0].act(Action::RegisterVault(reg(32))),
+            alice.act(Action::RequestDepositAddress {
+                chain: Chain::Solana,
+            }),
+        ],
+    );
+    assert!(matches!(r[0].error, Some(VmError::Invalid(ref m)) if m.contains("key length")));
+    assert!(r[1].ok, "{:?}", r[1].error);
+    assert!(r[2].ok);
+    assert_eq!(
+        state
+            .vaults
+            .active_vault(Chain::Solana)
+            .unwrap()
+            .public_key
+            .len(),
+        32
+    );
+    assert_eq!(
+        state.vaults.deposit_index(alice.addr(), Chain::Solana),
+        Some(1)
+    );
+    // Solana stands alone: no index shared with the EVM family.
+    assert_eq!(
+        state.vaults.deposit_index(alice.addr(), Chain::Ethereum),
+        None
+    );
+    assert_eq!(vaults::native_asset(Chain::Solana).as_str(), "SOL.SOL");
+    assert_eq!(state.tokens.decimals(&Asset::vault("SOL", "USDC")), Some(6));
+    assert_eq!(state.tokens.decimals(&Asset::vault("SOL", "SOL")), Some(9));
+    assert!(vaults::valid_destination(
+        Chain::Solana,
+        "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+    ));
+    assert!(!vaults::valid_destination(
+        Chain::Solana,
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+    ));
+    assert!(!vaults::valid_destination(
+        Chain::Solana,
+        "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t0OIl"
+    ));
+    // A token payout locks room for the recipient's account rent.
+    assert_eq!(vaults::fee_size(Chain::Solana, true), 1);
+    assert_eq!(vaults::fee_size(Chain::Solana, false), 410);
+    audit_clean(&state);
+}
+
 #[test]
 fn tron_deposit_needs_observer_quorum_depth_and_dedups() {
     let (mut state, mut alice, mut bob, mut obs) = setup();
@@ -249,7 +424,8 @@ fn tron_deposit_needs_observer_quorum_depth_and_dedups() {
         vec![Event::DepositObserved {
             chain: "TRON".into(),
             tx_hash: "07".repeat(32),
-            votes: 1
+            votes: 1,
+            external_tx: None,
         }]
     );
     assert!(matches!(r[1].error, Some(VmError::Invalid(ref m)) if m.contains("already voted")));
@@ -296,6 +472,7 @@ fn tron_deposit_needs_observer_quorum_depth_and_dedups() {
         &mut state,
         &ctx(6),
         &[obs[0].act(Action::ObserveDeposit(DepositObservation {
+            external_tx: None,
             asset: btc(),
             ..tron_obs(1, 1, 8, 100, 200)
         }))],
@@ -318,6 +495,7 @@ fn bitcoin_deposit_requires_valid_spv_proof() {
     let (headers, proof) = btc_chain(4, &txids); // containing block + 3 on top
     let deposit = txid(2).to_byte_array();
     let obs_ok = |proof: Proof, index: u32| DepositObservation {
+        external_tx: None,
         chain: Chain::Bitcoin,
         asset: btc(),
         tx_hash: deposit,
@@ -675,6 +853,7 @@ fn outbounds_batch_confirm_and_fail_refund() {
     // Confirmation before batching is refused; batching happens on the interval.
     let interval = state.params.outbound_batch_interval_blocks;
     let observation = |id, success, fee_paid| OutboundObservation {
+        external_tx: None,
         outbound_id: id,
         tx_hash: [0xaa; 32],
         external_height: 300,
@@ -722,7 +901,8 @@ fn outbounds_batch_confirm_and_fail_refund() {
         r[0].events,
         vec![Event::OutboundConfirmed {
             outbound_id: 0,
-            tx_hash: "aa".repeat(32)
+            tx_hash: "aa".repeat(32),
+            external_tx: None,
         }]
     );
     assert_eq!(

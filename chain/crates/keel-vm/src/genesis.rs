@@ -158,6 +158,8 @@ impl Genesis {
         let btc = Asset::vault(Chain::Bitcoin.as_str(), "BTC");
         let eth_usdt = Asset::vault(Chain::Ethereum.as_str(), "USDT");
         let tron_usdt = Asset::vault(Chain::Tron.as_str(), "USDT");
+        // BEP-20 USDT carries 18 decimals on BSC, unlike its 6 elsewhere.
+        let bsc_usdt = Asset::vault(Chain::Bsc.as_str(), "USDT");
         let mut accounts = Vec::new();
         for a in funded {
             accounts.push(GenesisAccount {
@@ -213,6 +215,30 @@ impl Genesis {
                     6,
                     tokens::AssetKind::Vault { chain: Chain::Tron },
                 ),
+                (
+                    Asset::vault("BSC", "BNB"),
+                    18,
+                    tokens::AssetKind::Vault { chain: Chain::Bsc },
+                ),
+                (
+                    bsc_usdt.clone(),
+                    18,
+                    tokens::AssetKind::Vault { chain: Chain::Bsc },
+                ),
+                (
+                    Asset::vault("SOL", "SOL"),
+                    9,
+                    tokens::AssetKind::Vault {
+                        chain: Chain::Solana,
+                    },
+                ),
+                (
+                    Asset::vault("SOL", "USDC"),
+                    6,
+                    tokens::AssetKind::Vault {
+                        chain: Chain::Solana,
+                    },
+                ),
             ],
             accounts,
             pairs: vec![
@@ -227,6 +253,8 @@ impl Genesis {
             stable_basket: vec![
                 (eth_usdt, 100_000_000_000_000),
                 (tron_usdt, 100_000_000_000_000),
+                // The same 100M USD cap in 18-decimal units.
+                (bsc_usdt, 100_000_000_000_000_000_000_000_000),
             ],
             stable_reserves: Vec::new(),
             btc_checkpoint: None,

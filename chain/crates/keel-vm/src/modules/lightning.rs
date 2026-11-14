@@ -302,6 +302,7 @@ pub fn queue_payout(
             quorum: Default::default(),
             tx_hash: Some(inv.payment_hash),
             votes: Vec::new(),
+            external_tx: None,
         },
     );
     let deadline_height = ctx
@@ -513,6 +514,7 @@ pub fn fund_pool(
             quorum: Default::default(),
             tx_hash: None,
             votes: Vec::new(),
+            external_tx: None,
         },
     );
     state.lightning.fundings.insert(outbound_id, signer);

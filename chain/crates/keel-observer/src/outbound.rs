@@ -13,10 +13,11 @@ use crate::{
     chains::{
         btc::{self, BitcoinRpc},
         eth::{self, EthRpc},
+        sol::{self, SolRpc},
         tron::{self, TronApi},
         AddressBook,
     },
-    config::{BitcoinConfig, EthereumConfig, OutboundConfig, TronConfig},
+    config::{BitcoinConfig, EthereumConfig, OutboundConfig, SolanaConfig, TronConfig},
     rpc::{ChainParams, OutboundRow, Submitter, VaultView},
     state::{now_unix, OutboundTx, StateFile},
     tss::TssClient,
@@ -113,12 +114,38 @@ impl OutboundContext<'_> {
         fee_paid: u128,
         success: bool,
     ) -> anyhow::Result<()> {
+        self.observe_with(
+            id,
+            tx_hash,
+            external_height,
+            tip_height,
+            fee_paid,
+            success,
+            None,
+        )
+        .await
+    }
+
+    /// [`observe`] with the native transaction id when `tx_hash` is only
+    /// its hash (Solana).
+    #[allow(clippy::too_many_arguments)]
+    async fn observe_with(
+        &self,
+        id: u64,
+        tx_hash: [u8; 32],
+        external_height: u64,
+        tip_height: u64,
+        fee_paid: u128,
+        success: bool,
+        external_tx: Option<String>,
+    ) -> anyhow::Result<()> {
         let key = format!("outbound:{id}");
         let res = self
             .submitter
             .submit(
                 Some(&key),
                 Action::ObserveOutbound(OutboundObservation {
+                    external_tx,
                     outbound_id: id,
                     tx_hash,
                     external_height,
@@ -386,21 +413,24 @@ pub async fn assemble_eth(
     Ok((raw.clone(), keel_chains::eth::tx_hash(&raw), tx))
 }
 
-pub async fn process_ethereum(
+/// One outbound pass over an EVM chain (the book's: Ethereum or BSC).
+pub async fn process_evm(
     ctx: &OutboundContext<'_>,
     rpc: &dyn EthRpc,
     book: &AddressBook,
     cfg: &EthereumConfig,
     rows: &[OutboundRow],
 ) -> anyhow::Result<()> {
-    let required = ctx.params.confirmations(Chain::Ethereum) as u64;
+    let chain = book.chain;
+    let native = crate::chains::native_asset(chain);
+    let required = ctx.params.confirmations(chain) as u64;
     let hot = book
         .address(cfg.hot_index)
         .ok_or_else(|| anyhow::anyhow!("hot address not derived"))?
         .to_string();
     let hot_account = keel_chains::address::eth_decode(&hot)?;
     let tip = eth::block_number(rpc).await?;
-    for (batch_id, outbounds) in batches_of(rows, Chain::Ethereum, book.vault.custodian) {
+    for (batch_id, outbounds) in batches_of(rows, chain, book.vault.custodian) {
         for o in &outbounds {
             if let Some(tx) = ctx.known_tx(o.id) {
                 match eth::receipt_status(rpc, &tx.txid).await? {
@@ -421,10 +451,10 @@ pub async fn process_ethereum(
                             if let Ok(bytes) = hex::decode(raw.trim_start_matches("0x")) {
                                 match eth::send_raw(rpc, &bytes).await {
                                     Ok(sent) => {
-                                        tracing::info!(id = o.id, tx = %sent, "ethereum outbound rebroadcast")
+                                        tracing::info!(chain = chain.as_str(), id = o.id, tx = %sent, "evm outbound rebroadcast")
                                     }
                                     Err(e) => {
-                                        tracing::warn!(id = o.id, txid = %tx.txid, error = %e, "ethereum rebroadcast failed")
+                                        tracing::warn!(chain = chain.as_str(), id = o.id, txid = %tx.txid, error = %e, "evm rebroadcast failed")
                                     }
                                 }
                             }
@@ -433,7 +463,7 @@ pub async fn process_ethereum(
                 }
                 continue;
             }
-            let token = if o.asset == "ETH.ETH" {
+            let token = if o.asset == native {
                 None
             } else {
                 Some(
@@ -446,7 +476,7 @@ pub async fn process_ethereum(
                 if let Some(txid) =
                     eth::find_payment(rpc, token, &hot, &o.to, o.amount, from_block, tip).await?
                 {
-                    ctx.remember(&[o.id], Chain::Ethereum, &txid, o.fee_estimate, false, None)?;
+                    ctx.remember(&[o.id], chain, &txid, o.fee_estimate, false, None)?;
                 }
                 continue;
             }
@@ -476,14 +506,14 @@ pub async fn process_ethereum(
             let txid = format!("0x{}", hex::encode(hash));
             ctx.remember(
                 &[o.id],
-                Chain::Ethereum,
+                chain,
                 &txid,
                 tx.max_gas_cost(),
                 true,
                 Some(hex::encode(&raw)),
             )?;
             let sent = eth::send_raw(rpc, &raw).await?;
-            tracing::info!(id = o.id, tx = %sent, "ethereum outbound broadcast");
+            tracing::info!(chain = chain.as_str(), id = o.id, tx = %sent, "evm outbound broadcast");
         }
     }
     Ok(())
@@ -656,6 +686,216 @@ pub async fn process_tron(
     Ok(())
 }
 
+// ---------------------------------------------------------------- solana
+
+/// A Solana transaction is valid for about a minute after its blockhash;
+/// a broadcast still unknown after this is dead and gets rebuilt.
+const SOL_BLOCKHASH_SECS: u64 = 90;
+
+/// The lamports the hot address spent on `o` beyond the amount itself:
+/// the fee and any account rent it paid.
+fn sol_fee_paid(view: &sol::TxView, hot: &str, o: &OutboundRow) -> u128 {
+    let Some((_, delta)) = view.lamport_delta(hot) else {
+        return view.fee as u128;
+    };
+    let spent = (-delta).max(0) as u128;
+    if o.asset == "SOL.SOL" {
+        spent.saturating_sub(o.amount)
+    } else {
+        spent
+    }
+}
+
+/// A payment of `o` already made from `hot` by another observer: the
+/// newest finalized signatures of the hot address whose balance deltas
+/// credit the recipient with the amount.
+async fn sol_find_payment(
+    rpc: &dyn SolRpc,
+    hot: &str,
+    o: &OutboundRow,
+    mint: Option<&str>,
+    limit: u64,
+) -> anyhow::Result<Option<String>> {
+    for s in sol::signatures(rpc, hot, limit).await? {
+        if s.failed {
+            continue;
+        }
+        let Some(view) = sol::transaction(rpc, &s.signature).await? else {
+            continue;
+        };
+        let paid = match mint {
+            None => view
+                .lamport_delta(&o.to)
+                .is_some_and(|(_, d)| d == o.amount as i128),
+            Some(m) => view
+                .token_deltas(&o.to)
+                .iter()
+                .any(|(_, mm, d)| mm == m && *d == o.amount as i128),
+        };
+        if paid {
+            return Ok(Some(s.signature));
+        }
+    }
+    Ok(None)
+}
+
+pub async fn process_solana(
+    ctx: &OutboundContext<'_>,
+    rpc: &dyn SolRpc,
+    book: &AddressBook,
+    cfg: &SolanaConfig,
+    rows: &[OutboundRow],
+) -> anyhow::Result<()> {
+    let required = ctx.params.confirmations(Chain::Solana) as u64;
+    let tip = sol::slot(rpc).await?;
+    let hot = book
+        .address(cfg.hot_index)
+        .ok_or_else(|| anyhow::anyhow!("hot address not derived"))?
+        .to_string();
+    let hot32 = keel_chains::sol::decode(&hot)?;
+    let mints: Vec<(String, String)> = cfg
+        .tokens
+        .iter()
+        .map(|t| (format!("SOL.{}", t.symbol), t.contract.clone()))
+        .collect();
+    for (batch_id, outbounds) in batches_of(rows, Chain::Solana, book.vault.custodian) {
+        for o in &outbounds {
+            if let Some(tx) = ctx.known_tx(o.id) {
+                match sol::signature_status(rpc, &tx.txid).await? {
+                    Some((slot, true, failed)) if tip.saturating_sub(slot) >= required => {
+                        let fee = match sol::transaction(rpc, &tx.txid).await? {
+                            Some(v) => sol_fee_paid(&v, &hot, o),
+                            None => tx.fee_hint,
+                        };
+                        let sig = sol::decode_signature(&tx.txid)?;
+                        ctx.observe_with(
+                            o.id,
+                            sol::tx_hash_of(&sig),
+                            slot,
+                            tip,
+                            fee,
+                            !failed,
+                            Some(tx.txid.clone()),
+                        )
+                        .await?;
+                    }
+                    Some(_) => {}
+                    None if tx.ours => {
+                        let age = now_unix().saturating_sub(tx.broadcast_unix_secs);
+                        if age <= SOL_BLOCKHASH_SECS {
+                            if let Some(raw) = tx.raw.as_deref() {
+                                use base64::Engine as _;
+                                if let Ok(bytes) =
+                                    base64::engine::general_purpose::STANDARD.decode(raw)
+                                {
+                                    match sol::send_transaction(rpc, &bytes).await {
+                                        Ok(sent) => {
+                                            tracing::info!(id = o.id, tx = %sent, "solana outbound rebroadcast")
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(id = o.id, txid = %tx.txid, error = %e, "solana rebroadcast failed")
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            tracing::warn!(id = o.id, txid = %tx.txid, "solana outbound expired unconfirmed; rebuilding");
+                            ctx.forget_outbound(o.id)?;
+                        }
+                    }
+                    None => {}
+                }
+                continue;
+            }
+            let token = if o.asset == "SOL.SOL" {
+                None
+            } else {
+                Some(
+                    cfg.tokens
+                        .iter()
+                        .find(|t| format!("SOL.{}", t.symbol) == o.asset)
+                        .ok_or_else(|| anyhow::anyhow!("no mint configured for {}", o.asset))?,
+                )
+            };
+            if !ctx.may_build(&book.vault, batch_id) {
+                if let Some(sig) = sol_find_payment(
+                    rpc,
+                    &hot,
+                    o,
+                    token.map(|t| t.contract.as_str()),
+                    cfg.signature_limit,
+                )
+                .await?
+                {
+                    ctx.remember(&[o.id], Chain::Solana, &sig, o.fee_estimate, false, None)?;
+                }
+                continue;
+            }
+            let amount = u64::try_from(o.amount)
+                .map_err(|_| anyhow::anyhow!("amount above u64 for outbound {}", o.id))?;
+            let to = keel_chains::sol::decode(&o.to)?;
+            let mut ixs = Vec::new();
+            if cfg.priority_micro_lamports > 0 {
+                ixs.push(keel_chains::sol::set_compute_unit_price(
+                    cfg.priority_micro_lamports,
+                ));
+            }
+            match token {
+                None => ixs.push(keel_chains::sol::transfer_lamports(&hot32, &to, amount)),
+                Some(t) => {
+                    let mint = keel_chains::sol::decode(&t.contract)?;
+                    let src = keel_chains::sol::associated_token_account(&hot32, &mint)?;
+                    let dst = keel_chains::sol::associated_token_account(&to, &mint)?;
+                    ixs.push(keel_chains::sol::create_associated_token_account(
+                        &hot32, &to, &mint,
+                    )?);
+                    ixs.push(keel_chains::sol::transfer_checked(
+                        &src,
+                        &mint,
+                        &dst,
+                        &hot32,
+                        amount,
+                        t.decimals.unwrap_or(6),
+                    ));
+                }
+            }
+            let (blockhash, _) = sol::latest_blockhash(rpc).await?;
+            let bytes = keel_chains::sol::build_message(&hot32, &ixs, blockhash)?.serialize();
+            let context = SignContext::Sol {
+                batch_id: o.batch_id.unwrap_or(0),
+                message: hex::encode(&bytes),
+                mints: mints.clone(),
+            };
+            let sig = ctx
+                .tss
+                .sign_message(&bytes, &book.path(cfg.hot_index), Some(&context))
+                .await?;
+            let raw = keel_chains::sol::serialize_transaction(&bytes, &[sig]);
+            let txid = keel_chains::sol::transaction_id(&sig);
+            let fee_hint = sol::fee_estimate(cfg, 1) as u128
+                + if token.is_some() {
+                    keel_chains::sol::ATA_RENT_LAMPORTS as u128
+                } else {
+                    0
+                };
+            {
+                use base64::Engine as _;
+                ctx.remember(
+                    &[o.id],
+                    Chain::Solana,
+                    &txid,
+                    fee_hint,
+                    true,
+                    Some(base64::engine::general_purpose::STANDARD.encode(&raw)),
+                )?;
+            }
+            let sent = sol::send_transaction(rpc, &raw).await?;
+            tracing::info!(id = o.id, tx = %sent, "solana outbound broadcast");
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,7 +909,7 @@ mod tests {
         let vault = VaultView {
             chain,
             epoch: 1,
-            public_key: signer.public_key(),
+            public_key: signer.public_key().to_vec(),
             chain_code: signer.chain_code(),
             signers: vec![
                 Keypair::from_seed(1).address(),

@@ -343,6 +343,7 @@ pub fn observation(
     tip: u64,
 ) -> DepositObservation {
     DepositObservation {
+        external_tx: None,
         chain: Chain::Tron,
         asset,
         tx_hash: t.txid,

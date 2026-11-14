@@ -91,17 +91,17 @@ export class RpcClient {
   vaultAddresses(chain: string, from = 0, limit = 100, owner?: string) {
     return this.req("GET", `/v1/vaults/${chain}/addresses?from=${from}&limit=${limit}${owner ? `&owner=${owner}` : ""}`);
   }
-  /** The account's deposit address on `chain` ("BTC" | "ETH" | "TRON"), or null until one is requested. */
+  /** The account's deposit address on `chain` ("BTC" | "ETH" | "TRON" | "BSC" | "SOL"), or null until one is requested. */
   async depositAddress(chain: string, owner: string): Promise<{ index: number; address: string } | null> {
     const r = await this.vaultAddresses(chain, 0, 1, owner);
     const row = r.addresses?.[0];
     return row ? { index: row.index, address: row.address } : null;
   }
   /** Request a deposit address on `chain` for the key's account and wait for it. */
-  async requestDepositAddress(key: Keypair, chain: "BTC" | "ETH" | "TRON", chainId = 1): Promise<{ index: number; address: string }> {
+  async requestDepositAddress(key: Keypair, chain: "BTC" | "ETH" | "TRON" | "BSC" | "SOL", chainId = 1): Promise<{ index: number; address: string }> {
     const have = await this.depositAddress(chain, key.address);
     if (have) return have;
-    const name = ({ BTC: "Bitcoin", ETH: "Ethereum", TRON: "Tron" } as const)[chain];
+    const name = ({ BTC: "Bitcoin", ETH: "Ethereum", TRON: "Tron", BSC: "Bsc", SOL: "Solana" } as const)[chain];
     const tx = await this.send(key, { RequestDepositAddress: { chain: name } }, chainId);
     const receipt = await this.waitReceipt(tx);
     if (!receipt.ok) throw new RpcError(422, receipt.error);
@@ -117,7 +117,7 @@ export class RpcClient {
   swapCustody(key: Keypair, swap: CustodySwap, chainId = 1): Promise<string> {
     return this.send(key, { SwapCustody: swap }, chainId);
   }
-  /** A custody vault's deposit addresses on `chain` ("BTC" | "ETH" | "TRON"); `gen` selects a draining generation. */
+  /** A custody vault's deposit addresses on `chain` ("BTC" | "ETH" | "TRON" | "BSC" | "SOL"); `gen` selects a draining generation. */
   custodyAddresses(custodian: string, chain: string, q: { from?: number; limit?: number; owner?: string; gen?: number } = {}) {
     const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString();
     return this.req("GET", `/v1/custody/${custodian}/${chain}/addresses${qs ? `?${qs}` : ""}`);
@@ -130,10 +130,10 @@ export class RpcClient {
   rotateCustodyVault(key: Keypair, rotation: CustodyRotation, chainId = 1): Promise<string> {
     return this.send(key, { RotateCustodyVault: rotation }, chainId);
   }
-  cancelCustodyRotation(key: Keypair, chain: "Bitcoin" | "Ethereum" | "Tron", chainId = 1): Promise<string> {
+  cancelCustodyRotation(key: Keypair, chain: "Bitcoin" | "Ethereum" | "Tron" | "Bsc" | "Solana", chainId = 1): Promise<string> {
     return this.send(key, { CancelCustodyRotation: { chain } }, chainId);
   }
-  retireCustodyGeneration(key: Keypair, chain: "Bitcoin" | "Ethereum" | "Tron", custodian: string, gen: number, chainId = 1): Promise<string> {
+  retireCustodyGeneration(key: Keypair, chain: "Bitcoin" | "Ethereum" | "Tron" | "Bsc" | "Solana", custodian: string, gen: number, chainId = 1): Promise<string> {
     return this.send(key, { RetireCustodyGeneration: { chain, custodian, gen } }, chainId);
   }
   outbounds(status?: string) { return this.req("GET", `/v1/vaults/outbounds${status ? `?status=${status}` : ""}`); }
@@ -157,7 +157,7 @@ export class RpcClient {
   lookupAddress(chain: string, address: string) { return this.req("GET", `/v1/vaults/${chain}/addresses/lookup?address=${encodeURIComponent(address)}`); }
   roles() { return this.req("GET", "/v1/gov/roles"); }
   /** Whether a client may turn `chain` on: vault, checkpoint age, halts, pending outbounds, reasons. */
-  ready(chain: "BTC" | "ETH" | "TRON", maxCheckpointAgeSecs?: number): Promise<Readiness> {
+  ready(chain: "BTC" | "ETH" | "TRON" | "BSC" | "SOL", maxCheckpointAgeSecs?: number): Promise<Readiness> {
     return this.req("GET", `/v1/ready/${chain}${maxCheckpointAgeSecs !== undefined ? `?max_checkpoint_age=${maxCheckpointAgeSecs}` : ""}`);
   }
   /** Newest snapshot metadata for state sync (`keel-node --sync-from`). */
