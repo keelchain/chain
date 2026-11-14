@@ -114,6 +114,8 @@ fn module_param_get(state: &State, key: &str) -> Option<u128> {
         super::arbitration::get_param(state, key)
     } else if key.starts_with("pools.") {
         super::pools::get_param(state, key)
+    } else if key.starts_with("recovery.") {
+        super::recovery::get_param(state, key)
     } else {
         None
     }
@@ -133,6 +135,8 @@ fn module_param_set(
         Some(super::arbitration::set_param(state, key, value))
     } else if key.starts_with("pools.") {
         Some(super::pools::set_param(state, key, value))
+    } else if key.starts_with("recovery.") {
+        Some(super::recovery::set_param(state, key, value))
     } else {
         None
     }

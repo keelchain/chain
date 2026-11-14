@@ -1,6 +1,6 @@
 // HTTP client for the node's /v1 API (see crates/keel-rpc/API.md).
 import { Keypair, stringifyJson, txId, type SignedAction } from "./sign.ts";
-import type { Action, CustodyRotation, CustodySwap } from "./actions.ts";
+import type { Action, CustodyRotation, CustodySwap, RecoveryRequest } from "./actions.ts";
 
 export interface Receipt {
   index: number; tx_id: string; signer: string; ok: boolean;
@@ -159,6 +159,16 @@ export class RpcClient {
   /** Whether a client may turn `chain` on: vault, checkpoint age, halts, pending outbounds, reasons. */
   ready(chain: "BTC" | "ETH" | "TRON" | "BSC" | "SOL", maxCheckpointAgeSecs?: number): Promise<Readiness> {
     return this.req("GET", `/v1/ready/${chain}${maxCheckpointAgeSecs !== undefined ? `?max_checkpoint_age=${maxCheckpointAgeSecs}` : ""}`);
+  }
+  /** Ask the observers to move coins sent to the account's deposit address on an unserved
+   *  network or in an unlisted token (`RequestRecovery`); resolves to the tx id. */
+  requestRecovery(key: Keypair, request: RecoveryRequest, chainId = 1): Promise<string> {
+    return this.send(key, { RequestRecovery: request }, chainId);
+  }
+  /** Recovery rows (`?status=`, `?owner=`), newest first, with the recovery parameters. */
+  recoveries(q: { status?: string; owner?: string } = {}) {
+    const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined) as [string, string][]).toString();
+    return this.req("GET", `/v1/recovery${qs ? `?${qs}` : ""}`);
   }
   /** Newest snapshot metadata for state sync (`keel-node --sync-from`). */
   syncMeta() { return this.req("GET", "/v1/sync/meta"); }

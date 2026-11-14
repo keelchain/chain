@@ -157,6 +157,47 @@ pub enum SignContext {
         sweep: bool,
         message: String,
     },
+    /// A recovery (`GET /v1/recovery`, status `Open`): an EIP-1559
+    /// transfer from deposit index `index` of the row's vault to the
+    /// row's destination, on the row's EVM chain id.
+    EthRecover {
+        recovery_id: u64,
+        index: u64,
+        chain_id: u64,
+        nonce: u64,
+        max_priority_fee_per_gas: u128,
+        max_fee_per_gas: u128,
+        gas_limit: u64,
+        to: String,
+        value: u128,
+        data: String,
+    },
+    /// A recovery on Tron: a transfer from the index's address.
+    TronRecover {
+        recovery_id: u64,
+        index: u64,
+        raw_data: String,
+    },
+    /// A recovery on Solana: a message moving the index's coins to the
+    /// row's destination, paid by the index or by the vault's hot address.
+    SolRecover {
+        recovery_id: u64,
+        index: u64,
+        message: String,
+    },
+}
+
+/// A recovery row as the node reports it (`GET /v1/recovery?status=Open`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryRef {
+    pub id: u64,
+    pub chain: Chain,
+    pub evm_chain_id: Option<u64>,
+    pub token: Option<String>,
+    pub to: String,
+    pub deposit_index: u64,
+    pub custodian: Option<String>,
+    pub status: String,
 }
 
 /// The active generation of a custody vault, as the signer fetches it from
@@ -200,7 +241,20 @@ impl SignContext {
             | SignContext::TronGasFund { .. } => Chain::Tron,
             SignContext::Sol { .. }
             | SignContext::SolSweep { .. }
-            | SignContext::SolConsolidate { .. } => Chain::Solana,
+            | SignContext::SolConsolidate { .. }
+            | SignContext::SolRecover { .. } => Chain::Solana,
+            SignContext::EthRecover { chain_id, .. } => crate::evm_chain_of_id(*chain_id),
+            SignContext::TronRecover { .. } => Chain::Tron,
+        }
+    }
+
+    /// The recovery row a recovery context serves.
+    pub fn recovery_id(&self) -> Option<u64> {
+        match self {
+            SignContext::EthRecover { recovery_id, .. }
+            | SignContext::TronRecover { recovery_id, .. }
+            | SignContext::SolRecover { recovery_id, .. } => Some(*recovery_id),
+            _ => None,
         }
     }
 
@@ -209,7 +263,8 @@ impl SignContext {
         match self {
             SignContext::Sol { message, .. }
             | SignContext::SolSweep { message, .. }
-            | SignContext::SolConsolidate { message, .. } => Some(message),
+            | SignContext::SolConsolidate { message, .. }
+            | SignContext::SolRecover { message, .. } => Some(message),
             _ => None,
         }
     }
@@ -314,6 +369,9 @@ pub fn verify_with_pool(
     rows: &[OutboundRef],
     pool: Option<&PoolRef>,
 ) -> Result<(), String> {
+    if ctx.recovery_id().is_some() {
+        return Err("a recovery context is checked by verify_recovery".into());
+    }
     if ctx.chain().is_ed25519() {
         return verify_solana(ctx, digest, path, vault_pubkey, chain_code, rows, pool);
     }
@@ -621,6 +679,216 @@ pub fn tron_transfer_parts(decoded: &tron::Raw) -> Result<(Vec<u8>, [u8; 21], u1
             Ok((c.owner_address.clone(), dest, amount, false))
         }
         other => Err(format!("unsupported contract type {other}")),
+    }
+}
+
+/// A recovery: the transaction must move coins out of the row's deposit
+/// index, to the row's destination, in the row's token, and nothing else.
+/// The amount is free (it is the owner's coins to the owner's address).
+/// The signing path must derive the index (or, on Solana, the hot address
+/// that pays the fee).
+pub fn verify_recovery(
+    ctx: &SignContext,
+    digest: &[u8; 32],
+    path: &[u32],
+    vault_pubkey: &[u8],
+    chain_code: &[u8; 32],
+    rows: &[RecoveryRef],
+) -> Result<(), String> {
+    let id = ctx.recovery_id().ok_or("not a recovery context")?;
+    let row = rows
+        .iter()
+        .find(|r| r.id == id)
+        .ok_or_else(|| format!("recovery {id} is not open"))?;
+    if !row.status.eq_ignore_ascii_case("Open") {
+        return Err(format!("recovery {id} is {}", row.status));
+    }
+    let family = row.chain.address_family();
+    match ctx {
+        SignContext::EthRecover {
+            index,
+            chain_id,
+            nonce,
+            max_priority_fee_per_gas,
+            max_fee_per_gas,
+            gas_limit,
+            to,
+            value,
+            data,
+            ..
+        } => {
+            if !row.chain.is_evm() {
+                return Err("row is not on an EVM chain".into());
+            }
+            if *index != row.deposit_index || *path != hd::deposit_path(family, *index) {
+                return Err("the signing path is not the row's deposit index".into());
+            }
+            match row.evm_chain_id {
+                Some(want) if want != *chain_id => {
+                    return Err(format!("chain id {chain_id} is not the row's {want}"))
+                }
+                Some(_) => {}
+                None => {
+                    if crate::evm_chain_of_id(*chain_id) != row.chain {
+                        return Err(format!("chain id {chain_id} is not {}", row.chain.as_str()));
+                    }
+                }
+            }
+            let (dest, _amount) = eth_tx_destination(
+                digest,
+                *chain_id,
+                *nonce,
+                *max_priority_fee_per_gas,
+                *max_fee_per_gas,
+                *gas_limit,
+                to,
+                *value,
+                data,
+            )?;
+            let want = address::eth_decode(&row.to).map_err(|e| format!("row.to: {e}"))?;
+            if dest != want {
+                return Err("destination is not the row's".into());
+            }
+            let to20 = address::eth_decode(to).map_err(|e| format!("to: {e}"))?;
+            match &row.token {
+                Some(contract) => {
+                    let c = address::eth_decode(contract).map_err(|e| format!("token: {e}"))?;
+                    if to20 != c || *value != 0 {
+                        return Err("a token recovery calls the row's token contract".into());
+                    }
+                }
+                None => {
+                    if !data.trim_start_matches("0x").is_empty() || to20 != want {
+                        return Err("a native recovery is a plain value transfer".into());
+                    }
+                }
+            }
+            Ok(())
+        }
+        SignContext::TronRecover {
+            index, raw_data, ..
+        } => {
+            if row.chain != Chain::Tron {
+                return Err("row is not on Tron".into());
+            }
+            if *index != row.deposit_index || *path != hd::deposit_path(Chain::Tron, *index) {
+                return Err("the signing path is not the row's deposit index".into());
+            }
+            let vault = address::secp_key(vault_pubkey).map_err(|e| e.to_string())?;
+            let key = hd::child_pubkey(&vault, chain_code, path)
+                .map_err(|e| e.to_string())?
+                .public_key;
+            let (owner, dest, _amount, native) = tron_tx_parts(digest, raw_data)?;
+            let owner_want =
+                address::tron_decode(&address::tron_address(&key).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            if owner.as_slice() != owner_want {
+                return Err("the signing path does not derive the transaction's owner".into());
+            }
+            let want = address::tron_decode(&row.to).map_err(|e| format!("row.to: {e}"))?;
+            if dest != want {
+                return Err("destination is not the row's".into());
+            }
+            if native != row.token.is_none() {
+                return Err("native/token kind does not match the row".into());
+            }
+            Ok(())
+        }
+        SignContext::SolRecover { index, message, .. } => {
+            if row.chain != Chain::Solana {
+                return Err("row is not on Solana".into());
+            }
+            if *index != row.deposit_index {
+                return Err("the context names another index than the row".into());
+            }
+            let bytes = hex::decode(message).map_err(|e| format!("message: {e}"))?;
+            if keel_crypto_sha256(&bytes) != *digest {
+                return Err("digest is not the hash of the described message".into());
+            }
+            let msg = sol::Message::deserialize(&bytes).map_err(|e| format!("message: {e}"))?;
+            let vault = address::ed25519_key(vault_pubkey).map_err(|e| e.to_string())?;
+            let key = sol::child_pubkey(&vault, chain_code, path)
+                .map_err(|e| format!("signing path: {e}"))?;
+            let source =
+                sol::child_pubkey(&vault, chain_code, &hd::deposit_path(Chain::Solana, *index))
+                    .map_err(|e| e.to_string())?;
+            let own_hot =
+                sol::child_pubkey(&vault, chain_code, &hd::deposit_path(Chain::Solana, 0))
+                    .map_err(|e| e.to_string())?;
+            if key != source && key != own_hot {
+                return Err(
+                    "the signing path is neither the row's index nor the hot address".into(),
+                );
+            }
+            if !msg.signers().contains(&key) {
+                return Err("the signing path does not derive a signer of the message".into());
+            }
+            let payer = msg.fee_payer().copied().ok_or("message has no fee payer")?;
+            if payer != source && payer != own_hot {
+                return Err("the fee payer is neither the index nor the hot address".into());
+            }
+            let dest = sol::decode(&row.to).map_err(|e| format!("row.to: {e}"))?;
+            let mint = match &row.token {
+                Some(m) => Some(sol::decode(m).map_err(|e| format!("token: {e}"))?),
+                None => None,
+            };
+            let transfers = msg.transfers().map_err(|e| e.to_string())?;
+            if transfers.is_empty() {
+                return Err("the message moves nothing".into());
+            }
+            for t in &transfers {
+                match (t, mint) {
+                    (sol::Transfer::Lamports { from, to, .. }, None) => {
+                        if *from != source || *to != dest {
+                            return Err(
+                                "lamports must move from the index to the row's destination".into(),
+                            );
+                        }
+                    }
+                    (
+                        sol::Transfer::Token {
+                            source: src,
+                            mint: m,
+                            destination,
+                            owner,
+                            ..
+                        },
+                        Some(want_mint),
+                    ) => {
+                        let ata = |o: &[u8; 32]| {
+                            sol::associated_token_account(o, &want_mint).map_err(|e| e.to_string())
+                        };
+                        if *m != want_mint
+                            || *owner != source
+                            || *src != ata(&source)?
+                            || *destination != ata(&dest)?
+                        {
+                            return Err(
+                                "tokens must move from the index's account to the destination's"
+                                    .into(),
+                            );
+                        }
+                    }
+                    (
+                        sol::Transfer::CreateAccount {
+                            payer: p,
+                            owner,
+                            mint: m,
+                        },
+                        Some(want_mint),
+                    ) => {
+                        if *p != payer || *owner != dest || *m != want_mint {
+                            return Err(
+                                "only the destination's token account may be created".into()
+                            );
+                        }
+                    }
+                    _ => return Err("transfer kind does not match the row's token".into()),
+                }
+            }
+            Ok(())
+        }
+        _ => Err("not a recovery context".into()),
     }
 }
 

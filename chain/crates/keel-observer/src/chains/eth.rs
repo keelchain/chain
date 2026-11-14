@@ -924,6 +924,53 @@ pub async fn find_payment(
     }
 }
 
+/// The newest transfer from `from` to `to` (of `token`, or native) in
+/// `[from_block, to_block]`, whatever its amount: `(tx hash, amount)`.
+pub async fn find_any_payment(
+    rpc: &dyn EthRpc,
+    token: Option<&str>,
+    from: &str,
+    to: &str,
+    from_block: u64,
+    to_block: u64,
+) -> anyhow::Result<Option<(String, u128)>> {
+    let from_acct = keel_chains::address::eth_decode(from)?;
+    let to_acct = keel_chains::address::eth_decode(to)?;
+    match token {
+        Some(t) => {
+            let filter = json!({
+                "fromBlock": format!("0x{from_block:x}"), "toBlock": format!("0x{to_block:x}"), "address": t,
+                "topics": [format!("0x{}", hex::encode(transfer_topic())), topic_of_address(&from_acct), topic_of_address(&to_acct)],
+            });
+            let logs = parse_transfer_logs(&rpc.call("eth_getLogs", json!([filter])).await?)?;
+            Ok(logs.into_iter().last().map(|l| (l.tx_hash_hex, l.amount)))
+        }
+        None => {
+            for b in (from_block..=to_block).rev() {
+                let block = rpc
+                    .call("eth_getBlockByNumber", json!([format!("0x{b:x}"), true]))
+                    .await?;
+                for tx in block["transactions"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                {
+                    if json_hex20(&tx["from"]) == Some(from_acct)
+                        && json_hex20(&tx["to"]) == Some(to_acct)
+                    {
+                        if let (Some(h), Some(v)) =
+                            (tx["hash"].as_str(), json_quantity(&tx["value"]))
+                        {
+                            return Ok(Some((h.to_string(), v)));
+                        }
+                    }
+                }
+            }
+            Ok(None)
+        }
+    }
+}
+
 pub fn b256(b: &[u8; 32]) -> B256 {
     B256::from(*b)
 }

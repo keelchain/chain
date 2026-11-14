@@ -9,7 +9,9 @@
 //! secp256k1 chains, the FROST share for Solana; a request for a family
 //! this signer has no share of is refused.
 
-use keel_chains::policy::{verify_with_pool, OutboundRef, PoolRef, SignContext};
+use keel_chains::policy::{
+    verify_recovery, verify_with_pool, OutboundRef, PoolRef, RecoveryRef, SignContext,
+};
 use keel_tss::{
     ecdsa::{self, KeyShare},
     eddsa::{self, EddsaShare},
@@ -74,6 +76,10 @@ impl Policy {
             "signing request carries no context and a policy is configured".to_string()
         })?;
         let (vault_pubkey, chain_code) = self.keys_for(ctx)?;
+        if ctx.recovery_id().is_some() {
+            let rows = self.recoveries()?;
+            return verify_recovery(ctx, digest, path, &vault_pubkey, &chain_code, &rows);
+        }
         let rows = if ctx.batch_id().is_some() {
             self.outbounds()?
         } else {
@@ -138,6 +144,43 @@ impl Policy {
             active_pubkey: pk,
             active_chain_code: cc,
         })
+    }
+
+    /// The open recovery rows (`GET /v1/recovery?status=Open`).
+    fn recoveries(&self) -> Result<Vec<RecoveryRef>, String> {
+        let body: serde_json::Value = ureq::get(format!("{}/v1/recovery?status=Open", self.rpc))
+            .config()
+            .timeout_global(Some(Duration::from_secs(10)))
+            .build()
+            .call()
+            .map_err(|e| format!("policy rpc: {e}"))?
+            .body_mut()
+            .read_json()
+            .map_err(|e| format!("policy rpc body: {e}"))?;
+        let list = body
+            .get("recoveries")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "policy rpc: no recoveries list".to_string())?;
+        let mut rows = Vec::with_capacity(list.len());
+        for r in list {
+            let chain = r
+                .get("chain")
+                .and_then(|c| c.as_str())
+                .and_then(keel_actions::Chain::parse)
+                .ok_or_else(|| "policy rpc: recovery without a chain".to_string())?;
+            let s = |k: &str| r.get(k).and_then(|v| v.as_str()).map(str::to_string);
+            rows.push(RecoveryRef {
+                id: r.get("id").and_then(|v| v.as_u64()).unwrap_or(0),
+                chain,
+                evm_chain_id: r.get("evm_chain_id").and_then(|v| v.as_u64()),
+                token: s("token"),
+                to: s("to").unwrap_or_default(),
+                deposit_index: r.get("deposit_index").and_then(|v| v.as_u64()).unwrap_or(0),
+                custodian: s("custodian"),
+                status: s("status").unwrap_or_default(),
+            });
+        }
+        Ok(rows)
     }
 
     fn outbounds(&self) -> Result<Vec<OutboundRef>, String> {

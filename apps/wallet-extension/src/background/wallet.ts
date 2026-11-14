@@ -42,6 +42,19 @@ export interface SelfBalances {
   unreachable: string[];
 }
 
+export interface RecoveryRow {
+  id: number;
+  chain: string;
+  evm_chain_id?: number | null;
+  token?: string | null;
+  to: string;
+  status: string;
+  amount: string;
+  tx_hash?: string | null;
+  external_tx?: string | null;
+  created_height: number;
+}
+
 export interface DepositAddressInfo {
   chain: string;
   label: string;
@@ -340,6 +353,10 @@ export class Wallet {
         return this.resetWallet(String(p['password'] ?? ''));
       case 'depositAddress':
         return this.depositAddress(String(p['chain'] ?? ''));
+      case 'requestRecovery':
+        return this.requestRecovery(String(p['chain'] ?? ''), String(p['evmChainId'] ?? ''), String(p['token'] ?? ''), String(p['to'] ?? ''));
+      case 'recoveries':
+        return this.recoveries();
       case 'send':
         return this.send(String(p['kind'] ?? 'transfer'), String(p['asset'] ?? ''), String(p['to'] ?? ''), String(p['amount'] ?? ''), typeof p['memo'] === 'string' ? p['memo'] : undefined);
       case 'addNetwork':
@@ -395,6 +412,69 @@ export class Wallet {
       }
     }
     return { txId, ok: true, error: 'submitted; the receipt did not arrive in time' };
+  }
+
+  /**
+   * Ask the observers to move coins that landed at this account's deposit
+   * address on a network the chain does not serve, or in a token it does
+   * not list, to an address of the user's (`RequestRecovery`). The chain
+   * checks the index is the account's; nobody approves anything.
+   */
+  async requestRecovery(chainArg: string, evmChainIdRaw: string, tokenRaw: string, toRaw: string): Promise<{ txId: string; ok: boolean; error: string | null }> {
+    const chain = DEPOSIT_CHAINS[chainArg];
+    if (!chain) throw new UiError(`Unknown chain ${chainArg}`);
+    if (chainArg === 'BTC') throw new UiError('Nothing can land at a Bitcoin address on another network.');
+    const to = toRaw.trim();
+    if (to.length < 20) throw new UiError('Enter the destination address on that network.');
+    const evmChainId = evmChainIdRaw.trim();
+    if (evmChainId && !/^\d+$/.test(evmChainId)) throw new UiError('The EVM chain id is a number (137 for Polygon, 42161 for Arbitrum).');
+    if (evmChainId && chainArg !== 'ETH' && chainArg !== 'BSC') throw new UiError('An EVM chain id goes with an EVM address.');
+    const token = tokenRaw.trim();
+    const s = await this.st();
+    const account = this.activeAccount(s);
+    const network = this.requireSigningNetwork(s);
+    const rpc = network.rpc.replace(/\/$/, '');
+    const key = this.requireKey(account.index);
+    const acct = await fetch(`${rpc}/v1/accounts/${account.address}`);
+    const nonce = acct.status === 404 ? 0 : Number(((await acct.json()) as { nonce?: number }).nonce ?? 0);
+    const action = {
+      RequestRecovery: {
+        chain: chain.action,
+        evm_chain_id: evmChainId ? BigInt(evmChainId) : null,
+        token: token.length > 0 ? token : null,
+        to,
+        custodian: null,
+        owner: null,
+      },
+    } as unknown as Action;
+    const signed = signAction(key, nonce, network.chainId, action);
+    const sub = await fetch(`${rpc}/v1/actions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: stringifyJson(signed.signed) });
+    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; error?: unknown; tx_id?: string };
+    if (!sub.ok || outcome.admitted === false) throw new UiError(`The node refused the request: ${JSON.stringify(outcome.error ?? sub.status)}`);
+    this.deps.session.touch();
+    const txId = String(outcome.tx_id ?? signed.tx_id);
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 750));
+      const rr = await fetch(`${rpc}/v1/receipts/${txId}`);
+      if (rr.ok) {
+        const receipt = (await rr.json()) as { ok?: boolean; error?: { message?: string } | null };
+        return { txId, ok: Boolean(receipt.ok), error: receipt.ok ? null : (receipt.error?.message ?? 'rejected') };
+      }
+    }
+    return { txId, ok: true, error: 'submitted; the receipt did not arrive in time' };
+  }
+
+  /** This account's recovery rows, newest first. */
+  async recoveries(): Promise<RecoveryRow[]> {
+    const s = await this.st();
+    const account = this.activeAccount(s);
+    const network = this.requireSigningNetwork(s);
+    const rpc = network.rpc.replace(/\/$/, '');
+    const res = await fetch(`${rpc}/v1/recovery?owner=${account.address}`);
+    if (res.status === 404) return [];
+    if (!res.ok) throw new UiError(`RPC ${res.status} listing recoveries`);
+    const j = (await res.json()) as { recoveries?: RecoveryRow[] };
+    return j.recoveries ?? [];
   }
 
   /** Add a network the user runs or was given: the chain id comes from its `/v1/status`. */

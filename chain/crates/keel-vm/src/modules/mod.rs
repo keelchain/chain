@@ -19,6 +19,7 @@ pub mod liquidity;
 pub mod markets;
 pub mod p2p;
 pub mod pools;
+pub mod recovery;
 pub mod sessions;
 pub mod stable;
 pub mod staking;

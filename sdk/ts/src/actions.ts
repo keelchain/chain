@@ -141,7 +141,28 @@ export type Action =
   /** Fund the house maker's pool; mints pool shares at the pool's USD value. */
   | { DepositLiquidity: { asset: string; amount: Amount } }
   /** Burn pool shares; the pro-rata slice of every pool asset is released after the delay. */
-  | { WithdrawLiquidity: { shares: Amount } };
+  | { WithdrawLiquidity: { shares: Amount } }
+  /** Move coins that landed at the account's deposit address on an unserved network or in an
+   *  unlisted token to `to` (docs/deposits.md, "Sent on the wrong network"). */
+  | { RequestRecovery: RecoveryRequest }
+  | { ObserveRecovery: RecoveryObservation };
+
+export interface RecoveryRequest {
+  /** The address family (the chain whose deposit index the address is). */
+  chain: Chain;
+  /** An EVM network other than `chain` itself, by EIP-155 id; null when the coins are on `chain`. */
+  evm_chain_id?: Amount | null;
+  /** Token contract or mint; null for the native coin. */
+  token?: string | null;
+  to: string;
+  /** Custody vault: the custodian and whose index; the signer must be that custodian. */
+  custodian?: Address | null;
+  owner?: Address | null;
+}
+
+export interface RecoveryObservation {
+  id: Amount; tx_hash: Hash32; external_tx?: string | null; amount: Amount; external_height: Amount; tip_height: Amount; success: boolean;
+}
 
 export interface CustodyRotation {
   chain: Chain;
@@ -193,7 +214,7 @@ const ACTION_VARIANTS = [
   "RegisterLightningNode", "ObserveLightningDeposit", "ObserveLightningPayout", "FundLightningPool", "AnnounceLightningSweep",
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
-  "ObserveCustodySweep", "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity",
+  "ObserveCustodySweep", "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -381,6 +402,11 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "RetireCustodyGeneration": unitEnum(w, CHAINS, b.chain); address(w, b.custodian); w.u64(b.gen); break;
     case "DepositLiquidity": w.string(b.asset); w.u128(b.amount); break;
     case "WithdrawLiquidity": w.u128(b.shares); break;
+    case "RequestRecovery":
+      unitEnum(w, CHAINS, b.chain); w.option(b.evm_chain_id, (x) => w.u64(x)); w.option(b.token, (s) => w.string(s)); w.string(b.to);
+      w.option(b.custodian, (a) => address(w, a)); w.option(b.owner, (a) => address(w, a)); break;
+    case "ObserveRecovery":
+      w.u64(b.id); hash(w, b.tx_hash); w.option(b.external_tx, (s) => w.string(s)); w.u128(b.amount); w.u64(b.external_height); w.u64(b.tip_height); w.bool(b.success); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

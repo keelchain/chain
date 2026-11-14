@@ -59,6 +59,9 @@ pub struct State {
     /// The pooled house-maker inventory: depositors' shares, the
     /// high-water mark and pending withdrawals (schema 6).
     pub liquidity: liquidity::LiquidityState,
+    /// Self-service recovery of coins sent to a deposit address on a
+    /// network or in a token the chain does not credit (schema 8).
+    pub recovery: recovery::RecoveryState,
 }
 
 impl State {

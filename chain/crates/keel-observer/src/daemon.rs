@@ -46,6 +46,8 @@ pub struct Nodes {
     pub bsc: Option<Arc<dyn EthRpc>>,
     pub tron: Option<Arc<dyn TronApi>>,
     pub solana: Option<Arc<dyn SolRpc>>,
+    /// Extra EVM networks for recoveries, by chain id (`[recovery] evm`).
+    pub recovery_evm: Vec<(u64, Arc<dyn EthRpc>)>,
 }
 
 /// The node client named by the config, with the receipts fallback wired
@@ -154,6 +156,24 @@ impl Daemon {
                 .solana
                 .as_ref()
                 .map(|c| Arc::new(HttpSol::new(c)) as Arc<dyn SolRpc>),
+            recovery_evm: cfg
+                .recovery
+                .evm
+                .iter()
+                .map(|e| {
+                    let c = crate::config::EthereumConfig {
+                        rpc_url: e.rpc_url.clone(),
+                        beacon_url: None,
+                        network: Network::Mainnet,
+                        tokens: Vec::new(),
+                        log_window: 2000,
+                        fallback_priority_wei: 1_000_000_000,
+                        hot_index: 0,
+                        native_scan_blocks: 64,
+                    };
+                    (e.chain_id, Arc::new(HttpEth::new(&c)) as Arc<dyn EthRpc>)
+                })
+                .collect(),
         };
         tracing::info!(chain_id = status.chain_id, height = status.height, observer = %submitter.address(), "connected to the Keel node");
         Ok(Self {
@@ -728,6 +748,113 @@ impl Daemon {
         Ok(())
     }
 
+    /// Every open recovery row this observer can serve: the network
+    /// vault's books signed by the observers' signer, a custody vault's
+    /// active book signed by the client's.
+    pub async fn recovery_once(&self) -> anyhow::Result<()> {
+        let rows = self.rpc.recoveries().await?;
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let books = self.books.read().await;
+        for row in &rows {
+            let family = row.chain.address_family();
+            let book: Option<&AddressBook> = match row.custodian {
+                None => match row.chain {
+                    Chain::Bitcoin => None,
+                    Chain::Ethereum => books.ethereum.as_ref(),
+                    Chain::Bsc => books.bsc.as_ref(),
+                    Chain::Tron => books.tron.as_ref(),
+                    Chain::Solana => books.solana.as_ref(),
+                },
+                Some(c) => books.custody.iter().find(|b| {
+                    b.vault.custodian == Some(c)
+                        && b.chain.address_family() == family
+                        && b.vault.is_active()
+                }),
+            };
+            let Some(book) = book else {
+                continue;
+            };
+            let signer;
+            let tss: &dyn crate::tss::TssClient = match book.vault.signer_url.as_deref() {
+                Some(url) => {
+                    signer = crate::tss::HttpTss::new(url);
+                    &signer
+                }
+                None => self.tss.as_ref(),
+            };
+            let ctx = outbound::OutboundContext {
+                submitter: &self.submitter,
+                state: &self.state,
+                params: &books.params,
+                tss,
+                cfg: &self.cfg.outbound,
+            };
+            let r = match row.chain {
+                Chain::Ethereum | Chain::Bsc => {
+                    let served = (self.evm_node(row.chain), self.evm_cfg(row.chain));
+                    let target = match row.evm_chain_id {
+                        None => served.0.map(|rpc| crate::recovery::EvmTarget {
+                            rpc: rpc.as_ref(),
+                            cfg: served.1,
+                        }),
+                        Some(id) => {
+                            // The served node when it is that chain, else an
+                            // extra one from the config.
+                            let served_id = match served.1 {
+                                Some(c) if row.chain == Chain::Bsc => {
+                                    Some(c.network.bsc_chain_id())
+                                }
+                                Some(c) => Some(c.network.eth_chain_id()),
+                                None => None,
+                            };
+                            if served_id == Some(id) {
+                                served.0.map(|rpc| crate::recovery::EvmTarget {
+                                    rpc: rpc.as_ref(),
+                                    cfg: served.1,
+                                })
+                            } else {
+                                self.nodes
+                                    .recovery_evm
+                                    .iter()
+                                    .find(|(cid, _)| *cid == id)
+                                    .map(|(_, rpc)| crate::recovery::EvmTarget {
+                                        rpc: rpc.as_ref(),
+                                        cfg: None,
+                                    })
+                            }
+                        }
+                    };
+                    match target {
+                        Some(t) => crate::recovery::evm(&ctx, row, book, t).await,
+                        None => {
+                            tracing::debug!(id = row.id, chain_id = ?row.evm_chain_id, "no node for this recovery's chain");
+                            continue;
+                        }
+                    }
+                }
+                Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
+                    (Some(api), Some(cfg)) => {
+                        crate::recovery::tron(&ctx, row, book, api.as_ref(), cfg).await
+                    }
+                    _ => continue,
+                },
+                Chain::Solana => match (&self.nodes.solana, &self.cfg.solana) {
+                    (Some(rpc), Some(cfg)) => {
+                        crate::recovery::solana(&ctx, row, book, rpc.as_ref(), cfg).await
+                    }
+                    _ => continue,
+                },
+                Chain::Bitcoin => continue,
+            };
+            if let Err(e) = r {
+                tracing::warn!(error = %e, id = row.id, chain = row.chain.as_str(), "recovery pass failed");
+            }
+        }
+        Ok(())
+    }
+
     pub async fn fees_once(&self) -> anyhow::Result<()> {
         if let (Some(rpc), Some(cfg)) = (&self.nodes.bitcoin, &self.cfg.bitcoin) {
             match fees::report_bitcoin(&self.submitter, rpc.as_ref(), cfg).await {
@@ -823,6 +950,17 @@ impl Daemon {
                 }
             })
         };
+        let recovery = {
+            let d = self.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(iv.recovery_secs.max(1))).await;
+                    if let Err(e) = d.recovery_once().await {
+                        tracing::warn!(error = %e, "recovery pass failed");
+                    }
+                }
+            })
+        };
         // Lightning (2026-09-10): register, report settled invoices,
         // pay assigned payouts; plus the invoice API for the marketplace.
         let lightning = {
@@ -873,6 +1011,7 @@ impl Daemon {
             r = outbound => r?,
             r = fees => r?,
             r = moves => r?,
+            r = recovery => r?,
             r = lightning => r?,
             _ = tokio::signal::ctrl_c() => tracing::info!("stopping"),
         }

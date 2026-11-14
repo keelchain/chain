@@ -148,6 +148,16 @@ pub async fn token_account_balance(rpc: &dyn SolRpc, account: &str) -> anyhow::R
     }
 }
 
+/// Decimals of a mint (`getTokenSupply`).
+pub async fn mint_decimals(rpc: &dyn SolRpc, mint: &str) -> anyhow::Result<u8> {
+    let v = rpc
+        .call("getTokenSupply", json!([mint, { "commitment": FINALIZED }]))
+        .await?;
+    json_quantity(&v["value"]["decimals"])
+        .map(|d| d as u8)
+        .ok_or_else(|| anyhow::anyhow!("getTokenSupply: no decimals"))
+}
+
 pub fn ata(owner: &str, mint: &str) -> anyhow::Result<String> {
     let o = sol::decode(owner)?;
     let m = sol::decode(mint)?;

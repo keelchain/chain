@@ -111,6 +111,37 @@ Shasta, Ethereum, Solana mainnet or any other mainnet to the same address
 string are on a different ledger, the observers never see them, and they
 cannot be credited.
 
+## Sent on the wrong network
+
+Every Keel deposit address is a child of the vault key, and the chain
+records which account owns it. Anything that ever lands at that address,
+on any network, in any token, is that account's, even when the chain
+cannot credit it: USDT sent on Polygon or Arbitrum to a BSC address (the
+EVM family shares one address), a token the chain does not list, SOL sent
+on mainnet to a devnet address. Recovery is self-service and automatic:
+
+1. In Keel Wallet, *Deposits* → *Sent on the wrong network?*: choose the
+   address family, the EVM chain id when the coins are on another EVM
+   network, the token contract or mint (empty for the native coin), and an
+   address of yours on that network. The wallet signs a `RequestRecovery`
+   and pays `recovery.fee_keel` (0 on the testnet).
+2. The chain checks the address is yours and opens a recovery row; nobody
+   approves anything. A row nobody can serve expires after
+   `recovery.expiry_blocks`.
+3. The observers move what sits at the address to your destination,
+   signed under the same policy as payouts (the signer accepts only a
+   transfer out of that index, to that destination, in that token), and
+   report it. The row shows `Done` with the amount and the transaction.
+
+Gas: on a network the observers serve, the vault's hot address funds the
+transfer's gas as it does for consolidation. On another EVM network, send a
+little of that network's native coin to the same address first; the
+transfer pays its own gas from it. A custodial client asks for its users'
+addresses with `custodian` and `owner` set; its own signer signs.
+
+What stays impossible: coins sent to a Bitcoin address on another chain
+(no such transaction can exist), and anything whose address format differs.
+
 ## What has to be true on the chain side
 
 - A vault is registered for the chain (`/v1/vaults/BTC` is not null). The

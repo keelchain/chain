@@ -34,16 +34,16 @@ const ETH_CONSOLIDATE_GAS: u64 = 65_000;
 /// bandwidth are burnt from it); within the policy's cap.
 const TRON_GAS_FUND_SUN: u64 = 30_000_000;
 
-fn move_id(key: &str) -> u64 {
+pub(crate) fn move_id(key: &str) -> u64 {
     let h = keel_crypto::sha256(&[b"move", key.as_bytes()]);
     u64::from_le_bytes(h[..8].try_into().expect("8 bytes"))
 }
 
-fn record(ctx: &OutboundContext<'_>, key: &str) -> Option<OutboundTx> {
+pub(crate) fn record(ctx: &OutboundContext<'_>, key: &str) -> Option<OutboundTx> {
     ctx.state.read(|d| d.moves.get(key).cloned())
 }
 
-fn remember(
+pub(crate) fn remember(
     ctx: &OutboundContext<'_>,
     key: &str,
     chain: Chain,
@@ -66,7 +66,7 @@ fn remember(
     })
 }
 
-fn forget(ctx: &OutboundContext<'_>, key: &str) -> anyhow::Result<()> {
+pub(crate) fn forget(ctx: &OutboundContext<'_>, key: &str) -> anyhow::Result<()> {
     ctx.state.update(|d| {
         d.moves.remove(key);
     })
@@ -176,7 +176,7 @@ where
     Ok(())
 }
 
-fn custodian_hex(book: &AddressBook) -> String {
+pub(crate) fn custodian_hex(book: &AddressBook) -> String {
     book.vault.custodian.map(|c| c.to_hex()).unwrap_or_default()
 }
 
@@ -340,7 +340,7 @@ fn eth20(addr: &str) -> anyhow::Result<[u8; 20]> {
     Ok(keel_chains::address::eth_decode(addr)?)
 }
 
-async fn eth_sign_and_send(
+pub(crate) async fn eth_sign_and_send(
     ctx: &OutboundContext<'_>,
     rpc: &dyn EthRpc,
     book: &AddressBook,
@@ -744,7 +744,7 @@ pub async fn evm(
 
 // ---------------------------------------------------------------- tron
 
-async fn tron_sign_and_send(
+pub(crate) async fn tron_sign_and_send(
     ctx: &OutboundContext<'_>,
     api: &dyn TronApi,
     book: &AddressBook,
@@ -1044,7 +1044,7 @@ type SolMove = (String, Option<(String, u8)>, u64);
 /// Sign a Solana message with every signer it names (each a child of
 /// this book: the hot address pays, a moved index authorizes), broadcast
 /// it, and return `(signature base58, raw base64)`.
-async fn sol_sign_and_send(
+pub(crate) async fn sol_sign_and_send(
     ctx: &OutboundContext<'_>,
     rpc: &dyn SolRpc,
     book: &AddressBook,

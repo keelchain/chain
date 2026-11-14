@@ -74,6 +74,12 @@ fee_limit_sun = 100000000
 hot_index = 0
 tokens = [{ symbol = "USDT", contract = "T…" }]
 
+# Recoveries (docs/deposits.md, "Sent on the wrong network"): EVM networks
+# the chain does not name, by EIP-155 id; the index's address pays its own
+# gas there. Served chains need no entry.
+[recovery]
+evm = [{ chain_id = 137, rpc_url = "https://polygon-rpc.com" }]
+
 [outbound]
 enabled = true              # false on a pure observer that never signs
 leader_timeout_secs = 900   # a follower takes over a batch after this
@@ -102,6 +108,7 @@ retries on the next tick.
 | sync | `GET /v1/vaults/{chain}` per configured chain → `AddressBook` (every deposit index below `next_deposit_index`, plus index 0 = hot/change). For Bitcoin, imports the new addresses as `addr()` descriptors into the watch-only wallet (`importdescriptors`, rescan from genesis on regtest). Refreshes `GET /v1/params`. |
 | deposits | Bitcoin: `listunspent` on the wallet, one `ObserveDeposit` per UTXO on a user index that is deep enough. Ethereum: `eth_getLogs` for ERC-20 `Transfer` to book addresses in a window, proof from the beacon finality update (see below). Tron: TronGrid `/v1/accounts/{addr}/transactions[/trc20]`, attestation only. |
 | outbound | `GET /v1/vaults/outbounds?status=Batched`. Per batch the leader (`signers[batch_id % n]`) builds and signs the transaction, remembers it, broadcasts; followers look for the payment on chain and take over after `leader_timeout_secs` × their distance from the leader. Every signer that knows the transaction submits `ObserveOutbound` once it is `confirmations + 1` deep. Bitcoin: one transaction per batch, one in flight at a time, inputs are any watched UTXOs (largest first), change to index 0, fee from the wallet's `gettransaction` split evenly. Ethereum/Tron: one transaction per outbound from the hot address (index 0). |
+| recovery | `GET /v1/recovery?status=Open`. For each open row of a vault this observer serves (the network's, or a client's active generation signed by the client's signer): the leader builds the transfer out of the row's deposit index (`SignContext::EthRecover`/`TronRecover`/`SolRecover`), broadcasts and remembers it; the others find the same transfer on the external chain; once deep enough every observer reports `ObserveRecovery`. Gas from the hot address on a served chain, from the address itself elsewhere. |
 | fees | `ReportNetworkFee` per chain: `estimatesmartfee` (sat/vB, fallback on regtest), `eth_feeHistory` (base + median tip, wei/gas), a constant for Tron (sun). The chain uses the median across observers. |
 
 Submissions go through `rpc::Submitter`: nonce cached locally, resynced

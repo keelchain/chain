@@ -533,6 +533,35 @@ pub enum Event {
         amount: Amount,
         kind: String,
     },
+    // ---- recovery
+    RecoveryRequested {
+        id: u64,
+        owner: Address,
+        custodian: Option<Address>,
+        chain: String,
+        evm_chain_id: Option<u64>,
+        token: Option<String>,
+        to: String,
+        deposit_index: u64,
+        fee: Amount,
+    },
+    RecoveryObserved {
+        id: u64,
+        votes: u32,
+    },
+    RecoveryDone {
+        id: u64,
+        amount: Amount,
+        tx_hash: String,
+        external_tx: Option<String>,
+    },
+    RecoveryFailed {
+        id: u64,
+        tx_hash: String,
+    },
+    RecoveryExpired {
+        id: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

@@ -244,6 +244,13 @@ pub enum Action {
     WithdrawLiquidity {
         shares: u128,
     },
+    // ---- recovery (coins at a deposit address the chain cannot credit)
+    /// The owner of a deposit index (or its custodian) asks the observers
+    /// to move what sits at the address on an unserved network or in an
+    /// unlisted token to an address of their own.
+    RequestRecovery(RecoveryRequest),
+    /// Observer: the recovery transaction and its outcome.
+    ObserveRecovery(RecoveryObservation),
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -315,6 +322,7 @@ impl Action {
                 | Action::AnnounceLightningSweep { .. }
                 | Action::ObserveCustodyDeposit { .. }
                 | Action::ObserveCustodySweep(_)
+                | Action::ObserveRecovery(_)
         )
     }
 
@@ -369,6 +377,7 @@ impl Action {
             | Action::ObserveCustodySweep(_)
             | Action::RetireCustodyGeneration { .. } => "pools",
             Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. } => "liquidity",
+            Action::RequestRecovery(_) | Action::ObserveRecovery(_) => "recovery",
         }
     }
 }
@@ -628,6 +637,38 @@ pub struct OutboundObservation {
     /// The native transaction id when it is not the hex of `tx_hash`
     /// (Solana: the base58 signature).
     pub external_tx: Option<String>,
+}
+
+/// A recovery request (`RequestRecovery`, docs/deposits.md "Sent on the
+/// wrong network").
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct RecoveryRequest {
+    /// The address family: the vault whose deposit index the address is.
+    pub chain: Chain,
+    /// The EIP-155 id of an EVM network other than `chain` itself (the
+    /// family shares one address); `None` = the coins are on `chain`.
+    pub evm_chain_id: Option<u64>,
+    /// Token contract or mint; `None` = the chain's native coin.
+    pub token: Option<String>,
+    /// Where to send them, on that network.
+    pub to: String,
+    /// Custody vault: whose index (`owner`) in which custodian's vault; the
+    /// signer must be that custodian or one of its client members.
+    pub custodian: Option<Address>,
+    pub owner: Option<Address>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct RecoveryObservation {
+    pub id: u64,
+    #[serde(with = "crate::hex32")]
+    pub tx_hash: Hash32,
+    pub external_tx: Option<String>,
+    /// What was moved, in the token's smallest units.
+    pub amount: Amount,
+    pub external_height: u64,
+    pub tip_height: u64,
+    pub success: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]

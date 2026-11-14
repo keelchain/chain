@@ -35,6 +35,11 @@ pub struct Config {
     /// a hot index. Attestation only; the vault key is Ed25519 (FROST).
     #[serde(default)]
     pub solana: Option<SolanaConfig>,
+    /// Recovery of coins sent to a deposit address on an EVM network the
+    /// chain does not name (docs/deposits.md): the nodes to read and
+    /// broadcast on, by EIP-155 chain id. The served chains need no entry.
+    #[serde(default)]
+    pub recovery: RecoveryConfig,
     #[serde(default)]
     pub outbound: OutboundConfig,
     /// Lightning hot pool via a local LND node (2026-09-10).
@@ -109,10 +114,26 @@ pub struct Intervals {
     /// Ethereum/Tron deposit indexes, empty-generation reports.
     #[serde(default = "default_moves_secs")]
     pub moves_secs: u64,
+    /// The recovery pass (`GET /v1/recovery?status=Open`).
+    #[serde(default = "default_moves_secs")]
+    pub recovery_secs: u64,
 }
 
 fn default_moves_secs() -> u64 {
     60
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RecoveryConfig {
+    pub evm: Vec<RecoveryEvm>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecoveryEvm {
+    pub chain_id: u64,
+    pub rpc_url: String,
 }
 
 impl Default for Intervals {
@@ -123,6 +144,7 @@ impl Default for Intervals {
             outbound_secs: 15,
             fees_secs: 300,
             moves_secs: 60,
+            recovery_secs: 60,
         }
     }
 }
@@ -355,6 +377,10 @@ signature_limit = 50
 hot_index = 0
 tokens = [{ symbol = "USDC", contract = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", decimals = 6 }]
 
+# Extra EVM networks for recoveries (the address pays its own gas there).
+[recovery]
+evm = [{ chain_id = 137, rpc_url = "https://polygon-rpc.com" }]
+
 [outbound]
 enabled = true
 leader_timeout_secs = 900
@@ -385,6 +411,8 @@ mod tests {
         assert_eq!(sol.tokens[0].symbol, "USDC");
         assert_eq!(sol.tokens[0].decimals, Some(6));
         assert_eq!(sol.signature_limit, 50);
+        assert_eq!(c.recovery.evm[0].chain_id, 137);
+        assert_eq!(c.intervals.recovery_secs, 60);
         assert_eq!(c.tron.as_ref().unwrap().fee_sun, 15_000_000);
         assert_eq!(c.intervals.fees_secs, 300);
         assert!(Config::parse("keel_rpc_url = 1").is_err());

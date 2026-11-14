@@ -5,6 +5,18 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: self-service recovery of coins sent to a deposit address on a
+  network the chain does not serve or in a token it does not list
+  (`RequestRecovery` by the index's owner, or by the custodian for an
+  account in its custody; `ObserveRecovery` by the observers; `GET
+  /v1/recovery`). The chain checks the index is the requester's and opens
+  a row; the observers move the balance out of the index's own key to the
+  requester's destination under new policy contexts bound to the row,
+  and the quorum closes it; rows nobody serves expire. Unserved EVM
+  networks come from the observers' `[recovery] evm` list, with the
+  address paying its own gas. Parameters `recovery.fee_keel` and
+  `recovery.expiry_blocks`. Snapshot schema 8 (schema 7 migrates). Wallet:
+  *Deposits* → *Sent on the wrong network?*.
 - Chain: Solana (`Chain::Solana`, assets `SOL.SOL` with 9 decimals and
   `SOL.USDC` with 6). The vault key is Ed25519, 32 bytes, and the signer
   gains a second threshold protocol beside CGGMP21: FROST

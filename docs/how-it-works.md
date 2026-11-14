@@ -501,6 +501,22 @@ by governance with the set) has voted. Deposits above $50,000 sit in a
 automatically; there is no discretionary hold. One credit per
 `(chain, tx_hash, index)`.
 
+### 9.2b Recovery, without a moderator
+
+A deposit index belongs to an account, so coins that land at its address
+on a network the chain does not serve, or in a token it does not list,
+have an owner the chain already knows. `RequestRecovery` (by the owner,
+or by the custodian for an account in its custody) opens a row naming the
+network, the token and a destination; the observers move the balance out
+of the index's own key to that destination under `SignContext::*Recover`,
+which the signing policy accepts only against an open row (the transfer
+must leave that index, go to that destination, in that token; the amount
+is free since it is the owner's coins to the owner's address), and the
+quorum closes the row (`ObserveRecovery`). Unserved EVM networks come
+from the observers' `[recovery] evm` list; the address pays its own gas
+there. No vote, no operator: `recovery.fee_keel` and
+`recovery.expiry_blocks` are the only knobs, set by governance once.
+
 ### 9.3 Withdrawals
 
 `Withdraw { asset, to, amount }` moves the amount plus a network-fee lock

@@ -93,6 +93,51 @@ impl VaultView {
     }
 }
 
+/// An open recovery row (`GET /v1/recovery?status=Open`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryRow {
+    pub id: u64,
+    pub chain: Chain,
+    pub evm_chain_id: Option<u64>,
+    pub token: Option<String>,
+    pub to: String,
+    pub owner: Address,
+    pub custodian: Option<Address>,
+    pub deposit_index: u64,
+    pub status: String,
+}
+
+pub fn parse_recoveries(v: &Value) -> anyhow::Result<Vec<RecoveryRow>> {
+    let list = v
+        .get("recoveries")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::with_capacity(list.len());
+    for r in list {
+        let chain = r["chain"]
+            .as_str()
+            .and_then(chain_from_json)
+            .ok_or_else(|| anyhow::anyhow!("recovery.chain"))?;
+        let owner = r["owner"]
+            .as_str()
+            .and_then(Address::from_hex)
+            .ok_or_else(|| anyhow::anyhow!("recovery.owner"))?;
+        out.push(RecoveryRow {
+            id: u64_of(&r["id"]).ok_or_else(|| anyhow::anyhow!("recovery.id"))?,
+            chain,
+            evm_chain_id: u64_of(&r["evm_chain_id"]),
+            token: r["token"].as_str().map(str::to_string),
+            to: r["to"].as_str().unwrap_or_default().to_string(),
+            owner,
+            custodian: r["custodian"].as_str().and_then(Address::from_hex),
+            deposit_index: u64_of(&r["deposit_index"]).unwrap_or(0),
+            status: r["status"].as_str().unwrap_or_default().to_string(),
+        });
+    }
+    Ok(out)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutboundRow {
     pub id: u64,
@@ -139,6 +184,10 @@ pub trait SttRpc: Send + Sync {
     /// `GET /v1/lightning` (pools, assignments); `Null` when the node predates it.
     async fn lightning(&self) -> anyhow::Result<Value> {
         Ok(Value::Null)
+    }
+    /// The open recovery rows; empty when the node predates them.
+    async fn recoveries(&self) -> anyhow::Result<Vec<RecoveryRow>> {
+        Ok(Vec::new())
     }
 }
 
@@ -541,6 +590,14 @@ impl SttRpc for HttpSttRpc {
         match self.get("/v1/lightning").await {
             Ok(v) => Ok(v),
             Err(e) if e.to_string().contains("404") => Ok(Value::Null),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn recoveries(&self) -> anyhow::Result<Vec<RecoveryRow>> {
+        match self.get("/v1/recovery?status=Open").await {
+            Ok(v) => parse_recoveries(&v),
+            Err(e) if e.to_string().contains("404") => Ok(Vec::new()),
             Err(e) => Err(e),
         }
     }

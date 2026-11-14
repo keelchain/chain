@@ -7,7 +7,7 @@ use crate::{
     context::BlockContext,
     modules::{
         arbitration, attest, budgets, clients, custody, disputes, gov, lightning, liquidity,
-        markets, p2p, pools, sessions, stable, staking, tokens, treasury, vaults,
+        markets, p2p, pools, recovery, sessions, stable, staking, tokens, treasury, vaults,
     },
     receipt::{Event, Receipt, VmError},
     state::State,
@@ -110,6 +110,7 @@ pub fn apply_block(
     // The pool's epoch fee and clients' owed usage land in the fee split
     // before the buyback sweeps it into KEEL.
     end.extend(liquidity::end_block(state, ctx));
+    end.extend(recovery::end_block(state, ctx));
     end.extend(clients::end_block(state, ctx));
     end.extend(treasury::end_block(state, ctx));
     end.extend(staking::end_block(state, ctx));
@@ -295,6 +296,9 @@ fn apply_one(
         }
         Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. } => {
             liquidity::apply(state, ctx, signer, &tx_id, action)
+        }
+        Action::RequestRecovery(_) | Action::ObserveRecovery(_) => {
+            recovery::apply(state, ctx, signer, &tx_id, action)
         }
     };
     if result.is_err() {

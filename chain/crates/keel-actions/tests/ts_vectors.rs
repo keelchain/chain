@@ -402,6 +402,29 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 shares: 123_456_789,
             },
         ),
+        (
+            "request_recovery",
+            Action::RequestRecovery(keel_actions::RecoveryRequest {
+                chain: Chain::Bsc,
+                evm_chain_id: Some(137),
+                token: Some("0xc2132D05D31c914a87C6611C10748AEb04B58e8F".into()),
+                to: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed".into(),
+                custodian: None,
+                owner: None,
+            }),
+        ),
+        (
+            "observe_recovery",
+            Action::ObserveRecovery(keel_actions::RecoveryObservation {
+                id: 3,
+                tx_hash: [0x4a; 32],
+                external_tx: None,
+                amount: 25_000_000,
+                external_height: 70_000_000,
+                tip_height: 70_000_020,
+                success: true,
+            }),
+        ),
     ]
 }
 

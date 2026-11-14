@@ -376,6 +376,25 @@ pub async fn broadcast(api: &dyn TronApi, signed_hex: &str) -> anyhow::Result<St
 }
 
 /// Find an outbound already paid from `from` (base58): TRC-20 or TRX.
+/// The newest confirmed transfer from `from` to `to` (TRC-20 `token`, or
+/// TRX) since `min_timestamp_ms`, whatever its amount: `(txid, amount)`.
+pub async fn find_transfer_from(
+    api: &dyn TronApi,
+    token: Option<&str>,
+    from: &str,
+    to: &str,
+    min_timestamp_ms: u64,
+) -> anyhow::Result<Option<(String, u128)>> {
+    let rows = match token {
+        Some(c) => parse_trc20_transfers(&api.get(&format!("/v1/accounts/{from}/transactions/trc20?only_from=true&only_confirmed=true&limit=50&contract_address={c}&min_timestamp={min_timestamp_ms}")).await?)?,
+        None => parse_trx_transfers(&api.get(&format!("/v1/accounts/{from}/transactions?only_from=true&only_confirmed=true&limit=50&min_timestamp={min_timestamp_ms}")).await?)?,
+    };
+    Ok(rows
+        .into_iter()
+        .find(|t| t.to == to)
+        .map(|t| (t.txid_hex, t.amount)))
+}
+
 pub async fn find_payment(
     api: &dyn TronApi,
     token: Option<&str>,

@@ -21,6 +21,7 @@ pub mod fees;
 pub mod lightning;
 pub mod moves;
 pub mod outbound;
+pub mod recovery;
 pub mod rpc;
 pub mod state;
 pub mod tss;

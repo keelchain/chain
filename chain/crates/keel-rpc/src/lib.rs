@@ -227,6 +227,8 @@ pub fn router(node: Node) -> Router {
         .route("/v1/treasury", get(treasury))
         .route("/v1/liquidity", get(liquidity))
         .route("/v1/liquidity/{addr}", get(liquidity_position))
+        .route("/v1/recovery", get(recoveries))
+        .route("/v1/recovery/{id}", get(recovery_one))
         .route("/v1/sync/meta", get(sync_meta))
         .route("/v1/sync/snapshot", get(sync_snapshot))
         .route("/v1/ws", get(ws::ws))
@@ -289,6 +291,7 @@ async fn params(AxumState(node): AxumState<Node>) -> Json<Value> {
     if let Value::Object(map) = &mut v {
         map.insert("clients".into(), to_json(&s.clients.params));
         map.insert("liquidity".into(), to_json(&s.liquidity.params));
+        map.insert("recovery".into(), to_json(&s.recovery.params));
     }
     Json(v)
 }
@@ -1774,4 +1777,76 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
+}
+
+// ---------------------------------------------------------------- recovery
+
+#[derive(Deserialize, Default)]
+struct RecoveryQuery {
+    status: Option<String>,
+    owner: Option<String>,
+}
+
+fn recovery_json(r: &keel_vm::modules::recovery::Recovery) -> Value {
+    json!({
+        "id": r.id,
+        "chain": r.chain.as_str(),
+        "evm_chain_id": r.evm_chain_id,
+        "token": r.token,
+        "to": r.to,
+        "owner": r.owner.to_hex(),
+        "custodian": r.custodian.map(|c| c.to_hex()),
+        "deposit_index": r.deposit_index,
+        "created_height": r.created_height,
+        "status": r.status.as_str(),
+        "votes": r.quorum.count(),
+        "tx_hash": r.tx_hash.map(hex::encode),
+        "external_tx": r.external_tx,
+        "amount": r.amount.to_string(),
+        "closed_height": r.closed_height,
+    })
+}
+
+/// Recovery rows (`?status=Open|Done|Failed|Expired`, `?owner=`), newest
+/// first. The observers serve the open ones; the wallet shows an
+/// account's.
+async fn recoveries(
+    AxumState(node): AxumState<Node>,
+    Query(q): Query<RecoveryQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    let owner = q.owner.as_deref().map(parse_address).transpose()?;
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let rows: Vec<Value> = s
+        .recovery
+        .rows
+        .values()
+        .rev()
+        .filter(|r| {
+            q.status
+                .as_deref()
+                .is_none_or(|st| r.status.as_str().eq_ignore_ascii_case(st))
+                && owner.is_none_or(|o| r.owner == o)
+        })
+        .map(recovery_json)
+        .collect();
+    Ok(Json(json!({
+        "height": s.height,
+        "params": to_json(&s.recovery.params),
+        "recoveries": rows,
+    })))
+}
+
+async fn recovery_one(
+    AxumState(node): AxumState<Node>,
+    Path(id): Path<u64>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let r = s
+        .recovery
+        .rows
+        .get(&id)
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "NOT_FOUND", format!("recovery {id}")))?;
+    Ok(Json(recovery_json(r)))
 }
