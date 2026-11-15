@@ -17,14 +17,26 @@ BNB Smart Chain and Ethereum share one address: the chain derives both from
 the same key path, so the `0x…` string you get for BSC is the one you would
 get for Ethereum, and a deposit index assigned on one is the other's too.
 
+## 0. Hold a little KEEL first
+
+A fresh address cannot act until it holds `budget.activation_keel` KEEL
+(0.1 KEEL on the testnet; `GET /v1/params`), the floor that keeps the free
+action budget from being a free budget per keypair (`governance.md`). The
+request for a deposit address is an action like any other, so do this
+first: on the testnet, `faucet.keelchain.com` sends 100 KEEL and 100 KUSD
+to any address; a client's user gets the dust from the client with its
+attestation; anyone else receives a transfer. Until then the chain answers
+`NOT_ACTIVATED`, and the wallet says so with the amount.
+
 ## 1. Get your deposit address
 
 The chain assigns the address; it is not derived in the wallet. Three ways:
 
 **Keel Wallet.** Open the wallet, card *Receive*, press *Bitcoin*, *Tron*,
 *BNB Smart Chain* or *Solana*.
-The wallet asks the chain for an address the first time (a free signed
-action, no site involved) and shows it with a copy button from then on.
+The wallet asks the chain for an address the first time (a signed action
+from the free budget, no site involved) and shows it with a copy button from
+then on.
 
 **CLI.**
 

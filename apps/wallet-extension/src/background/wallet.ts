@@ -92,6 +92,18 @@ export interface UiState {
   pending: ApprovalRequest[];
 }
 
+/** A node refusal as a message the popup can show. `NOT_ACTIVATED` gets the
+ *  remedy spelled out: the address needs the activation dust first
+ *  (docs/governance.md, `budget.activation_keel`). */
+function refusal(what: 'action' | 'request', outcome: { code?: unknown; error?: unknown }, status: number): UiError {
+  if (outcome.code === 'NOT_ACTIVATED') {
+    const m = /floor of (\d+)/.exec(String(outcome.error ?? ''));
+    const keel = m ? (Number(m[1]) / 1_000_000).toString() : 'a small amount of';
+    return new UiError(`This address holds no KEEL yet. It needs at least ${keel} KEEL before the chain accepts anything from it: use the faucet, or receive a transfer, then try again.`);
+  }
+  return new UiError(`The node refused the ${what}: ${JSON.stringify(outcome.error ?? status)}`);
+}
+
 export class UiError extends Error {
   constructor(message: string) {
     super(message);
@@ -410,8 +422,8 @@ export class Wallet {
     const nonce = acct.status === 404 ? 0 : Number(((await acct.json()) as { nonce?: number }).nonce ?? 0);
     const signed = signAction(key, nonce, network.chainId, action);
     const sub = await fetch(`${rpc}/v1/actions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: stringifyJson(signed.signed) });
-    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; error?: unknown; tx_id?: string };
-    if (!sub.ok || outcome.admitted === false) throw new UiError(`The node refused the action: ${JSON.stringify(outcome.error ?? sub.status)}`);
+    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; code?: unknown; error?: unknown; tx_id?: string };
+    if (!sub.ok || outcome.admitted === false) throw refusal('action', outcome, sub.status);
     this.deps.session.touch();
     const txId = String(outcome.tx_id ?? signed.tx_id);
     for (let i = 0; i < 40; i++) {
@@ -460,8 +472,8 @@ export class Wallet {
     } as unknown as Action;
     const signed = signAction(key, nonce, network.chainId, action);
     const sub = await fetch(`${rpc}/v1/actions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: stringifyJson(signed.signed) });
-    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; error?: unknown; tx_id?: string };
-    if (!sub.ok || outcome.admitted === false) throw new UiError(`The node refused the request: ${JSON.stringify(outcome.error ?? sub.status)}`);
+    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; code?: unknown; error?: unknown; tx_id?: string };
+    if (!sub.ok || outcome.admitted === false) throw refusal('request', outcome, sub.status);
     this.deps.session.touch();
     const txId = String(outcome.tx_id ?? signed.tx_id);
     for (let i = 0; i < 40; i++) {
@@ -579,8 +591,8 @@ export class Wallet {
       : ({ RequestDepositAddress: { chain: chain.action } } as unknown as Action);
     const signed = signAction(key, nonce, network.chainId, request);
     const sub = await fetch(`${rpc}/v1/actions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: stringifyJson(signed.signed) });
-    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; error?: unknown };
-    if (!sub.ok || outcome.admitted === false) throw new UiError(`The node refused the request: ${JSON.stringify(outcome.error ?? sub.status)}`);
+    const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; code?: unknown; error?: unknown };
+    if (!sub.ok || outcome.admitted === false) throw refusal('request', outcome, sub.status);
     this.deps.session.touch();
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 750));

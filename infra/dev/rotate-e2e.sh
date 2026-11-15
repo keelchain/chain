@@ -200,6 +200,11 @@ EXP=$(( $(date +%s) + 30*86400 ))
 say "client attests the user; the user asks for an address in the client's vault"
 "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 raw "{\"Attest\":{\"subject\":\"$USER\",\"tier\":1,\"expires_at\":$EXP}}" > "$KEEL_DEVNET_DIR/attest.json"
 grep -q '"Attested"' "$KEEL_DEVNET_DIR/attest.json" || { cat "$KEEL_DEVNET_DIR/attest.json"; fail "attest failed"; }
+# The user is a fresh key: it needs the activation dust (`budget.activation_keel`,
+# docs/governance.md) before the chain looks at any action of its own. The client sends it with the attestation, as the onboarding step.
+ACTIVATION=$(curl -sf "$RPC0/v1/params" | python3 -c 'import sys,json; print(json.load(sys.stdin)["budget.activation_keel"])')
+"$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 transfer "$USER" KEEL "$ACTIVATION" > "$KEEL_DEVNET_DIR/activate.json"
+grep -q '"ok": *true' "$KEEL_DEVNET_DIR/activate.json" || { cat "$KEEL_DEVNET_DIR/activate.json"; fail "could not fund the user's activation dust"; }
 "$KEEL" --rpc "$RPC0" send --secret "$USER_SECRET" --wait 30 custody address BTC "$CLIENT" > "$KEEL_DEVNET_DIR/custody-address.json"
 INDEX=$(python3 -c "
 import json

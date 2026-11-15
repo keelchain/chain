@@ -171,6 +171,11 @@ done
 wait_for "observer wallets" 60 bash -c "[[ \$(bcli listwallets | grep -c keel-observer) -eq 3 ]]"
 
 # ---------------------------------------------------------------- deposit
+# The user is a fresh key: it needs the activation dust (`budget.activation_keel`,
+# docs/governance.md) before the chain looks at any action of its own. Observer 0 plays the faucet.
+ACTIVATION=$(curl -sf "$RPC0/v1/params" | python3 -c 'import sys,json; print(json.load(sys.stdin)["budget.activation_keel"])')
+"$KEEL" --rpc "$RPC0" send --secret "${OBS_SECRET[0]}" --wait 30 transfer "$USER" KEEL "$ACTIVATION" > "$KEEL_DEVNET_DIR/activate.json"
+grep -q '"ok": *true' "$KEEL_DEVNET_DIR/activate.json" || { cat "$KEEL_DEVNET_DIR/activate.json"; fail "could not fund the user's activation dust"; }
 "$KEEL" --rpc "$RPC0" send --secret "$USER_SECRET" --wait 30 raw '{"RequestDepositAddress":{"chain":"Bitcoin"}}' > "$KEEL_DEVNET_DIR/deposit-address.json"
 INDEX=$(python3 -c "
 import json
