@@ -62,6 +62,8 @@ export interface DepositAddressInfo {
   address: string;
   /** true when this call assigned the address. */
   fresh: boolean;
+  /** The client whose custody vault the address belongs to; null for the network vault. */
+  custodian: string | null;
 }
 
 
@@ -359,6 +361,8 @@ export class Wallet {
         return this.recoveries();
       case 'send':
         return this.send(String(p['kind'] ?? 'transfer'), String(p['asset'] ?? ''), String(p['to'] ?? ''), String(p['amount'] ?? ''), typeof p['memo'] === 'string' ? p['memo'] : undefined);
+      case 'custodian':
+        return this.custodian();
       case 'addNetwork':
         return this.addNetwork(String(p['name'] ?? ''), String(p['rpc'] ?? ''), typeof p['explorer'] === 'string' ? p['explorer'] : '');
       case 'removeNetwork':
@@ -387,10 +391,17 @@ export class Wallet {
     if (kind === 'transfer') {
       if (!/^[0-9a-f]{64}$/i.test(to)) throw new UiError('A Keel address is 64 hex characters.');
       action = { Transfer: { to: to.toLowerCase(), asset, amount, memo: memo && memo.length > 0 ? memo : null } } as unknown as Action;
-    } else if (kind === 'withdraw') {
+    } else if (kind === 'withdraw' || kind === 'withdraw-custody') {
       if (!asset.includes('.')) throw new UiError(`${asset} is a Keel asset; withdrawals go to an external chain (BTC.BTC, TRON.USDT, …).`);
       if (to.trim().length < 20) throw new UiError('Enter the destination address on the external chain.');
-      action = { Withdraw: { asset, to: to.trim(), amount } } as unknown as Action;
+      // A custody balance leaves through the client's own vault and signer.
+      action = kind === 'withdraw'
+        ? ({ Withdraw: { asset, to: to.trim(), amount } } as unknown as Action)
+        : ({ WithdrawCustody: { asset, to: to.trim(), amount } } as unknown as Action);
+    } else if (kind === 'swap-to-market' || kind === 'swap-to-custody') {
+      // The float swap (docs/models.md): custody <-> the chain's market, no coins moving.
+      if (!asset.includes('.')) throw new UiError(`${asset} is a Keel asset; only bridged assets sit in custody.`);
+      action = { SwapCustody: { asset, amount, to: kind === 'swap-to-market' ? 'deposit' : 'custody', on_behalf_of: null } } as unknown as Action;
     } else {
       throw new UiError(`Unknown send kind ${kind}`);
     }
@@ -506,10 +517,36 @@ export class Wallet {
   }
 
   /**
+   * The client whose custody vaults this account's deposits should go to
+   * (docs/models.md, Model A): the custodian that already backs a custody
+   * balance of the account, else its attester when that client has
+   * registered custody vaults. Null for an account of the P2P model, whose
+   * coins sit in the network vault.
+   */
+  async custodian(): Promise<{ custodian: string; chains: string[] } | null> {
+    const s = await this.st();
+    const account = this.activeAccount(s);
+    const network = this.requireSigningNetwork(s);
+    const rpc = network.rpc.replace(/\/$/, '');
+    const acct = await fetch(`${rpc}/v1/accounts/${account.address}`);
+    if (!acct.ok) return null;
+    const j = (await acct.json()) as { custodian?: string | null; attester?: string | null };
+    const client = j.custodian ?? j.attester ?? null;
+    if (!client) return null;
+    const res = await fetch(`${rpc}/v1/custody/${client}`);
+    if (!res.ok) return null;
+    const c = (await res.json()) as { vaults?: { chain: string; status?: string }[] };
+    const chains = (c.vaults ?? []).filter((v) => (v.status ?? 'Active') === 'Active').map((v) => v.chain);
+    return chains.length > 0 ? { custodian: client, chains } : null;
+  }
+
+  /**
    * The active account's deposit address on an external chain: the vault
-   * child address the chain assigned to this account. Assigns one with a
-   * signed `RequestDepositAddress` when the account has none yet (a free
-   * action; no site is involved, so no approval prompt).
+   * child address the chain assigned to this account. In the custody of a
+   * client with a vault on that chain, the address is in the client's
+   * vault (`RequestCustodyAddress`); otherwise in the network vault
+   * (`RequestDepositAddress`). Assigns one when the account has none yet
+   * (a free action; no site is involved, so no approval prompt).
    */
   async depositAddress(chainArg: string): Promise<DepositAddressInfo> {
     const chain = DEPOSIT_CHAINS[chainArg];
@@ -518,21 +555,29 @@ export class Wallet {
     const account = this.activeAccount(s);
     const network = this.requireSigningNetwork(s);
     const rpc = network.rpc.replace(/\/$/, '');
+    const custody = await this.custodian().catch(() => null);
+    const custodian = custody && custody.chains.includes(chain.path) ? custody.custodian : null;
     const find = async (): Promise<DepositAddressInfo | null> => {
-      const res = await fetch(`${rpc}/v1/vaults/${chain.path}/addresses?owner=${account.address}`);
+      const url = custodian
+        ? `${rpc}/v1/custody/${custodian}/${chain.path}/addresses?owner=${account.address}`
+        : `${rpc}/v1/vaults/${chain.path}/addresses?owner=${account.address}`;
+      const res = await fetch(url);
       if (!res.ok) throw new UiError(`RPC ${res.status} listing ${chain.path} deposit addresses`);
       const j = (await res.json()) as { addresses?: { index: number; address: string | null }[] };
       const row = j.addresses?.[0];
       if (!row) return null;
       if (!row.address) throw new UiError(`${chain.label}: no vault is registered on this network yet.`);
-      return { chain: chainArg, label: chain.label, index: row.index, address: row.address, fresh: false };
+      return { chain: chainArg, label: chain.label, index: row.index, address: row.address, fresh: false, custodian };
     };
     const existing = await find();
     if (existing) return existing;
     const key = this.requireKey(account.index);
     const acct = await fetch(`${rpc}/v1/accounts/${account.address}`);
     const nonce = acct.status === 404 ? 0 : Number(((await acct.json()) as { nonce?: number }).nonce ?? 0);
-    const signed = signAction(key, nonce, network.chainId, { RequestDepositAddress: { chain: chain.action } } as unknown as Action);
+    const request = custodian
+      ? ({ RequestCustodyAddress: { chain: chain.action, custodian } } as unknown as Action)
+      : ({ RequestDepositAddress: { chain: chain.action } } as unknown as Action);
+    const signed = signAction(key, nonce, network.chainId, request);
     const sub = await fetch(`${rpc}/v1/actions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: stringifyJson(signed.signed) });
     const outcome = (await sub.json().catch(() => ({}))) as { admitted?: boolean; error?: unknown };
     if (!sub.ok || outcome.admitted === false) throw new UiError(`The node refused the request: ${JSON.stringify(outcome.error ?? sub.status)}`);

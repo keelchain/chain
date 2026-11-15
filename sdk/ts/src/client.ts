@@ -1,6 +1,6 @@
 // HTTP client for the node's /v1 API (see crates/keel-rpc/API.md).
 import { Keypair, stringifyJson, txId, type SignedAction } from "./sign.ts";
-import type { Action, CustodyRotation, CustodySwap, RecoveryRequest } from "./actions.ts";
+import type { Action, Chain, CustodyRotation, CustodySwap, RecoveryRequest, Withdraw } from "./actions.ts";
 
 export interface Receipt {
   index: number; tx_id: string; signer: string; ok: boolean;
@@ -113,6 +113,14 @@ export class RpcClient {
   client(address: string) { return this.req("GET", `/v1/clients/${address}`); }
   /** A client's custody vaults, reserves versus liabilities, and its two floats per asset. */
   custody(custodian: string) { return this.req("GET", `/v1/custody/${custodian}`); }
+  /** Ask for a deposit address in `custodian`'s vault on `chain` (`RequestCustodyAddress`); resolves to the tx id. */
+  requestCustodyAddress(key: Keypair, chain: Chain, custodian: string, chainId = 1): Promise<string> {
+    return this.send(key, { RequestCustodyAddress: { chain, custodian } }, chainId);
+  }
+  /** Withdraw a custody balance to an external address, paid from the custodian's vault (`WithdrawCustody`). */
+  withdrawCustody(key: Keypair, withdraw: Withdraw, chainId = 1): Promise<string> {
+    return this.send(key, { WithdrawCustody: withdraw }, chainId);
+  }
   /** Swap between custody and the network vault against the custodian's floats (`SwapCustody`); resolves to the tx id. */
   swapCustody(key: Keypair, swap: CustodySwap, chainId = 1): Promise<string> {
     return this.send(key, { SwapCustody: swap }, chainId);

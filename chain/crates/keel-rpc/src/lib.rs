@@ -359,6 +359,11 @@ async fn account(
         },
         "tier": tier,
         "tier_expires_at": meta.tier_expires_at,
+        // The client that attested this account, and the custodian whose
+        // vault backs its custody balances (docs/models.md): what a wallet
+        // needs to route a deposit address or a withdrawal.
+        "attester": keel_vm::modules::clients::client_of(&s, &address).map(|a| a.to_hex()),
+        "custodian": s.custody.custodian_of.get(&address).map(|a| a.to_hex()),
         "balances": balances,
     })))
 }

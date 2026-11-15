@@ -5,6 +5,12 @@ Dates are UTC.
 
 ## Unreleased
 
+- Wallet: a custodial client's users get the custody flow in Keel Wallet
+  (docs/wallet.md §5c): Receive hands out the address in the client's
+  vault, Send withdraws custody balances through the client's vault and
+  offers *Custody ↔ market* (the float swap). `/v1/accounts/{addr}` now
+  carries `attester` and `custodian`. SDK: `requestCustodyAddress`,
+  `withdrawCustody`.
 - Chain: self-service recovery of coins sent to a deposit address on a
   network the chain does not serve or in a token it does not list
   (`RequestRecovery` by the index's owner, or by the custodian for an

@@ -214,6 +214,26 @@ the public APIs; a custom network shows the Keel side only. Code:
 `apps/wallet-extension/src/core/selfcustody.ts`, checked against the live
 vault addresses in its tests.
 
+## 5c. Keel Wallet for a custodial client's users
+
+A user attested by a client that registered custody vaults (docs/models.md,
+Model A) gets the whole flow in Keel Wallet without the client building a
+wallet of its own. The wallet reads `attester`/`custodian` from
+`/v1/accounts/{addr}` and the client's vaults from `/v1/custody/{client}`:
+
+- **Receive** asks for and shows the address in the client's vault on that
+  chain (`RequestCustodyAddress`), labelled as the exchange's custody;
+  *Move to Keel* from the user's own keys pays that address.
+- **Send → from custody** withdraws a custody balance through the client's
+  vault and signer (`WithdrawCustody`), to any address or to the user's
+  own wallet address.
+- **Send → Custody ↔ market** runs the float swap (`SwapCustody`) in
+  either direction, so the user can trade on the book and in escrow and
+  come back into custody; nothing moves on the external chain.
+
+An account the client does not hold in custody sees none of this and uses
+the network vault as before.
+
 ## 6. What the operator still signs (its own keys, never users')
 
 Attester (KYC tiers), param admin (fees), treasury (awards, referral

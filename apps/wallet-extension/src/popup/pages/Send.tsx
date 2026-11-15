@@ -1,7 +1,10 @@
 /**
  * Send from the active account: a transfer on Keel, a withdrawal to any
  * address on the asset's chain, or a move to the user's own wallet address
- * (a withdrawal whose destination is pre-filled and locked).
+ * (a withdrawal whose destination is pre-filled and locked). A balance held
+ * in an exchange's custody (docs/models.md, Model A) withdraws through the
+ * exchange's own vault, and moves between custody and the chain's market
+ * with the float swap, no coins moving.
  */
 import { useEffect, useState } from 'react';
 import { call, fetchAccount, type AccountResponse, type UiState } from '../ui';
@@ -11,7 +14,8 @@ import { BRIDGED_ASSETS, externalName, toUnits } from '../external';
 import { Address } from '../components/Address';
 import { explorerTxUrl } from '../../core/networks';
 
-type Kind = 'transfer' | 'withdraw' | 'wallet';
+type Kind = 'transfer' | 'withdraw' | 'wallet' | 'swap';
+type Pool = 'deposit' | 'custody';
 
 export function Send({ state }: { state: UiState }) {
   const { network, address } = state;
@@ -21,6 +25,8 @@ export function Send({ state }: { state: UiState }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [kind, setKind] = useState<Kind>('transfer');
   const [asset, setAsset] = useState('');
+  const [pool, setPool] = useState<Pool>('deposit');
+  const [custodian, setCustodian] = useState<string | null>(null);
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
   const [max, setMax] = useState(false);
@@ -35,34 +41,49 @@ export function Send({ state }: { state: UiState }) {
     setError(null);
     fetchAccount(network.rpc, address).then((a) => { if (live) setAccount(a); }, (e: unknown) => live && setError(`Cannot reach ${network.rpc}: ${e instanceof Error ? e.message : String(e)}`));
     call<SelfAddresses>('selfAddresses').then((a) => { if (live) setOwnAddrs(a); }, () => undefined);
+    call<{ custodian: string } | null>('custodian').then((c) => { if (live) setCustodian(c?.custodian ?? null); }, () => undefined);
     return () => { live = false; };
   }, [address, network.rpc, network.id, network.placeholder, refreshKey]);
 
   if (!address || network.placeholder) return <div className="page"><p className="muted">{network.placeholder ? `${network.name}: no RPC configured yet.` : 'No account.'}</p></div>;
 
   const spendable = new Map<string, string>();
-  for (const b of account?.balances ?? []) if (b.account_type === 'deposit') spendable.set(b.asset, String(b.balance));
-  // Transfers: everything the account holds. Withdrawals and moves: the bridged assets, always listed, with what is held in Keel.
+  const inCustody = new Map<string, string>();
+  for (const b of account?.balances ?? []) {
+    if (b.account_type === 'deposit') spendable.set(b.asset, String(b.balance));
+    if (b.account_type === 'custody' && BigInt(String(b.balance)) > 0n) inCustody.set(b.asset, String(b.balance));
+  }
+  const hasCustody = inCustody.size > 0 || custodian !== null;
+  const from: Pool = kind === 'transfer' ? 'deposit' : pool;
+  // Transfers: everything the account holds on the market side. Withdrawals and
+  // moves: the bridged assets, always listed, from the chosen pool. The swap:
+  // whatever the chosen pool holds.
   const options: { asset: string; balance: string }[] =
     kind === 'transfer'
       ? [...spendable.entries()].map(([a, balance]) => ({ asset: a, balance }))
-      : BRIDGED_ASSETS.map((b) => ({ asset: b.asset, balance: spendable.get(b.asset) ?? '0' }));
+      : kind === 'swap'
+        ? [...(from === 'custody' ? inCustody : spendable).entries()].filter(([a]) => a.includes('.')).map(([a, balance]) => ({ asset: a, balance }))
+        : BRIDGED_ASSETS.map((b) => ({ asset: b.asset, balance: (from === 'custody' ? inCustody : spendable).get(b.asset) ?? '0' }));
   const chosen = options.some((o) => o.asset === asset) ? asset : (options[0]?.asset ?? '');
   const balance = options.find((o) => o.asset === chosen)?.balance ?? '0';
   const decimals = chosen ? decimalsOf(chosen) : 0;
   const chain = BRIDGED_ASSETS.find((b) => b.asset === chosen)?.chain;
   const own = kind === 'wallet' && (chain === 'BTC' || chain === 'TRON') ? ownAddrs?.addresses[chain] : undefined;
-  const destination = kind === 'wallet' ? (own?.address ?? '') : to;
+  const destination = kind === 'wallet' ? (own?.address ?? '') : kind === 'swap' ? (from === 'custody' ? 'the market' : 'custody') : to;
   const amountUnits = max ? balance : toUnits(amount, decimals);
   const nothingHeld = BigInt(balance) === 0n;
   const canReview = Boolean(chosen && destination && amountUnits && BigInt(amountUnits) > 0n && BigInt(amountUnits) <= BigInt(balance));
+  const sendKind =
+    kind === 'transfer' ? 'transfer'
+      : kind === 'swap' ? (from === 'custody' ? 'swap-to-market' : 'swap-to-custody')
+        : from === 'custody' ? 'withdraw-custody' : 'withdraw';
 
   const doSend = async () => {
     setBusy(true);
     try {
       if (!amountUnits) throw new Error(`Amount must be a number with at most ${decimals} decimals.`);
-      const r = await call<{ txId: string; ok: boolean; error: string | null }>('send', { kind: kind === 'transfer' ? 'transfer' : 'withdraw', asset: chosen, to: destination, amount: amountUnits, memo });
-      setResult(r.ok ? { txId: r.txId, ok: true, text: kind === 'transfer' ? 'Transferred.' : kind === 'wallet' ? 'Withdrawal submitted. The observers pay it out in the next batch; the Wallet tab shows it when it lands.' : 'Withdrawal submitted. The observers pay it out in the next batch.' } : { txId: r.txId, ok: false, text: `Rejected: ${r.error ?? 'unknown'}` });
+      const r = await call<{ txId: string; ok: boolean; error: string | null }>('send', { kind: sendKind, asset: chosen, to: kind === 'swap' ? '' : destination, amount: amountUnits, memo });
+      setResult(r.ok ? { txId: r.txId, ok: true, text: kind === 'transfer' ? 'Transferred.' : kind === 'swap' ? (from === 'custody' ? 'Moved to the market: the balance now trades on the book and in escrow.' : 'Moved back into your exchange\'s custody.') : kind === 'wallet' ? 'Withdrawal submitted. The observers pay it out in the next batch; the Wallet tab shows it when it lands.' : from === 'custody' ? 'Withdrawal submitted from your exchange\'s vault; its signer pays it out in the next batch.' : 'Withdrawal submitted. The observers pay it out in the next batch.' } : { txId: r.txId, ok: false, text: `Rejected: ${r.error ?? 'unknown'}` });
       setConfirm(false);
       setAmount('');
       setMax(false);
@@ -75,6 +96,7 @@ export function Send({ state }: { state: UiState }) {
   };
 
   const verb = kind === 'transfer' ? 'Transfer' : kind === 'withdraw' ? 'Withdraw' : 'Move';
+  const poolName = (p: Pool) => (p === 'custody' ? "your exchange's custody" : 'the market (Keel)');
   return (
     <div className="page">
       <div className="card">
@@ -84,20 +106,34 @@ export function Send({ state }: { state: UiState }) {
             <option value="transfer">Transfer on Keel</option>
             <option value="withdraw">Withdraw to another chain</option>
             {ownAddrs?.supported && <option value="wallet">Move to your wallet</option>}
+            {hasCustody && <option value="swap">Custody ↔ market</option>}
           </select>
+          {hasCustody && kind !== 'transfer' && (
+            <select value={pool} onChange={(e) => { setPool(e.target.value as Pool); setMax(false); setConfirm(false); }} title="From">
+              <option value="deposit">from the market</option>
+              <option value="custody">from custody</option>
+            </select>
+          )}
           <select value={chosen} onChange={(e) => { setAsset(e.target.value); setMax(false); }} title="Asset">
             {options.map((o) => <option key={o.asset} value={o.asset}>{o.asset}</option>)}
           </select>
         </div>
         {chosen && (
           <p className="muted small">
-            In Keel: <b>{formatAmount(balance, decimals)} {chosen}</b>
+            {from === 'custody' ? 'In custody' : 'In Keel'}: <b>{formatAmount(balance, decimals)} {chosen}</b>
             {chain && <> · {externalName(network.id, chain)}</>}
             {kind !== 'transfer' && nothingHeld && <> · nothing to {kind === 'wallet' ? 'move' : 'withdraw'} yet. Deposit {chosen} to Keel first, or buy it on the market.</>}
           </p>
         )}
         {kind === 'transfer' && <input value={to} placeholder="Recipient Keel address (64 hex)" onChange={(e) => setTo(e.target.value.trim())} />}
         {kind === 'withdraw' && <input value={to} placeholder={chain ? `Destination address on ${externalName(network.id, chain)}` : 'Destination address on that chain'} onChange={(e) => setTo(e.target.value.trim())} />}
+        {kind === 'swap' && (
+          <p className="muted small">
+            {from === 'custody'
+              ? 'Moves the amount from your exchange\'s custody into the market side of your account, against your exchange\'s own floats; nothing moves on the external chain. Trade, then move back the same way.'
+              : 'Moves the amount from the market side back into your exchange\'s custody, against its floats; nothing moves on the external chain.'}
+          </p>
+        )}
         {kind === 'wallet' && (
           <div>
             <div className="label">Your {chain ? externalName(network.id, chain) : ''} address</div>
@@ -114,7 +150,7 @@ export function Send({ state }: { state: UiState }) {
           <div>
             <p className="small">
               {verb} <b>{max ? formatAmount(balance, decimals) : amount} {chosen}</b> to <code className="small">{destination}</code>
-              {kind !== 'transfer' ? `. Keel's withdrawal fee and the ${chain ? externalName(network.id, chain) : ''} network fee are taken from the amount.` : '?'}
+              {kind === 'swap' ? ` from ${poolName(from)}.` : kind !== 'transfer' ? `. Keel's withdrawal fee and the ${chain ? externalName(network.id, chain) : ''} network fee are taken from the amount.` : '?'}
             </p>
             <div className="row">
               <button disabled={busy} onClick={() => void doSend()}>{busy ? 'Signing…' : 'Confirm'}</button>
@@ -125,7 +161,7 @@ export function Send({ state }: { state: UiState }) {
           <button disabled={!canReview} onClick={() => { setResult(null); setConfirm(true); }}>Review</button>
         )}
         {amount && !max && amountUnits === null && <p className="error">Amount must be a number with at most {decimals} decimals.</p>}
-        {amountUnits && BigInt(amountUnits) > BigInt(balance) && <p className="error">More than you hold in Keel.</p>}
+        {amountUnits && BigInt(amountUnits) > BigInt(balance) && <p className="error">More than you hold {from === 'custody' ? 'in custody' : 'in Keel'}.</p>}
         {result && (
           <div className={result.ok ? 'small' : 'error'}>
             <div>{result.text}</div>
