@@ -35,9 +35,7 @@ interface CustodyEntry {
   chain: string;
   gen: number;
   status: string;
-  sweep: boolean;
   drain_until: number;
-  swept: { asset: string; amount: string }[];
   reported_empty: number;
   vault: { epoch: number; public_key: string };
   signer_url: string;
@@ -48,7 +46,7 @@ interface CustodyEntry {
 interface Custody {
   custodian: string;
   vaults: CustodyEntry[];
-  rotations: { chain: string; gen: number; activate_at: number; sweep: boolean; signer_url: string }[];
+  rotations: { chain: string; gen: number; activate_at: number; signer_url: string }[];
   accounts: number;
   floats: { asset: string; custody: string; deposit: string }[];
 }
@@ -208,7 +206,7 @@ function VaultsSection({ w, p }: { w: WalletValue; p: ReturnType<typeof usePartn
           {c.rotations.map((r) => (
             <div key={`${r.chain}:${r.gen}`} className="row" style={{ justifyContent: 'space-between' }}>
               <span>
-                {chainName(r.chain)} → generation {r.gen} at height {formatInt(r.activate_at)} {r.sweep ? '(sweep)' : '(no sweep)'} · signer {r.signer_url}
+                {chainName(r.chain)} → generation {r.gen} at height {formatInt(r.activate_at)} · signer {r.signer_url}
               </span>
               <button type="button" className="btn small" disabled={act.busy} onClick={() => void act.run({ CancelCustodyRotation: { chain: r.chain === 'BTC' ? 'Bitcoin' : r.chain === 'ETH' ? 'Ethereum' : r.chain === 'BSC' ? 'Bsc' : r.chain === 'SOL' ? 'Solana' : 'Tron' } }, 'Cancel the scheduled rotation')}>
                 Cancel
@@ -234,7 +232,7 @@ function VaultsSection({ w, p }: { w: WalletValue; p: ReturnType<typeof usePartn
           actions={
             <span className="row">
               <Badge tone={v.status === 'Active' ? 'good' : v.status === 'Draining' ? 'warn' : 'neutral'}>{v.status}</Badge>
-              {v.status === 'Draining' && <Badge tone={v.sweep ? 'accent' : 'neutral'}>{v.sweep ? 'sweeping' : 'draining by payouts'}</Badge>}
+              {v.status === 'Draining' && <Badge tone="neutral">empties through payouts</Badge>}
             </span>
           }
           flush
@@ -247,7 +245,6 @@ function VaultsSection({ w, p }: { w: WalletValue; p: ReturnType<typeof usePartn
                 ['Own address (index 0)', v.address ? <span className="mono small">{v.address}</span> : '—'],
                 ['Deposit indexes', formatInt(v.next_deposit_index - 1)],
                 ...(v.status === 'Draining' ? [['Grace ends at height', formatInt(v.drain_until)] as [ReactNode, ReactNode], ['Observers reporting empty', formatInt(v.reported_empty)] as [ReactNode, ReactNode]] : []),
-                ...(v.swept.length ? [['Swept', v.swept.map((s) => `${s.amount} ${s.asset}`).join(', ')] as [ReactNode, ReactNode]] : []),
               ]}
             />
           </div>
@@ -320,7 +317,6 @@ function RotateSection({ w }: { w: WalletValue }) {
   const [pk, setPk] = useState('');
   const [cc, setCc] = useState('');
   const [url, setUrl] = useState('');
-  const [sweep, setSweep] = useState(false);
   const [at, setAt] = useState('');
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -331,7 +327,8 @@ function RotateSection({ w }: { w: WalletValue }) {
           public_key: pk.trim(),
           chain_code: cc.trim(),
           signer_url: url.trim(),
-          sweep,
+          // Generations are separate pools; the chain refuses anything else.
+          sweep: false,
           activate_at: at.trim() ? Number(at) : null,
         },
       },
@@ -342,8 +339,8 @@ function RotateSection({ w }: { w: WalletValue }) {
     <Card title={<h2>Rotate to a fresh pool</h2>}>
       <p className="text-2 small">
         Start a second signer for a new key (its <span className="mono">keel-tss pubkey</span> prints the key and chain code), then register it here. Every account gets a new
-        address on that chain; the old key keeps crediting and paying until it is empty and its grace is over. Leave sweep off when the old addresses are the problem: nothing then
-        links the two pools.
+        deposit address on that chain; Keel accounts and balances do not change. The old key keeps crediting its addresses and paying withdrawals until it is empty and its grace
+        is over. The two generations are separate pools: nothing is ever moved from the old key to the new one.
       </p>
       <form className="form" onSubmit={submit}>
         <Field label="Chain">
@@ -367,9 +364,6 @@ function RotateSection({ w }: { w: WalletValue }) {
         <Field label="Activate at height" hint="Empty = at once">
           <input className="input" value={at} onChange={(e) => setAt(e.target.value)} inputMode="numeric" pattern="[0-9]*" />
         </Field>
-        <label className="check">
-          <input type="checkbox" checked={sweep} onChange={(e) => setSweep(e.target.checked)} /> Sweep the old coins to the new key (links the two pools on the external chain)
-        </label>
         <div className="row">
           <button type="submit" className="btn primary" disabled={act.busy || !w.account}>
             {act.busy ? 'Waiting for the wallet…' : 'Rotate'}

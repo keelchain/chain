@@ -292,10 +292,6 @@ enum CustodyCmd {
         chain_code: String,
         #[arg(long)]
         signer_url: String,
-        /// Let the observers move the old coins to the new generation
-        /// (links the two pools on the external chain).
-        #[arg(long)]
-        sweep: bool,
         /// Activate at this height instead of at once.
         #[arg(long)]
         activate_at: Option<u64>,
@@ -536,7 +532,6 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
             public_key,
             chain_code,
             signer_url,
-            sweep,
             activate_at,
         }) => Action::RotateCustodyVault(keel_actions::CustodyRotation {
             chain: keel_actions::Chain::parse(&chain)
@@ -546,7 +541,8 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 .try_into()
                 .map_err(|_| anyhow!("chain code must be 32 bytes of hex"))?,
             signer_url,
-            sweep,
+            // Generations are separate pools; the chain refuses anything else.
+            sweep: false,
             activate_at,
         }),
         ActionCmd::Custody(CustodyCmd::CancelRotation { chain }) => Action::CancelCustodyRotation {

@@ -110,8 +110,8 @@ pub struct Intervals {
     pub deposits_secs: u64,
     pub outbound_secs: u64,
     pub fees_secs: u64,
-    /// Custody moves: sweeps of draining generations, consolidation of
-    /// Ethereum/Tron deposit indexes, empty-generation reports.
+    /// Custody moves: consolidation of EVM/Tron/Solana deposit indexes into
+    /// their generation's hot address, empty-generation reports.
     #[serde(default = "default_moves_secs")]
     pub moves_secs: u64,
     /// The recovery pass (`GET /v1/recovery?status=Open`).

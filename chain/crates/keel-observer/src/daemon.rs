@@ -654,8 +654,9 @@ impl Daemon {
         None
     }
 
-    /// Custody moves: sweeps of draining generations, consolidation of
-    /// EVM/Tron deposit indexes, empty-generation reports.
+    /// Custody moves: consolidation of EVM/Tron/Solana deposit indexes into
+    /// their own generation's hot address, and empty-generation reports.
+    /// Nothing moves between generations.
     pub async fn moves_once(&self) -> anyhow::Result<()> {
         let books = self.books.read().await;
         for from in &books.custody {
@@ -670,35 +671,28 @@ impl Daemon {
                 tss: &signer,
                 cfg: &self.cfg.outbound,
             };
-            let active = books.custody.iter().find(|b| {
-                b.vault.custodian == from.vault.custodian
-                    && b.chain == from.chain
-                    && b.vault.is_active()
-            });
             let r = match from.chain {
-                Chain::Bitcoin => match (&self.nodes.bitcoin, &self.cfg.bitcoin) {
-                    (Some(rpc), Some(cfg)) => {
-                        crate::moves::bitcoin(&ctx, rpc.as_ref(), from, active, cfg).await
-                    }
-                    _ => continue,
+                Chain::Bitcoin => match &self.nodes.bitcoin {
+                    Some(rpc) => crate::moves::bitcoin(&ctx, rpc.as_ref(), from).await,
+                    None => continue,
                 },
                 Chain::Ethereum | Chain::Bsc => {
                     match (self.evm_node(from.chain), self.evm_cfg(from.chain)) {
                         (Some(rpc), Some(cfg)) => {
-                            crate::moves::evm(&ctx, rpc.as_ref(), from, active, cfg).await
+                            crate::moves::evm(&ctx, rpc.as_ref(), from, cfg).await
                         }
                         _ => continue,
                     }
                 }
                 Chain::Tron => match (&self.nodes.tron, &self.cfg.tron) {
                     (Some(api), Some(cfg)) => {
-                        crate::moves::tron(&ctx, api.as_ref(), from, active, cfg).await
+                        crate::moves::tron(&ctx, api.as_ref(), from, cfg).await
                     }
                     _ => continue,
                 },
                 Chain::Solana => match (&self.nodes.solana, &self.cfg.solana) {
                     (Some(rpc), Some(cfg)) => {
-                        crate::moves::solana(&ctx, rpc.as_ref(), from, active, cfg).await
+                        crate::moves::solana(&ctx, rpc.as_ref(), from, cfg).await
                     }
                     _ => continue,
                 },
@@ -723,25 +717,25 @@ impl Daemon {
         if let (Some(from), Some(rpc), Some(cfg)) =
             (&books.ethereum, &self.nodes.ethereum, &self.cfg.ethereum)
         {
-            if let Err(e) = crate::moves::evm(&ctx, rpc.as_ref(), from, None, cfg).await {
+            if let Err(e) = crate::moves::evm(&ctx, rpc.as_ref(), from, cfg).await {
                 tracing::warn!(error = %e, "network vault ethereum consolidation failed");
             }
         }
         if let (Some(from), Some(rpc), Some(cfg)) = (&books.bsc, &self.nodes.bsc, &self.cfg.bsc) {
-            if let Err(e) = crate::moves::evm(&ctx, rpc.as_ref(), from, None, cfg).await {
+            if let Err(e) = crate::moves::evm(&ctx, rpc.as_ref(), from, cfg).await {
                 tracing::warn!(error = %e, "network vault bsc consolidation failed");
             }
         }
         if let (Some(from), Some(api), Some(cfg)) = (&books.tron, &self.nodes.tron, &self.cfg.tron)
         {
-            if let Err(e) = crate::moves::tron(&ctx, api.as_ref(), from, None, cfg).await {
+            if let Err(e) = crate::moves::tron(&ctx, api.as_ref(), from, cfg).await {
                 tracing::warn!(error = %e, "network vault tron consolidation failed");
             }
         }
         if let (Some(from), Some(rpc), Some(cfg)) =
             (&books.solana, &self.nodes.solana, &self.cfg.solana)
         {
-            if let Err(e) = crate::moves::solana(&ctx, rpc.as_ref(), from, None, cfg).await {
+            if let Err(e) = crate::moves::solana(&ctx, rpc.as_ref(), from, cfg).await {
                 tracing::warn!(error = %e, "network vault solana consolidation failed");
             }
         }

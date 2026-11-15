@@ -96,8 +96,13 @@ your vault's index-0 address.
 
 To move your platform to a fresh vault (a labelled pool, a rebrand), start a
 second signer for a new key and `RotateCustodyVault` (`models.md`,
-"Rotating to a fresh pool"). Nothing on your side changes except the
-addresses you show: fetch a user's deposit address from
+"Rotating to a fresh pool", and "What changes and what does not" there
+for the two meanings of "address": your Keel accounts, revenue and treasury
+included, never change; the external deposit strings do; the old pool keeps
+crediting its addresses and paying withdrawals until it is empty, and
+nothing is ever moved from the old key to the new one: generations are
+separate pools, by protocol rule, not by option).
+Nothing on your side changes except the addresses you show: fetch a user's deposit address from
 `GET /v1/custody/{you}/{chain}/addresses?owner=` **at deposit time**, never
 from a cache older than the session, and subscribe to `PoolRotated` on
 `account:<you>` to refresh what is on screen. Old addresses keep

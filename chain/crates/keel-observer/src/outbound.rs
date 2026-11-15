@@ -923,10 +923,7 @@ mod tests {
             signer_url: None,
             gen: 0,
             status: "Active".into(),
-            sweep: false,
             drain_until: 0,
-            swept_any: false,
-            pending_sweeps: Vec::new(),
         };
         let network = if chain == Chain::Bitcoin {
             Network::Regtest

@@ -208,7 +208,7 @@ pub(crate) fn valid_signer_url(url: &str) -> bool {
         && url.chars().all(|c| c.is_ascii_graphic())
 }
 
-/// A network fee the custodian's vault paid (a payout, a sweep): from its
+/// A network fee the custodian's vault paid (a payout): from its
 /// own native custody balance (its gas tank) or, failing that, booked as
 /// its expense until its next top-up settles it.
 pub(crate) fn charge_network_fee(

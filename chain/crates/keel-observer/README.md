@@ -156,7 +156,7 @@ ERC-20 (BEP-20) transfers come from `eth_getLogs` as on Ethereum; native
 BNB deposits are read from the newest `native_scan_blocks` full blocks of
 each pass (`eth_getBlockByNumber` with transactions, `to` in the book,
 `value > 0`, receipt status 1), so a transfer made by a contract (an
-internal transaction) is not credited. Payouts, consolidation and sweeps
+internal transaction) is not credited. Payouts and consolidation
 are the Ethereum ones with the chain id the node reports (97 testnet, 56
 mainnet); the signing policy reads the chain from that id. BSC shares
 Ethereum's key path (`m/60/<index>`), so the vault must be registered

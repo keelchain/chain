@@ -10,16 +10,23 @@
 //! the previous ones are `Draining`: still watched, still credited, still
 //! paying withdrawals (one generation per transaction, never mixed) until
 //! `grace_blocks` have passed and the observers report them empty, then
-//! `Retired`. With `sweep` the observers also move the old coins to the
-//! active generation's own address; without it (the taint case) nothing
-//! ever links the two pools on the external chain.
+//! `Retired`.
+//!
+//! Generations are separate pools, by design and without exception: no
+//! coin is ever moved from one generation to another. New deposits go to
+//! the active key; a withdrawal is paid from whichever generation holds
+//! funds, the oldest draining one first; the old pool empties through
+//! those payouts alone. The chain enforces it: a rotation asking for a
+//! sweep is refused, and so is any `ObserveCustodySweep`. The `sweep` and
+//! `swept` fields below are kept only for the snapshot layout and are
+//! always `false` / empty.
 //!
 //! Generation 0 is the vault as registered; it is materialised here only
 //! when the first rotation happens.
 
 use crate::{
     context::BlockContext,
-    modules::{clients, custody, staking, tokens, vaults},
+    modules::{clients, custody, staking},
     receipt::{Event, VmError},
     state::State,
 };
@@ -59,9 +66,9 @@ pub struct Generation {
     pub opened_height: u64,
     /// Height after which a draining generation may be retired.
     pub drain_until: u64,
-    /// Whether the observers sweep its coins to the active generation.
+    /// Always `false`: generations are never swept (snapshot layout only).
     pub sweep: bool,
-    /// Coins the observers swept out of it, per asset.
+    /// Always empty: generations are never swept (snapshot layout only).
     pub swept: BTreeMap<Asset, Amount>,
     /// Observers that reported it empty.
     pub reported_empty: BTreeSet<Address>,
@@ -74,6 +81,7 @@ pub struct Rotation {
     pub chain_code: [u8; 32],
     pub signer_url: String,
     pub activate_at: u64,
+    /// Always `false` (snapshot layout only).
     pub sweep: bool,
 }
 
@@ -110,13 +118,9 @@ pub struct PoolsState {
     pub pools: BTreeMap<(Chain, Address), Pool>,
     /// Batch id -> the generation the observers should pay it from.
     pub batch_gen: BTreeMap<u64, u64>,
-    /// Sweep transactions already credited: (chain, tx hash).
+    /// Always empty: generations are never swept (snapshot layout only).
     pub swept: BTreeSet<(Chain, [u8; 32])>,
-    /// Sweep observations collecting votes, by observation digest (which
-    /// leaves the fee out: observers derive it from the transaction, and
-    /// the first vote's figure is the one charged). The observation is
-    /// kept so the other observers can verify it on their own nodes and
-    /// vote (`GET /v1/custody/{addr}` lists them).
+    /// Always empty: generations are never swept (snapshot layout only).
     pub sweeps_pending: BTreeMap<[u8; 32], (Quorum, SweepObservation)>,
 }
 
@@ -160,8 +164,6 @@ pub struct GenView {
     pub status: GenStatus,
     pub opened_height: u64,
     pub drain_until: u64,
-    pub sweep: bool,
-    pub swept: BTreeMap<Asset, Amount>,
     pub reported_empty: usize,
 }
 
@@ -174,8 +176,6 @@ fn view(g: &Generation) -> GenView {
         status: g.status,
         opened_height: g.opened_height,
         drain_until: g.drain_until,
-        sweep: g.sweep,
-        swept: g.swept.clone(),
         reported_empty: g.reported_empty.len(),
     }
 }
@@ -202,8 +202,6 @@ pub fn generations(state: &State, chain: Chain, custodian: Address) -> Vec<GenVi
         status: GenStatus::Active,
         opened_height: v.registered_height,
         drain_until: 0,
-        sweep: false,
-        swept: BTreeMap::new(),
         reported_empty: 0,
     }]
 }
@@ -222,23 +220,6 @@ pub fn active(state: &State, chain: Chain, custodian: Address) -> Option<GenView
         .find(|g| g.status == GenStatus::Active)
 }
 
-/// Sweep observations of `custodian`'s vault on `chain` still collecting
-/// votes, with the votes so far.
-pub fn pending_sweeps(
-    state: &State,
-    chain: Chain,
-    custodian: Address,
-) -> Vec<(SweepObservation, u32)> {
-    let (observers, _) = staking::observers(state);
-    state
-        .pools
-        .sweeps_pending
-        .values()
-        .filter(|(_, o)| o.chain == chain && o.custodian == custodian)
-        .map(|(q, o)| (o.clone(), q.count_within(&observers)))
-        .collect()
-}
-
 pub fn rotation(state: &State, chain: Chain, custodian: Address) -> Option<Rotation> {
     state
         .pools
@@ -248,13 +229,14 @@ pub fn rotation(state: &State, chain: Chain, custodian: Address) -> Option<Rotat
 }
 
 /// The generation a new batch of `custodian`'s withdrawals on `chain`
-/// should be paid from: the oldest draining generation that is not being
-/// swept (so it drains through ordinary payouts), else the active one.
-/// A preference: an observer that finds it short pays from the active key.
+/// should be paid from: the oldest draining generation, so the old pools
+/// empty through ordinary payouts (the only way coins ever leave them),
+/// else the active one. A preference: an observer that finds it short
+/// pays from the active key. One generation per transaction, always.
 pub fn batch_generation(state: &State, chain: Chain, custodian: Address) -> u64 {
     let gens = generations(state, chain, custodian);
     gens.iter()
-        .find(|g| g.status == GenStatus::Draining && !g.sweep)
+        .find(|g| g.status == GenStatus::Draining)
         .or_else(|| gens.iter().find(|g| g.status == GenStatus::Active))
         .map(|g| g.gen)
         .unwrap_or(0)
@@ -294,6 +276,12 @@ fn rotate(
         .ok_or_else(|| VmError::NotFound("register a custody vault on this chain first".into()))?;
     if r.public_key.len() != r.chain.key_length() {
         return Err(VmError::Invalid("bad vault public key length".into()));
+    }
+    if r.sweep {
+        return Err(VmError::Invalid(
+            "generations are separate pools: nothing is moved between them; set sweep to false"
+                .into(),
+        ));
     }
     if r.public_key == vault.public_key {
         return Err(VmError::Invalid(
@@ -468,78 +456,17 @@ fn cancel(state: &mut State, signer: Address, chain: Chain) -> Result<Vec<Event>
     }])
 }
 
+/// Refused, always: generations are separate pools and no coin is ever
+/// moved from one to another, so there is no sweep to attest. The action
+/// stays decodable for old blocks.
 fn observe_sweep(
-    state: &mut State,
-    signer: Address,
-    o: &SweepObservation,
+    _state: &mut State,
+    _signer: Address,
+    _o: &SweepObservation,
 ) -> Result<Vec<Event>, VmError> {
-    let (observers, threshold) = vaults::require_observer(state, &signer)?;
-    if state.pools.swept.contains(&(o.chain, o.tx_hash)) {
-        return Err(VmError::Invalid("sweep already recorded".into()));
-    }
-    if vaults::chain_of(state, &o.asset)? != o.chain {
-        return Err(VmError::Invalid("asset is not on that chain".into()));
-    }
-    let from = generations(state, o.chain, o.custodian)
-        .into_iter()
-        .find(|g| g.gen == o.from_gen)
-        .ok_or_else(|| VmError::NotFound(format!("generation {}", o.from_gen)))?;
-    if from.status != GenStatus::Draining {
-        return Err(VmError::Invalid(
-            "only a draining generation is swept".into(),
-        ));
-    }
-    let digest = keel_crypto::sha256(&[
-        b"custody-sweep-v1",
-        &borsh::to_vec(&(
-            o.chain,
-            o.custodian,
-            o.from_gen,
-            o.tx_hash,
-            o.asset.clone(),
-            o.amount,
-        ))
-        .map_err(|e| VmError::Invalid(e.to_string()))?,
-    ]);
-    let (q, first) = state
-        .pools
-        .sweeps_pending
-        .entry(digest)
-        .or_insert_with(|| (Quorum::default(), o.clone()));
-    if !q.vote(signer) {
-        return Err(VmError::Invalid("observer already voted".into()));
-    }
-    let fee = first.fee;
-    if !q.reached(&observers, threshold) {
-        return Ok(Vec::new());
-    }
-    state.pools.sweeps_pending.remove(&digest);
-    state.pools.swept.insert((o.chain, o.tx_hash));
-    if fee > 0 {
-        let native = vaults::native_asset(o.chain);
-        custody::charge_network_fee(
-            state,
-            o.custodian,
-            &native,
-            fee,
-            &format!("sweep:{}", tokens::hex(&o.tx_hash)),
-        )?;
-    }
-    if let Some(p) = state.pools.pools.get_mut(&(o.chain, o.custodian)) {
-        if let Some(g) = p.gens.iter_mut().find(|g| g.gen == o.from_gen) {
-            let s = g.swept.entry(o.asset.clone()).or_insert(0);
-            *s = s.saturating_add(o.amount);
-        }
-    }
-    Ok(vec![Event::PoolSwept {
-        chain: o.chain.as_str().into(),
-        custodian: o.custodian,
-        from_gen: o.from_gen,
-        asset: o.asset.clone(),
-        amount: o.amount,
-        fee,
-        tx_hash: tokens::hex(&o.tx_hash),
-    }])
+    Err(VmError::Invalid(
+        "generations are never swept: nothing moves between the pools of a custody vault".into(),
+    ))
 }
 
 fn retire(

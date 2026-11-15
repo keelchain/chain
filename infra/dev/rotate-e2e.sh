@@ -9,11 +9,14 @@
 #      address credits too
 #   3. a withdrawal is paid from the draining generation only: every input
 #      is an old-generation coin and the change returns to the old key
-#   4. the client rotates again with sweep to a third signer: the observers
-#      sweep the previous generation to the new key, attested on chain
-#   5. after the grace the observers report the swept generation empty and
-#      the chain retires it; reserve == liabilities throughout, the network
-#      reserve never moves, and every node agrees
+#   4. a rotation asking for a sweep is refused; the client rotates again
+#      (no sweep is the only way) to a third signer: three generations, the
+#      two old ones draining
+#   5. past the grace nothing is moved between the generations: no
+#      transaction appears, the new key's own address receives nothing, the
+#      funded old generations stay Draining (they empty through payouts
+#      only); reserve == liabilities throughout, the network reserve never
+#      moves, and every node agrees
 #
 # Env: KEEL_DEVNET_DIR, RPC_BASE, CARGO_TARGET_DIR, NO_BUILD=1,
 #      BTC_RPC_PORT (default 18743), BTC_P2P_PORT (18744), KEEP=1.
@@ -37,7 +40,7 @@ CLIENT_SEED=$(printf '%02x' $(seq 101 132) | tr -d '\n')   # the client's own va
 SIGNER_PORT=${SIGNER_PORT:-7400}
 SIGNER_PORT2=$((SIGNER_PORT+1)); SIGNER_PORT3=$((SIGNER_PORT+2))
 CLIENT_SEED2=$(printf '%02x' $(seq 133 164) | tr -d '\n')   # the fresh key of the first rotation
-CLIENT_SEED3=$(printf '%02x' $(seq 165 196) | tr -d '\n')   # the fresh key of the second (swept) rotation
+CLIENT_SEED3=$(printf '%02x' $(seq 165 196) | tr -d '\n')   # the fresh key of the second rotation
 GAS_BTC=0.01;      GAS_SATS=1000000
 
 say() { echo "[rotate-e2e] $*"; }
@@ -249,20 +252,25 @@ start_signer() { # seed port log
   nohup "$OBS" dev-signer --seed "$1" --listen "127.0.0.1:$2" > "$3" 2>&1 &
   wait_for "signer on :$2" 30 bash -c "grep -q '\"public_key\"' $3"
 }
-rotate() { # seed port sweepflag
+rotate() { # seed port
   local log="$KEEL_DEVNET_DIR/client-signer-$2.log"
   start_signer "$1" "$2" "$log"
   local pk cc
   pk=$(head -1 "$log" | json 'd["public_key"]'); cc=$(head -1 "$log" | json 'd["chain_code"]')
+  # Generations are separate pools: a rotation asking to sweep is refused.
+  "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 raw \
+    "{\"RotateCustodyVault\":{\"chain\":\"Bitcoin\",\"public_key\":\"$pk\",\"chain_code\":\"$cc\",\"signer_url\":\"http://127.0.0.1:$2\",\"sweep\":true,\"activate_at\":null}}" \
+    > "$KEEL_DEVNET_DIR/rotate-sweep-$2.json" || true
+  grep -q 'separate pools' "$KEEL_DEVNET_DIR/rotate-sweep-$2.json" || { cat "$KEEL_DEVNET_DIR/rotate-sweep-$2.json"; fail "a rotation with sweep was not refused"; }
   "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 custody rotate BTC \
-    --public-key "$pk" --chain-code "$cc" --signer-url "http://127.0.0.1:$2" $3 > "$KEEL_DEVNET_DIR/rotate-$2.json"
+    --public-key "$pk" --chain-code "$cc" --signer-url "http://127.0.0.1:$2" > "$KEEL_DEVNET_DIR/rotate-$2.json"
   grep -q '"PoolRotated"' "$KEEL_DEVNET_DIR/rotate-$2.json" || { cat "$KEEL_DEVNET_DIR/rotate-$2.json"; fail "rotation refused"; }
 }
 export -f gens gen_field user_addr lookup_gen json
 export RPC0 CLIENT USER INDEX
-# ---------------------------------------------------------------- 1. rotate (no sweep)
-say "the client rotates its Bitcoin vault to a fresh key on a second signer (:$SIGNER_PORT2), no sweep"
-rotate "$CLIENT_SEED2" "$SIGNER_PORT2" ""
+# ---------------------------------------------------------------- 1. rotate
+say "the client rotates its Bitcoin vault to a fresh key on a second signer (:$SIGNER_PORT2)"
+rotate "$CLIENT_SEED2" "$SIGNER_PORT2"
 wait_for "two live generations" 30 bash -c "[[ \"\$(gens)\" == '1:Active 0:Draining' ]]"
 ADDR1=$(user_addr 1)
 [[ "$ADDR1" != "$ADDR" ]] || fail "the user's address did not change with the key"
@@ -322,29 +330,24 @@ USER_AFTER=$((USER_AFTER - WITHDRAW_SATS))
 [[ "$(balance "$USER" BTC.BTC custody)" == "$USER_AFTER" ]] || fail "user custody balance after the withdrawal"
 read -r RES LIA HALT <<<"$(reserves)"
 [[ "$RES" == "$LIA" && "$HALT" == False ]] || fail "reserve $RES vs liabilities $LIA halted=$HALT after the withdrawal"
-# ---------------------------------------------------------------- 4. rotate again, with sweep
-say "the client (param admin on the devnet) shortens the grace to 5 blocks, then rotates with --sweep to a third signer (:$SIGNER_PORT3)"
+# ---------------------------------------------------------------- 4. rotate again
+say "the client (param admin on the devnet) shortens the grace to 5 blocks, then rotates again to a third signer (:$SIGNER_PORT3)"
 "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 raw '{"SetParam":{"key":"pools.grace_blocks","value":5}}' > "$KEEL_DEVNET_DIR/grace.json"
 grep -qE '"ok": *true' "$KEEL_DEVNET_DIR/grace.json" || { cat "$KEEL_DEVNET_DIR/grace.json"; fail "could not set pools.grace_blocks"; }
-rotate "$CLIENT_SEED3" "$SIGNER_PORT3" "--sweep"
-wait_for "three generations, 1 draining under sweep" 30 bash -c "[[ \"\$(gens)\" == '2:Active 1:Draining 0:Draining' && \"\$(gen_field 1 sweep)\" == True ]]"
+rotate "$CLIENT_SEED3" "$SIGNER_PORT3"
+wait_for "three generations, two draining" 30 bash -c "[[ \"\$(gens)\" == '2:Active 1:Draining 0:Draining' ]]"
 GAS_ADDR2=$(gen_field 2 address)
-sleep 8
-say "waiting for the observers to sweep generation 1 (0.1 BTC) to the new key's own address $GAS_ADDR2"
-wait_for "sweep in the mempool" 240 bash -c "[[ \$(bcli getrawmempool | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))') -ge 1 ]]"
-mine 3
-wait_for "sweep attested on chain" 240 bash -c "[[ \"\$(gen_field 1 swept)\" != '[]' ]]"
-SWEPT=$(gen_field 1 swept)
-say "generation 1 swept: $SWEPT"
-RECV2=$(bcli -rpcwallet=keel-observer-0 getreceivedbyaddress "$GAS_ADDR2" 1 2>/dev/null || echo 0)
-python3 -c "import sys; sys.exit(0 if float('$RECV2') >= 0.099 else 1)" || fail "the new key's own address received $RECV2 BTC, expected the swept 0.1 minus fee"
-[[ "$(balance "$USER" BTC.BTC custody)" == "$USER_AFTER" ]] || fail "a sweep changed a user balance"
-read -r RES LIA HALT <<<"$(reserves)"
-[[ "$RES" == "$LIA" && "$HALT" == False ]] || fail "reserve $RES vs liabilities $LIA halted=$HALT after the sweep"
-# ---------------------------------------------------------------- 5. retirement after the grace
-say "mining past the grace; the observers report generation 1 empty and the chain retires it"
+# ---------------------------------------------------------------- 5. nothing moves between generations
+say "mining past the grace: the funded old generations stay Draining and no coin moves to the new key ($GAS_ADDR2)"
 mine 6
-wait_for "generation 1 retired" 240 bash -c "[[ \"\$(gens)\" == '2:Active 0:Draining' ]]"
+sleep 20
+[[ $(bcli getrawmempool | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))') -eq 0 ]] || fail "a transaction appeared that no withdrawal asked for: something was moved between generations"
+RECV2=$(bcli -rpcwallet=keel-observer-0 getreceivedbyaddress "$GAS_ADDR2" 0 2>/dev/null || echo 0)
+python3 -c "import sys; sys.exit(0 if float('$RECV2') == 0 else 1)" || fail "the new key's own address received $RECV2 BTC: the generations got linked"
+[[ "$(gens)" == '2:Active 1:Draining 0:Draining' ]] || fail "a funded generation was retired or emptied: $(gens)"
+[[ "$(balance "$USER" BTC.BTC custody)" == "$USER_AFTER" ]] || fail "a user balance changed with no deposit or withdrawal"
+read -r RES LIA HALT <<<"$(reserves)"
+[[ "$RES" == "$LIA" && "$HALT" == False ]] || fail "reserve $RES vs liabilities $LIA halted=$HALT after the second rotation"
 [[ "$(balance "$SYSTEM" BTC.BTC vault_asset)" == "$NET_RESERVE_BEFORE" ]] || fail "the network reserve moved"
 for i in 1 2 3; do
   b=$(curl -sf "http://127.0.0.1:$((RPC_BASE+i))/v1/accounts/$USER" | python3 -c "
@@ -353,4 +356,4 @@ d=json.load(sys.stdin)
 print(next((b['balance'] for b in d['balances'] if b['asset']=='BTC.BTC' and b['account_type']=='custody'),0))")
   [[ "$b" == "$USER_AFTER" ]] || fail "node $i disagrees on the user's custody balance ($b vs $USER_AFTER)"
 done
-say "PASS: rotated twice ($(gens)); old and new addresses both credited; withdrawal paid from the draining key only; generation 1 swept to the fresh key ($SWEPT) and retired after the grace; user custody $USER_AFTER sats; reserve == liabilities == $RES; network reserve untouched"
+say "PASS: rotated twice ($(gens)); a sweeping rotation refused; old and new addresses both credited; withdrawal paid from the draining key only; nothing moved between generations; user custody $USER_AFTER sats; reserve == liabilities == $RES; network reserve untouched"

@@ -699,19 +699,6 @@ fn custody_entries(
             std::cmp::Reverse(g.gen),
         )
     });
-    let pending: Vec<Value> = pools::pending_sweeps(s, v.chain, v.custodian)
-        .into_iter()
-        .map(|(o, votes)| {
-            json!({
-                "from_gen": o.from_gen,
-                "tx_hash": hex::encode(o.tx_hash),
-                "asset": o.asset.to_string(),
-                "amount": o.amount.to_string(),
-                "fee": o.fee.to_string(),
-                "votes": votes,
-            })
-        })
-        .collect();
     gens.iter()
         .map(|g| {
             let own_address =
@@ -722,12 +709,9 @@ fn custody_entries(
                 "chain": v.chain.as_str(),
                 "gen": g.gen,
                 "status": g.status.as_str(),
-                "sweep": g.sweep,
                 "opened_height": g.opened_height,
                 "drain_until": g.drain_until,
-                "swept": g.swept.iter().map(|(a, n)| json!({"asset": a.to_string(), "amount": n.to_string()})).collect::<Vec<_>>(),
                 "reported_empty": g.reported_empty,
-                "pending_sweeps": pending,
                 "vault": {
                     "chain": v.chain.as_str(),
                     "epoch": if g.status == pools::GenStatus::Active { v.epoch } else { g.gen },
@@ -756,7 +740,6 @@ fn rotation_json(s: &keel_vm::State, chain: keel_actions::Chain, custodian: Addr
             "chain_code": hex::encode(r.chain_code),
             "signer_url": r.signer_url,
             "activate_at": r.activate_at,
-            "sweep": r.sweep,
         }),
         None => Value::Null,
     }

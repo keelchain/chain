@@ -1182,10 +1182,7 @@ mod tests {
             signer_url: None,
             gen: 0,
             status: "Active".into(),
-            sweep: false,
             drain_until: 0,
-            swept_any: false,
-            pending_sweeps: Vec::new(),
         };
         let book = AddressBook::build(vault, keel_chains::Network::Regtest).unwrap();
         let expect_topic =
@@ -1234,10 +1231,7 @@ mod tests {
             signer_url: None,
             gen: 0,
             status: "Active".into(),
-            sweep: false,
             drain_until: 0,
-            swept_any: false,
-            pending_sweeps: Vec::new(),
         };
         let book = AddressBook::build(vault, keel_chains::Network::Testnet).unwrap();
         let ours = book.address(1).unwrap().to_ascii_lowercase();

@@ -171,7 +171,7 @@ export interface CustodyRotation {
   chain_code: Hash32;
   /** The new key's signer; the old generation's signer keeps serving it. */
   signer_url: string;
-  /** Move the old coins to the new generation (links the two pools on the external chain). */
+  /** Must be `false`: generations are separate pools and the chain refuses a rotation that asks to move the old coins. Kept for the wire format. */
   sweep: boolean;
   /** Activate at this height instead of at once. */
   activate_at?: Amount | null;

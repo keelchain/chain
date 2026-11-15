@@ -5,6 +5,22 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **generations of a custody vault are separate pools; nothing is
+  ever moved between them.** `RotateCustodyVault` with `sweep: true` and
+  `ObserveCustodySweep` are refused (`INVALID`); the observers no longer
+  build sweeps, and the signing policy lost the `*Sweep` contexts and the
+  `sweep` flag of the consolidation contexts, so a custody move can only
+  pay the signing key's own hot address or deposit index. A draining
+  generation empties through the withdrawals the chain points at it (the
+  oldest draining generation first, one generation per transaction). The
+  `sweep`/`swept`/`pending_sweeps` fields left `GET /v1/custody`; the
+  `sweep` field stays in the action encoding and must be `false`. CLI:
+  `custody rotate` lost `--sweep`. Explorer: the rotate form lost its sweep
+  box. Docs: `models.md` "Rotating to a fresh pool" states the rule, the
+  reasons, and what a rotation changes from the exchange's side (Keel
+  accounts never; external deposit strings yes; old and new addresses
+  coexist while the old generation drains; withdrawals paid from whichever
+  generation holds funds; when a saved old address stops working).
 - Wallet: a custodial client's users get the custody flow in Keel Wallet
   (docs/wallet.md §5c): Receive hands out the address in the client's
   vault, Send withdraws custody balances through the client's vault and

@@ -1,8 +1,9 @@
 //! Custody fresh-pool rotation: a fresh key becomes the active generation,
 //! the old one drains (still credited, still paying) until its grace is
-//! over and the observers report it empty, sweeps are attested by quorum
-//! and their fee charged to the custodian, scheduled rotations open in
-//! `end_block`, and registration can no longer overwrite a key.
+//! over and the observers report it empty, generations are never swept into
+//! one another (the chain refuses both the request and the attestation),
+//! scheduled rotations open in `end_block`, and registration can no longer
+//! overwrite a key.
 #![allow(clippy::unwrap_used)]
 
 mod common;
@@ -40,13 +41,13 @@ fn registration() -> CustodyVaultRegistration {
     }
 }
 
-fn rotation(key: u8, url: &str, sweep: bool, activate_at: Option<u64>) -> Action {
+fn rotation(key: u8, url: &str, activate_at: Option<u64>) -> Action {
     Action::RotateCustodyVault(CustodyRotation {
         chain: ExtChain::Tron,
         public_key: vec![key; 33],
         chain_code: [key; 32],
         signer_url: url.into(),
-        sweep,
+        sweep: false,
         activate_at,
     })
 }
@@ -135,11 +136,11 @@ fn rotation_opens_a_fresh_generation_and_the_old_one_drains() {
 
     // Refusals: stranger, same key, same signer URL, bad URL, past height.
     let (r, _) = c.block(&[
-        alice.act(rotation(3, "https://signer-b.example.com", false, None)),
-        v.act(rotation(2, "https://signer-b.example.com", false, None)),
-        v.act(rotation(3, "https://signer-a.example.com", false, None)),
-        v.act(rotation(3, "ftp://nope", false, None)),
-        v.act(rotation(3, "https://signer-b.example.com", false, Some(1))),
+        alice.act(rotation(3, "https://signer-b.example.com", None)),
+        v.act(rotation(2, "https://signer-b.example.com", None)),
+        v.act(rotation(3, "https://signer-a.example.com", None)),
+        v.act(rotation(3, "ftp://nope", None)),
+        v.act(rotation(3, "https://signer-b.example.com", Some(1))),
     ]);
     assert!(matches!(err(&r[0]), VmError::NotFound(_)));
     assert!(matches!(err(&r[1]), VmError::Invalid(_)));
@@ -148,7 +149,7 @@ fn rotation_opens_a_fresh_generation_and_the_old_one_drains() {
     assert!(matches!(err(&r[4]), VmError::Invalid(_)));
 
     // The rotation: generation 1 is active, 0 drains for the grace.
-    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", false, None))]);
+    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", None))]);
     ok(&r[0]);
     let h = c.height;
     assert!(r[0].events.iter().any(|e| matches!(
@@ -182,8 +183,8 @@ fn rotation_opens_a_fresh_generation_and_the_old_one_drains() {
     ok(&r[0]);
     assert_eq!(custody::balance(&c.state, alice.addr(), &usdt()), 6_000_000);
 
-    // A withdrawal batch is pointed at the draining generation (no sweep),
-    // so the old pool drains through ordinary payouts.
+    // A withdrawal batch is pointed at the draining generation, so the old
+    // pool drains through ordinary payouts: the only way coins leave it.
     c.state.params.outbound_batch_interval_blocks = 1;
     let (r, _) = c.block(&[alice.act(Action::WithdrawCustody(Withdraw {
         asset: usdt(),
@@ -251,7 +252,7 @@ fn rotation_opens_a_fresh_generation_and_the_old_one_drains() {
 }
 
 #[test]
-fn sweep_is_attested_by_quorum_and_charged_to_the_custodian() {
+fn generations_are_never_swept_into_one_another() {
     let (state, mut alice, _bob, mut v) = setup(0);
     let mut c = Chain::new(state);
     let client = v.addr();
@@ -264,56 +265,53 @@ fn sweep_is_attested_by_quorum_and_charged_to_the_custodian() {
     })]);
     ok(&r[0]);
     fund_custody(&mut c.state, client, alice.addr(), &usdt(), 5_000_000);
-    // The client's gas tank in its own vault: 3 TRX at index 0.
     fund_custody(&mut c.state, client, client, &trx(), 3_000_000);
-    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", true, None))]);
-    ok(&r[0]);
-    assert!(pools::generations(&c.state, ExtChain::Tron, client)[0].sweep);
-    // With sweep on, batches are paid from the active generation.
-    assert_eq!(pools::batch_generation(&c.state, ExtChain::Tron, client), 1);
 
-    // Only observers attest sweeps; only draining generations are swept.
-    let sweep = |from_gen: u64, tx: u8, amount: u128, fee: u128| {
+    // A rotation that asks the observers to move the old coins is refused:
+    // generations are separate pools.
+    let (r, _) = c.block(&[v.act(Action::RotateCustodyVault(CustodyRotation {
+        chain: ExtChain::Tron,
+        public_key: vec![3u8; 33],
+        chain_code: [3u8; 32],
+        signer_url: "https://signer-b.example.com".into(),
+        sweep: true,
+        activate_at: None,
+    }))]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("separate pools")));
+    assert_eq!(statuses(&c, client), vec![(0, GenStatus::Active)]);
+
+    // The same rotation without it opens generation 1; generation 0 drains
+    // through payouts, so batches are pointed at it.
+    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", None))]);
+    ok(&r[0]);
+    let pool = &c.state.pools.pools[&(ExtChain::Tron, client)];
+    assert!(pool.gens.iter().all(|g| !g.sweep));
+    assert_eq!(pools::batch_generation(&c.state, ExtChain::Tron, client), 0);
+
+    // No one, observer or not, can record a sweep between the generations.
+    let sweep = |from_gen: u64| {
         Action::ObserveCustodySweep(SweepObservation {
             chain: ExtChain::Tron,
             custodian: client,
             from_gen,
-            tx_hash: [tx; 32],
+            tx_hash: [9u8; 32],
             asset: usdt(),
-            amount,
-            fee,
-        })
-    };
-    let (r, _) = c.block(&[
-        alice.act(sweep(0, 9, 5_000_000, 1_000_000)),
-        v.act(sweep(1, 9, 5_000_000, 1_000_000)),
-        v.act(sweep(0, 9, 5_000_000, 1_000_000)),
-        v.act(sweep(0, 9, 5_000_000, 1_000_000)),
-    ]);
-    assert!(!r[0].ok);
-    assert!(matches!(err(&r[1]), VmError::Invalid(_)));
-    ok(&r[2]);
-    assert!(r[2].events.iter().any(|e| matches!(
-        e,
-        Event::PoolSwept {
-            from_gen: 0,
             amount: 5_000_000,
             fee: 1_000_000,
-            ..
-        }
-    )));
-    assert!(matches!(err(&r[3]), VmError::Invalid(m) if m.contains("already")));
-    // The fee came out of the client's gas; USDT balances are untouched
-    // (coins moved between the client's own keys).
-    assert_eq!(custody::balance(&c.state, client, &trx()), 2_000_000);
+        })
+    };
+    let (r, _) = c.block(&[alice.act(sweep(0)), v.act(sweep(0)), v.act(sweep(1))]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
+    for receipt in &r[1..] {
+        assert!(matches!(err(receipt), VmError::Invalid(m) if m.contains("never swept")));
+    }
+    // Nothing moved and nothing was charged.
+    assert!(c.state.pools.swept.is_empty());
+    assert!(c.state.pools.sweeps_pending.is_empty());
+    let pool = &c.state.pools.pools[&(ExtChain::Tron, client)];
+    assert!(pool.gens.iter().all(|g| g.swept.is_empty()));
+    assert_eq!(custody::balance(&c.state, client, &trx()), 3_000_000);
     assert_eq!(custody::balance(&c.state, alice.addr(), &usdt()), 5_000_000);
-    assert_eq!(
-        pools::generations(&c.state, ExtChain::Tron, client)[0]
-            .swept
-            .get(&usdt()),
-        Some(&5_000_000)
-    );
-    assert!(c.state.custody.halted.is_empty());
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }
 
@@ -325,7 +323,7 @@ fn scheduled_rotation_opens_in_end_block_and_can_be_cancelled() {
     let (r, _) = c.block(&[v.act(Action::RegisterCustodyVault(registration()))]);
     ok(&r[0]);
     let at = c.height + 10;
-    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", false, Some(at)))]);
+    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", Some(at)))]);
     ok(&r[0]);
     assert!(r[0].events.iter().any(|e| matches!(
         e,
@@ -334,7 +332,7 @@ fn scheduled_rotation_opens_in_end_block_and_can_be_cancelled() {
     assert!(pools::rotation(&c.state, ExtChain::Tron, client).is_some());
     // Still the old key until then; a second rotation is refused meanwhile.
     assert_eq!(statuses(&c, client), vec![(0, GenStatus::Active)]);
-    let (r, _) = c.block(&[v.act(rotation(4, "https://signer-c.example.com", false, None))]);
+    let (r, _) = c.block(&[v.act(rotation(4, "https://signer-c.example.com", None))]);
     assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("pending")));
     // Cancel, then schedule again and let it open.
     let (r, _) = c.block(&[v.act(Action::CancelCustodyRotation {
@@ -347,7 +345,7 @@ fn scheduled_rotation_opens_in_end_block_and_can_be_cancelled() {
     })]);
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
     let at = c.height + 3;
-    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", false, Some(at)))]);
+    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", Some(at)))]);
     ok(&r[0]);
     let events = c.advance_to(at);
     assert!(events.iter().any(|e| matches!(

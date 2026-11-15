@@ -50,8 +50,8 @@ pub struct StateData {
     /// leader timeout).
     #[serde(default)]
     pub first_seen: BTreeMap<u64, u64>,
-    /// In-flight custody moves (sweeps, consolidations, gas funding) by
-    /// book prefix plus a label, e.g. `"<custodian>:g1:sweep:BTC"`.
+    /// In-flight custody moves (consolidations, gas funding) by book
+    /// prefix plus a label, e.g. `"<custodian>:g1:cons:TRON:TRON.USDT:4"`.
     #[serde(default)]
     pub moves: BTreeMap<String, OutboundTx>,
 }

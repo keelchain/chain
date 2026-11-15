@@ -31,10 +31,11 @@ describe('decodeAction', () => {
   it('RotateCustodyVault now and at a height', () => {
     const now = decodeAction({ RotateCustodyVault: { chain: 'BTC', public_key: '02ab', chain_code: 'cc', signer_url: 'https://signer.example/sign', sweep: false, activate_at: null } });
     expect(now.summary).toBe('Rotate your BTC vault to a fresh key now');
-    expect(field(now, 'Sweep old coins')).toEqual({ k: 'bool', value: false });
+    expect(now.fields.some((f) => f.name.startsWith('Sweep'))).toBe(false);
     expect(now.warning).toMatch(/new key/);
     const later = decodeAction({ RotateCustodyVault: { chain: 'ETH', public_key: '02ab', chain_code: 'cc', signer_url: 'https://signer.example/sign', sweep: true, activate_at: 5000 } });
-    expect(later.summary).toBe('Rotate your ETH vault to a fresh key at height 5000, sweeping the old coins');
+    expect(later.summary).toBe('Rotate your ETH vault to a fresh key at height 5000');
+    expect(field(later, 'Sweep old coins (refused by the chain)')).toEqual({ k: 'bool', value: true });
     expect(field(later, 'Activate at height')).toEqual({ k: 'number', value: '5000' });
   });
 

@@ -474,7 +474,9 @@ pub enum Event {
         custodian: Address,
         gen: u64,
     },
-    /// The observers moved coins out of a draining generation.
+    /// Never emitted: generations are separate pools and nothing is moved
+    /// between them (`ObserveCustodySweep` is refused). Kept so old
+    /// receipts still decode.
     PoolSwept {
         chain: String,
         custodian: Address,

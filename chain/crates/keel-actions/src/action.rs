@@ -222,7 +222,9 @@ pub enum Action {
     CancelCustodyRotation {
         chain: Chain,
     },
-    /// Observer attests a sweep that moved coins from a draining
+    /// Refused since generations stopped being swept (see
+    /// `SweepObservation`). Historically: an observer attested a sweep
+    /// that moved coins from a draining
     /// generation of a custody vault to its active one.
     ObserveCustodySweep(SweepObservation),
     /// An observer reports a draining generation empty (the quorum retires
@@ -718,15 +720,18 @@ pub struct CustodyRotation {
     pub chain_code: [u8; 32],
     /// The new key's signer; the old generation's signer keeps serving it.
     pub signer_url: String,
-    /// Whether the observers move the old coins to the new generation's
-    /// own address. Off, the old pool only drains through payouts and
-    /// nothing ever links the two on the external chain.
+    /// Must be `false`. Generations are separate pools: the chain never
+    /// moves coins from an old generation to a new one, and a rotation
+    /// asking for it is refused. The field stays in the encoding so older
+    /// clients still decode.
     pub sweep: bool,
     /// Activate at this height instead of at once.
     pub activate_at: Option<u64>,
 }
 
-/// A sweep transaction an observer saw confirm (`ObserveCustodySweep`).
+/// Payload of `ObserveCustodySweep`, which the chain refuses: generations
+/// are never swept into one another. Kept so the wire format and old
+/// blocks still decode.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct SweepObservation {
     pub chain: Chain,

@@ -265,10 +265,7 @@ mod tests {
             signer_url: None,
             gen: 0,
             status: "Active".into(),
-            sweep: false,
             drain_until: 0,
-            swept_any: false,
-            pending_sweeps: Vec::new(),
         };
         let book = AddressBook::build(vault, Network::Regtest).unwrap();
         assert_eq!(book.len(), 3);

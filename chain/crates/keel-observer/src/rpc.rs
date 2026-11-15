@@ -61,26 +61,12 @@ pub struct VaultView {
     pub custodian: Option<Address>,
     pub signer_url: Option<String>,
     /// Generation of a custody vault (0 for the network vault and for a
-    /// vault never rotated), its status, whether a draining one is swept
-    /// to the active one, and the height its grace ends.
+    /// vault never rotated), its status, and the height its grace ends.
+    /// Generations are separate pools: a draining one empties through
+    /// payouts only, nothing is ever moved to the active one.
     pub gen: u64,
     pub status: String,
-    pub sweep: bool,
     pub drain_until: u64,
-    /// The chain already recorded a sweep out of this generation.
-    pub swept_any: bool,
-    /// Sweep observations of this vault still collecting observer votes.
-    pub pending_sweeps: Vec<PendingSweep>,
-}
-
-/// A sweep another observer reported, for this one to verify and vote on.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PendingSweep {
-    pub from_gen: u64,
-    pub tx_hash_hex: String,
-    pub asset: String,
-    pub amount: u128,
-    pub fee: u128,
 }
 
 impl VaultView {
@@ -265,29 +251,7 @@ pub fn parse_vault(chain: Chain, v: &Value) -> anyhow::Result<Option<VaultView>>
             .and_then(Value::as_str)
             .unwrap_or("Active")
             .to_string(),
-        sweep: v.get("sweep").and_then(Value::as_bool).unwrap_or(false),
         drain_until: v.get("drain_until").and_then(u64_of).unwrap_or(0),
-        swept_any: v
-            .get("swept")
-            .and_then(Value::as_array)
-            .is_some_and(|a| !a.is_empty()),
-        pending_sweeps: v
-            .get("pending_sweeps")
-            .and_then(Value::as_array)
-            .map(|list| {
-                list.iter()
-                    .filter_map(|p| {
-                        Some(PendingSweep {
-                            from_gen: u64_of(&p["from_gen"])?,
-                            tx_hash_hex: p["tx_hash"].as_str()?.to_string(),
-                            asset: p["asset"].as_str()?.to_string(),
-                            amount: amount_of(&p["amount"])?,
-                            fee: amount_of(&p["fee"]).unwrap_or(0),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
     }))
 }
 
@@ -562,10 +526,7 @@ impl SttRpc for HttpSttRpc {
             signer_url: None,
             gen: 0,
             status: "Active".into(),
-            sweep: false,
             drain_until: 0,
-            swept_any: false,
-            pending_sweeps: Vec::new(),
         }))
     }
 

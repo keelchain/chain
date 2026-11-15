@@ -92,10 +92,11 @@ when the client's float on the far side is short.
 A custodial client that is labelled, sanctioned or rebranding can move its
 whole platform to a fresh vault on a chain without touching a single Keel
 account: `RotateCustodyVault { chain, public_key, chain_code, signer_url,
-sweep, activate_at }`. The client makes the new key on a signer of its own
-(a second `keel-tss serve`, or its KMS behind a second `POST /sign` URL;
-the old signer keeps serving the old key), and registers it. From the
-block it activates, or at `activate_at`:
+sweep: false, activate_at }`. The client makes the new key on a signer of
+its own (a second `keel-tss serve`, or its KMS behind a second `POST /sign`
+URL; the old signer keeps serving the old key), and registers its public
+key and chain code; no private key is ever sent, at registration or at
+rotation. From the block it activates, or at `activate_at`:
 
 - every account gets a **new deposit address** on that chain, derived from
   the new key at its unchanged index (the index is what the chain stores;
@@ -108,15 +109,82 @@ block it activates, or at `activate_at`:
   retires it (the client may retire it itself after the grace), and
   nothing watches those addresses any more.
 
-`sweep` decides whether the old coins move: on, the observers sweep the
-old generation to the new key's own address (attested on chain as
-`PoolSwept`, the network fee charged to the client's gas like a payout);
-off, nothing ever links the two pools on the external chain and the old
-one simply pays withdrawals until it is dry, which is the right choice
-when the old addresses are the problem. A pending rotation can be dropped
-with `CancelCustodyRotation`; `GET /v1/custody/{client}` lists every live
-generation (`gen`, `status`, `sweep`, `drain_until`, `swept`) and any
-pending rotation. A rotation is billed as `pools.usage_rotation_keel`.
+**Generations are separate pools. Nothing is ever moved between them.**
+This is a rule of the protocol, not an option: the chain refuses a
+rotation whose `sweep` is `true`, refuses every `ObserveCustodySweep`, and
+the signing policy of `keel-tss` has no context that could describe a
+transfer from one generation's address to another's (a consolidation may
+pay only the signing key's own hot address, gas funding only the key's own
+deposit index). The old pool empties through the withdrawals the chain
+points at it and through nothing else. The reasons:
+
+- *Separation of concern.* Each generation is one key, one signer, one set
+  of addresses and one set of coins. What one generation holds is exactly
+  what its own deposits brought minus its own payouts; the accounting of
+  each key can be audited on the external chain on its own.
+- *No link on the external chain.* The usual reason to rotate is that the
+  old addresses are a problem (a label, a sanction, a leaked list). A
+  transfer from the old key to the new one would put the new addresses
+  one hop from the old ones for every chain-analysis tool. Draining by
+  payouts to users' own destinations leaves no such hop.
+- *Nothing to attest.* A move between two keys of the same custodian
+  changes no balance on Keel, so it would be an on-chain transaction the
+  observers must build, sign, watch and vote on for no ledger effect, and
+  a signing policy that must know "the other generation". Without it the
+  policy for custody moves is closed: every destination it may pay is a
+  child of the very key that signs.
+
+A pending rotation can be dropped with `CancelCustodyRotation`;
+`GET /v1/custody/{client}` lists every live generation (`gen`, `status`,
+`drain_until`, `reported_empty`) and any pending rotation. A rotation is
+billed as `pools.usage_rotation_keel`.
+
+**What changes and what does not, from the exchange's side.** "Address"
+means two different things here, and a rotation touches only one of them.
+
+- *Keel addresses never change.* The exchange's own account, its revenue and
+  treasury accounts, every user's account, every balance and every open
+  order are Keel accounts: 32-byte Ed25519 keys on Keelchain, owned by
+  whoever holds that key. They are not derived from the vault key at all,
+  so a rotation does not look at them. The exchange's integration keeps
+  the same account ids and the same API calls before, during and after.
+- *External deposit addresses change.* What rotates is the vault key on one
+  external chain. A deposit address is that key's child at the account's
+  index (BIP32 non-hardened derivation on the secp256k1 chains, Keel's
+  additive Ed25519 rule on Solana; `docs/deposits.md`), so the same index
+  under the new key is a new string on Bitcoin, Tron, BSC or Solana. Index
+  0, the exchange's own top-up and hot address, changes the same way. Every
+  account keeps its index; nothing has to be re-assigned, and
+  `GET /v1/custody/{client}/{chain}/addresses` returns the new strings from
+  the activation block on. Users who saved an old address are not harmed
+  (next point), but the exchange should show them the new one: the new
+  address is the deposit address they get from now on.
+- *Old and new addresses coexist while the old generation drains.* The old
+  key is still watched: a deposit to an old address is credited to the same
+  account as before. The new generation is the one the chain hands out for
+  deposits.
+- *Withdrawals are paid from whichever generation holds funds.* The chain
+  points each withdrawal batch at one generation: the oldest draining one
+  while it has coins, else the active one. A transaction spends one
+  generation's coins only and returns change to that same key; two
+  generations are never mixed in one transaction, and the observers never
+  top one up from the other. From the user's side nothing changes: a
+  withdrawal is paid, from an address the exchange's vault owns.
+- *Old funds are never moved to the new addresses.* See above: this is the
+  rule, not a setting. The old pool shrinks only as it pays withdrawals.
+  If the exchange wants its coins concentrated under the new key, the way
+  is an ordinary one, outside the vault's internal moves: withdraw them to
+  a destination it controls and deposit them to a new-generation address,
+  which the chain treats like any other withdrawal and deposit, with
+  nothing linking the two keys on Keel's side. In every case balances on
+  Keel are untouched: a user who held 10 USDT in custody holds 10 USDT in
+  custody throughout.
+- *The end of the old generation.* After `pools.grace_blocks` and once the
+  observers report it empty, the chain retires it and stops watching it. A
+  deposit that arrives at an old address after that is not seen; this is
+  the one case where a saved old address loses coins, and the grace exists
+  to make it rare. Recovery through `RequestRecovery` does not apply, since
+  the retired key is no longer served.
 
 The client rebalances its floats only when they drift, with the two paths
 that already exist: `WithdrawCustody` paid to its own network deposit

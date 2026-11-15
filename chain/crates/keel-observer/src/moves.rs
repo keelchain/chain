@@ -1,15 +1,19 @@
-//! Custody moves that are not payouts: sweeping a draining generation of a
-//! client's vault to its active generation, consolidating EVM (Ethereum,
-//! BSC) and Tron deposit indexes into the hot address (funding their gas
-//! first),
-//! and reporting a draining generation empty so the chain can retire it.
+//! Custody moves that are not payouts: consolidating EVM (Ethereum, BSC),
+//! Tron and Solana deposit indexes into the *same key's* hot address
+//! (funding their gas first where the chain needs it), and reporting a
+//! draining generation empty so the chain can retire it.
+//!
+//! Every move stays inside one generation of one vault. Generations are
+//! separate pools: nothing here ever sends a coin from one generation to
+//! another, and the signing policy (`keel_chains::policy`) cannot even
+//! describe such a transfer: a consolidation may only pay the signing
+//! key's own hot address, gas only the key's own index within a cap. A
+//! draining generation empties through the payouts the chain points at it
+//! and through nothing else.
 //!
 //! Every move is built by one observer at a time (the same leader rule as
-//! batches, keyed by the move's label), signed by the *from* generation's
-//! own signer under `keel_chains::policy` (a sweep may only pay the active
-//! generation's own address, a consolidation only a hot address, gas only
-//! the key's own index within a cap), and remembered in the state file
-//! until it confirms. Sweeps are then attested with `ObserveCustodySweep`.
+//! batches, keyed by the move's label), signed by the generation's own
+//! signer, and remembered in the state file until it confirms.
 
 use crate::{
     chains::{
@@ -19,11 +23,11 @@ use crate::{
         tron::{self, TronApi},
         AddressBook,
     },
-    config::{BitcoinConfig, EthereumConfig, SolanaConfig, TronConfig},
+    config::{EthereumConfig, SolanaConfig, TronConfig},
     outbound::OutboundContext,
     state::{now_unix, OutboundTx},
 };
-use keel_actions::{Action, Chain, SweepObservation};
+use keel_actions::{Action, Chain};
 use keel_chains::{eth::Eip1559Tx, policy::SignContext, tron::TronTxBuilder};
 use std::collections::BTreeSet;
 
@@ -77,39 +81,6 @@ fn in_flight(ctx: &OutboundContext<'_>, prefix: &str) -> bool {
         .read(|d| d.moves.keys().any(|k| k.starts_with(prefix)))
 }
 
-/// Attest a confirmed sweep once.
-async fn report_sweep(
-    ctx: &OutboundContext<'_>,
-    from: &AddressBook,
-    asset: &str,
-    txid_hex: &str,
-    tx_hash: [u8; 32],
-    amount: u128,
-    fee: u128,
-) -> anyhow::Result<()> {
-    let Some(custodian) = from.vault.custodian else {
-        return Ok(());
-    };
-    let key = format!("sweep:{}{txid_hex}", from.key_prefix());
-    if ctx.state.is_submitted(&key) {
-        return Ok(());
-    }
-    let action = Action::ObserveCustodySweep(SweepObservation {
-        chain: from.chain,
-        custodian,
-        from_gen: from.vault.gen,
-        tx_hash,
-        asset: keel_types::Asset::new(asset),
-        amount,
-        fee,
-    });
-    let res = ctx.submitter.submit(Some(&key), action).await?;
-    if res.admitted {
-        tracing::info!(key, tx_id = ?res.tx_id, "custody sweep attested");
-    }
-    Ok(())
-}
-
 /// Tell the chain a draining generation holds nothing any more, once.
 async fn report_empty(ctx: &OutboundContext<'_>, from: &AddressBook) -> anyhow::Result<()> {
     let Some(custodian) = from.vault.custodian else {
@@ -136,201 +107,29 @@ async fn report_empty(ctx: &OutboundContext<'_>, from: &AddressBook) -> anyhow::
     Ok(())
 }
 
-/// Sweeps other observers reported for `from`: verify each on this node
-/// and vote when it holds. `check` decides whether the transaction indeed
-/// moved `amount` of `asset` from this generation to the active one and
-/// is deep enough, and returns the fee it paid.
-async fn verify_pending<F, Fut>(
-    ctx: &OutboundContext<'_>,
-    from: &AddressBook,
-    check: F,
-) -> anyhow::Result<()>
-where
-    F: Fn(crate::rpc::PendingSweep) -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<Option<u128>>>,
-{
-    for p in from.vault.pending_sweeps.clone() {
-        if p.from_gen != from.vault.gen {
-            continue;
-        }
-        let key = format!("sweep:{}{}", from.key_prefix(), p.tx_hash_hex);
-        if ctx.state.is_submitted(&key) {
-            continue;
-        }
-        let Ok(bytes) = hex::decode(p.tx_hash_hex.trim_start_matches("0x")) else {
-            continue;
-        };
-        let Ok(hash) = <[u8; 32]>::try_from(bytes.as_slice()) else {
-            continue;
-        };
-        match check(p.clone()).await {
-            Ok(Some(fee)) => {
-                report_sweep(ctx, from, &p.asset, &p.tx_hash_hex, hash, p.amount, fee).await?;
-            }
-            Ok(None) => {}
-            Err(e) => {
-                tracing::warn!(error = %e, tx = %p.tx_hash_hex, "pending sweep could not be verified")
-            }
-        }
-    }
-    Ok(())
-}
-
 pub(crate) fn custodian_hex(book: &AddressBook) -> String {
     book.vault.custodian.map(|c| c.to_hex()).unwrap_or_default()
 }
 
 // ---------------------------------------------------------------- bitcoin
 
-/// One Bitcoin pass for a custody book: sweep a draining generation when
-/// asked to, and report it empty once nothing is left.
+/// One Bitcoin pass for a custody book: report a draining generation empty
+/// once nothing is left. Coins leave it through payouts alone (a batch
+/// spends only that generation's UTXOs and returns change to its own
+/// key); this pass never moves anything.
 pub async fn bitcoin(
     ctx: &OutboundContext<'_>,
     rpc: &dyn BitcoinRpc,
     from: &AddressBook,
-    active: Option<&AddressBook>,
-    cfg: &BitcoinConfig,
 ) -> anyhow::Result<()> {
     if !from.vault.is_draining() {
         return Ok(());
     }
-    let required = ctx.params.confirmations(Chain::Bitcoin) as u64;
-    let key = format!("{}sweep:BTC", from.key_prefix());
-    // Every observer, leader or not, attests a confirmed sweep it can see:
-    // a coin at the active generation's own address whose inputs were all
-    // this generation's. The fee is read off the transaction, so every
-    // vote carries the same figure.
-    if let (true, Some(active)) = (from.vault.sweep, active) {
-        for u in btc::list_unspent(rpc, 1).await? {
-            if active.index_of(&u.address) != Some(0)
-                || u.confirmations.saturating_sub(1) < required
-            {
-                continue;
-            }
-            if ctx
-                .state
-                .is_submitted(&format!("sweep:{}{}", from.key_prefix(), u.txid_hex))
-            {
-                continue;
-            }
-            let Some((ins, fee)) = btc::tx_prevouts(rpc, &u.txid_hex).await? else {
-                continue;
-            };
-            if !ins.iter().all(|(a, _)| from.index_of(a).is_some()) {
-                continue;
-            }
-            let parsed: bitcoin::Txid = u.txid_hex.parse()?;
-            let hash: [u8; 32] = <bitcoin::Txid as bitcoin::hashes::Hash>::to_byte_array(parsed);
-            report_sweep(
-                ctx,
-                from,
-                "BTC.BTC",
-                &u.txid_hex,
-                hash,
-                u.value_sat as u128,
-                fee as u128,
-            )
-            .await?;
-            if record(ctx, &key).is_some_and(|t| t.txid == u.txid_hex) {
-                forget(ctx, &key)?;
-            }
-        }
-    }
-    if let (true, Some(active)) = (from.vault.sweep, active) {
-        verify_pending(ctx, from, |p| async move {
-            let mut bytes = hex::decode(&p.tx_hash_hex)?;
-            bytes.reverse();
-            let display = hex::encode(bytes);
-            let Some((ins, fee)) = btc::tx_prevouts(rpc, &display).await? else {
-                return Ok(None);
-            };
-            if !ins.iter().all(|(a, _)| from.index_of(a).is_some()) {
-                return Ok(None);
-            }
-            let confirmed = btc::tx_confirmations(rpc, &display)
-                .await?
-                .is_some_and(|(_, conf)| conf > required);
-            let paid = btc::list_unspent(rpc, 1).await?.iter().any(|u| {
-                u.txid_hex == display
-                    && active.index_of(&u.address) == Some(0)
-                    && u.value_sat as u128 == p.amount
-            });
-            Ok((confirmed && paid).then_some(fee as u128))
-        })
-        .await?;
-    }
-    if let Some(tx) = record(ctx, &key) {
-        match btc::tx_confirmations(rpc, &tx.txid).await? {
-            Some((_, conf)) if conf > required + 6 => {
-                // Confirmed long ago but never seen at the active address:
-                // drop the record so the generation is not stuck.
-                forget(ctx, &key)?;
-            }
-            Some(_) => {}
-            None => {
-                if let Some(raw) = &tx.raw {
-                    if !btc::in_mempool(rpc, &tx.txid).await {
-                        if let Err(e) = btc::send_raw(rpc, &hex::decode(raw)?).await {
-                            tracing::warn!(error = %e, "bitcoin sweep rebroadcast failed");
-                        }
-                    }
-                }
-            }
-        }
-        return Ok(());
-    }
     let utxos = btc::vault_utxos(&btc::list_unspent(rpc, 1).await?, from)?;
-    if utxos.is_empty() {
-        // Nothing left and, when it was to be swept, the sweep is on chain:
-        // every observer reports it; the quorum retires it after the grace.
-        if !in_flight(ctx, &from.key_prefix()) && (!from.vault.sweep || from.vault.swept_any) {
-            report_empty(ctx, from).await?;
-        }
-        return Ok(());
+    if utxos.is_empty() && !in_flight(ctx, &from.key_prefix()) {
+        // Every observer reports it; the quorum retires it after the grace.
+        report_empty(ctx, from).await?;
     }
-    let (true, Some(active)) = (from.vault.sweep, active) else {
-        return Ok(());
-    };
-    if !ctx.may_build(&from.vault, move_id(&key)) {
-        return Ok(());
-    }
-    let to = active
-        .address(0)
-        .ok_or_else(|| anyhow::anyhow!("active generation has no hot address"))?;
-    let fee_rate = btc::fee_rate(rpc, cfg.fee_target_blocks, cfg.fallback_sat_per_vb).await?;
-    let unsigned = keel_chains::btc::build_sweep(&utxos, to, fee_rate, cfg.network)?;
-    let raw_unsigned = hex::encode(bitcoin::consensus::encode::serialize(&unsigned.tx));
-    let mut sigs = Vec::with_capacity(unsigned.sighashes.len());
-    for s in &unsigned.sighashes {
-        let context = SignContext::BtcSweep {
-            custodian: custodian_hex(from),
-            from_gen: from.vault.gen,
-            raw_tx: raw_unsigned.clone(),
-            input: s.input as u32,
-            prevout_value: unsigned.selected[s.input].value,
-            prevout_pubkey: hex::encode(s.pubkey),
-            network: cfg.network,
-        };
-        let sig = ctx
-            .tss
-            .sign(s.digest, &from.path(s.key_index), Some(&context))
-            .await?;
-        sigs.push(sig.compact());
-    }
-    let (raw, txid) = keel_chains::btc::finalize(&unsigned, &sigs)?;
-    let txid_hex = <bitcoin::Txid as bitcoin::hashes::Hash>::from_byte_array(txid).to_string();
-    let amount = unsigned.tx.output[0].value.to_sat() as u128;
-    remember(
-        ctx,
-        &key,
-        Chain::Bitcoin,
-        &txid_hex,
-        unsigned.fee as u128,
-        amount,
-        Some(hex::encode(&raw)),
-    )?;
-    let sent = btc::send_raw(rpc, &raw).await?;
-    tracing::info!(txid = %sent, amount, fee = unsigned.fee, gen = from.vault.gen, "bitcoin sweep broadcast");
     Ok(())
 }
 
@@ -383,34 +182,22 @@ async fn eth_settled(
 }
 
 /// One pass over an EVM chain (the book's: Ethereum or BSC) for a custody
-/// book: consolidate every deposit index with a balance into the hot
-/// address (the active generation's when this one is draining with
-/// `sweep`), sweep the hot address itself when draining with `sweep`, and
-/// report a draining generation empty.
+/// book: consolidate every deposit index with a balance into this key's
+/// own hot address, and report a draining generation empty.
 pub async fn evm(
     ctx: &OutboundContext<'_>,
     rpc: &dyn EthRpc,
     from: &AddressBook,
-    active: Option<&AddressBook>,
     cfg: &EthereumConfig,
 ) -> anyhow::Result<()> {
     let chain = from.chain;
     let native = crate::chains::native_asset(chain);
     let tag = format!(":{}", chain.as_str());
-    let sweep_prefix = format!("sweep:{}:", chain.as_str());
     let tip = eth::block_number(rpc).await?;
     let hot = from
         .address(cfg.hot_index)
         .ok_or_else(|| anyhow::anyhow!("hot address not derived"))?
         .to_string();
-    let sweeping = from.vault.is_draining() && from.vault.sweep && active.is_some();
-    let target = match (sweeping, active) {
-        (true, Some(a)) => a
-            .address(cfg.hot_index)
-            .ok_or_else(|| anyhow::anyhow!("active hot address not derived"))?
-            .to_string(),
-        _ => hot.clone(),
-    };
     let prefix = from.key_prefix();
     let custodian = custodian_hex(from);
     let mut found_funds = false;
@@ -426,125 +213,13 @@ pub async fn evm(
             .collect()
     });
     for key in keys {
-        if let Some((tx, fee, success)) = eth_settled(ctx, chain, rpc, &key, tip).await? {
-            let label = &key[prefix.len()..];
-            if success && label.starts_with(&sweep_prefix) {
-                let asset = &label[sweep_prefix.len()..];
-                let hash: [u8; 32] = hex::decode(tx.txid.trim_start_matches("0x"))?
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("tx hash length"))?;
-                report_sweep(
-                    ctx,
-                    from,
-                    asset,
-                    &tx.txid,
-                    hash,
-                    tx.amount.unwrap_or(0),
-                    fee,
-                )
-                .await?;
-            }
+        if eth_settled(ctx, chain, rpc, &key, tip).await?.is_some() {
             forget(ctx, &key)?;
         } else {
             found_funds = true; // something still moving
         }
     }
 
-    // Sweeps another observer reported: check the transaction on this node
-    // (from this generation's hot address to the active one, the amount
-    // as reported, deep enough) and vote.
-    if let (true, Some(active)) = (sweeping, active) {
-        let from_hot = eth20(&hot)?;
-        let to_hot = eth20(&target)?;
-        let required = ctx.params.confirmations(chain) as u64;
-        let tokens: Vec<(String, [u8; 20])> = cfg
-            .tokens
-            .iter()
-            .filter_map(|t| {
-                eth20(&t.contract)
-                    .ok()
-                    .map(|c| (format!("{}.{}", chain.as_str(), t.symbol), c))
-            })
-            .collect();
-        let _ = active;
-        verify_pending(ctx, from, |p| {
-            let tokens = tokens.clone();
-            async move {
-                let Some(r) = eth::receipt_status(rpc, &p.tx_hash_hex).await? else {
-                    return Ok(None);
-                };
-                if !r.success || tip.saturating_sub(r.block_number) < required {
-                    return Ok(None);
-                }
-                let Some((f, to, value, input)) =
-                    eth::transaction_by_hash(rpc, &p.tx_hash_hex).await?
-                else {
-                    return Ok(None);
-                };
-                if f != from_hot {
-                    return Ok(None);
-                }
-                let ok = if p.asset == native {
-                    to == to_hot && value == p.amount && input.is_empty()
-                } else {
-                    match tokens.iter().find(|(a, _)| *a == p.asset) {
-                        Some((_, contract)) => {
-                            to == *contract
-                                && input.len() == 68
-                                && input[..4] == [0xa9, 0x05, 0x9c, 0xbb]
-                                && input[16..36] == to_hot
-                                && u128::from_be_bytes(
-                                    input[52..68].try_into().unwrap_or([0u8; 16]),
-                                ) == p.amount
-                                && input[36..52].iter().all(|b| *b == 0)
-                        }
-                        None => false,
-                    }
-                };
-                Ok(ok.then_some(r.fee_paid))
-            }
-        })
-        .await?;
-    }
-    // Every observer attests an ERC-20 sweep it can see in the logs: a
-    // transfer from this generation's hot address to the active one.
-    if let (true, Some(active)) = (sweeping, active) {
-        let from_hot = eth20(&hot)?;
-        let required = ctx.params.confirmations(chain) as u64;
-        for t in &cfg.tokens {
-            let logs = eth::scan_transfers(
-                rpc,
-                &t.contract,
-                active,
-                tip.saturating_sub(cfg.log_window),
-                tip,
-            )
-            .await?;
-            for l in logs {
-                if l.from != from_hot || tip.saturating_sub(l.block_number) < required {
-                    continue;
-                }
-                let txid = format!("0x{}", l.tx_hash_hex.trim_start_matches("0x"));
-                if ctx.state.is_submitted(&format!("sweep:{prefix}{txid}")) {
-                    continue;
-                }
-                let fee = eth::receipt_status(rpc, &txid)
-                    .await?
-                    .map(|r| r.fee_paid)
-                    .unwrap_or(0);
-                report_sweep(
-                    ctx,
-                    from,
-                    &format!("{}.{}", chain.as_str(), t.symbol),
-                    &txid,
-                    l.tx_hash,
-                    l.amount,
-                    fee,
-                )
-                .await?;
-            }
-        }
-    }
     let assets: Vec<(String, Option<String>)> = std::iter::once((native.to_string(), None))
         .chain(cfg.tokens.iter().map(|t| {
             (
@@ -555,7 +230,7 @@ pub async fn evm(
         .collect();
     let gas_cost = (ETH_CONSOLIDATE_GAS as u128).saturating_mul(max_fee);
 
-    // Deposit indexes: fund gas, then move each asset to the target hot.
+    // Deposit indexes: fund gas, then move each asset to our own hot address.
     for (index, addr) in from.addresses() {
         if index == cfg.hot_index || from.owner(index).is_none() {
             continue;
@@ -617,7 +292,7 @@ pub async fn evm(
                 break;
             }
             let nonce = eth::nonce(rpc, &addr).await?;
-            let to20 = eth20(&target)?;
+            let to20 = eth20(&hot)?;
             let tx = match contract {
                 Some(c) => Eip1559Tx::erc20_transfer(
                     chain_id,
@@ -633,7 +308,6 @@ pub async fn evm(
             let context = SignContext::EthConsolidate {
                 custodian: custodian.clone(),
                 index,
-                sweep: sweeping,
                 chain_id,
                 nonce,
                 max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
@@ -644,72 +318,6 @@ pub async fn evm(
                 data: hex::encode(&tx.data),
             };
             let (txid, raw) = eth_sign_and_send(ctx, rpc, from, index, &tx, context).await?;
-            // Into the active generation it is a sweep to attest; into our
-            // own hot address it is internal.
-            let label = if sweeping {
-                format!("sweep:{}:{asset}", chain.as_str())
-            } else {
-                format!("cons:{}:{asset}:{index}", chain.as_str())
-            };
-            remember(
-                ctx,
-                &format!("{prefix}{label}"),
-                chain,
-                &txid,
-                tx.max_gas_cost(),
-                bal,
-                Some(hex::encode(raw)),
-            )?;
-            tracing::info!(chain = chain.as_str(), index, asset, amount = bal, %txid, sweep = sweeping, "evm consolidation broadcast");
-        }
-    }
-
-    // The hot address itself, when sweeping.
-    if sweeping {
-        let native = eth::balance(rpc, &hot).await?;
-        for (asset, contract) in &assets {
-            let bal = match contract {
-                Some(c) => eth::token_balance(rpc, c, &hot).await?,
-                None => {
-                    native.saturating_sub(gas_cost.saturating_mul(1 + cfg.tokens.len() as u128))
-                }
-            };
-            if bal == 0 {
-                continue;
-            }
-            found_funds = true;
-            let key = format!("{prefix}sweep:{}:{asset}", chain.as_str());
-            if record(ctx, &key).is_some() || !ctx.may_build(&from.vault, move_id(&key)) {
-                continue;
-            }
-            let nonce = eth::nonce(rpc, &hot).await?;
-            let to20 = eth20(&target)?;
-            let tx = match contract {
-                Some(c) => Eip1559Tx::erc20_transfer(
-                    chain_id,
-                    nonce,
-                    eth20(c)?,
-                    to20,
-                    bal,
-                    max_fee,
-                    priority,
-                ),
-                None => Eip1559Tx::native_transfer(chain_id, nonce, to20, bal, max_fee, priority),
-            };
-            let context = SignContext::EthSweep {
-                custodian: custodian.clone(),
-                from_gen: from.vault.gen,
-                chain_id,
-                nonce,
-                max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
-                max_fee_per_gas: tx.max_fee_per_gas,
-                gas_limit: tx.gas_limit,
-                to: format!("0x{}", hex::encode(tx.to)),
-                value: tx.value,
-                data: hex::encode(&tx.data),
-            };
-            let (txid, raw) =
-                eth_sign_and_send(ctx, rpc, from, cfg.hot_index, &tx, context).await?;
             remember(
                 ctx,
                 &key,
@@ -719,9 +327,11 @@ pub async fn evm(
                 bal,
                 Some(hex::encode(raw)),
             )?;
-            tracing::info!(chain = chain.as_str(), asset, amount = bal, %txid, gen = from.vault.gen, "evm sweep broadcast");
+            tracing::info!(chain = chain.as_str(), index, asset, amount = bal, %txid, "evm consolidation broadcast");
         }
-    } else if from.vault.is_draining() {
+    }
+
+    if from.vault.is_draining() {
         let native = eth::balance(rpc, &hot).await?;
         if native > gas_cost {
             found_funds = true;
@@ -732,11 +342,7 @@ pub async fn evm(
             }
         }
     }
-    if from.vault.is_draining()
-        && !found_funds
-        && !in_flight(ctx, &prefix)
-        && (!from.vault.sweep || from.vault.swept_any)
-    {
+    if from.vault.is_draining() && !found_funds && !in_flight(ctx, &prefix) {
         report_empty(ctx, from).await?;
     }
     Ok(())
@@ -764,12 +370,11 @@ pub(crate) async fn tron_sign_and_send(
     Ok((hex::encode(digest), signed))
 }
 
-/// One Tron pass for a custody book (see [`ethereum`]).
+/// One Tron pass for a custody book (see [`evm`]).
 pub async fn tron(
     ctx: &OutboundContext<'_>,
     api: &dyn TronApi,
     from: &AddressBook,
-    active: Option<&AddressBook>,
     cfg: &TronConfig,
 ) -> anyhow::Result<()> {
     let now = tron::now_block(api).await?;
@@ -778,14 +383,6 @@ pub async fn tron(
         .address(cfg.hot_index)
         .ok_or_else(|| anyhow::anyhow!("hot address not derived"))?
         .to_string();
-    let sweeping = from.vault.is_draining() && from.vault.sweep && active.is_some();
-    let target = match (sweeping, active) {
-        (true, Some(a)) => a
-            .address(cfg.hot_index)
-            .ok_or_else(|| anyhow::anyhow!("active hot address not derived"))?
-            .to_string(),
-        _ => hot.clone(),
-    };
     let prefix = from.key_prefix();
     let custodian = custodian_hex(from);
     let mut found_funds = false;
@@ -800,48 +397,6 @@ pub async fn tron(
     };
     let t21 = |a: &str| keel_chains::address::tron_decode(a);
 
-    if sweeping {
-        let owner_hot = t21(&hot)?;
-        let dest_hot = t21(&target)?;
-        let tokens: Vec<(String, [u8; 21])> = cfg
-            .tokens
-            .iter()
-            .filter_map(|t| {
-                t21(&t.contract)
-                    .ok()
-                    .map(|c| (format!("TRON.{}", t.symbol), c))
-            })
-            .collect();
-        let now_number = now.number;
-        verify_pending(ctx, from, |p| {
-            let tokens = tokens.clone();
-            async move {
-                let Some(info) = tron::tx_info(api, &p.tx_hash_hex).await? else {
-                    return Ok(None);
-                };
-                if !info.success || now_number.saturating_sub(info.block_number) < required {
-                    return Ok(None);
-                }
-                let Some((owner, dest, amount, native)) =
-                    tron::transaction_parts(api, &p.tx_hash_hex).await?
-                else {
-                    return Ok(None);
-                };
-                if owner.as_slice() != owner_hot || dest != dest_hot || amount != p.amount {
-                    return Ok(None);
-                }
-                let asset_ok = if native {
-                    p.asset == "TRON.TRX"
-                } else {
-                    // The contract is the trigger's target; the parts give the
-                    // recipient and amount, so a matching configured asset is enough.
-                    tokens.iter().any(|(a, _)| *a == p.asset)
-                };
-                Ok(asset_ok.then_some(info.fee_sun as u128))
-            }
-        })
-        .await?;
-    }
     let keys: Vec<String> = ctx.state.read(|d| {
         d.moves
             .keys()
@@ -855,23 +410,6 @@ pub async fn tron(
         };
         match tron::tx_info(api, &tx.txid).await? {
             Some(info) if now.number.saturating_sub(info.block_number) >= required => {
-                let label = &key[prefix.len()..];
-                if info.success && label.starts_with("sweep:TRON:") {
-                    let asset = &label["sweep:TRON:".len()..];
-                    let hash: [u8; 32] = hex::decode(&tx.txid)?
-                        .try_into()
-                        .map_err(|_| anyhow::anyhow!("txid length"))?;
-                    report_sweep(
-                        ctx,
-                        from,
-                        asset,
-                        &tx.txid,
-                        hash,
-                        tx.amount.unwrap_or(0),
-                        info.fee_sun as u128,
-                    )
-                    .await?;
-                }
                 forget(ctx, &key)?;
             }
             _ => found_funds = true,
@@ -940,7 +478,7 @@ pub async fn tron(
                 break;
             }
             let owner = t21(&addr)?;
-            let dest = t21(&target)?;
+            let dest = t21(&hot)?;
             let raw = match &contract {
                 Some(c) => builder.trc20_transfer(&owner, &t21(c)?, &dest, bal),
                 None => builder.transfer(&owner, &dest, bal as u64),
@@ -948,67 +486,9 @@ pub async fn tron(
             let context = SignContext::TronConsolidate {
                 custodian: custodian.clone(),
                 index,
-                sweep: sweeping,
                 raw_data: hex::encode(raw.to_bytes()),
             };
             let (txid, json) = tron_sign_and_send(ctx, api, from, index, &raw, context).await?;
-            let label = if sweeping {
-                format!("sweep:TRON:{asset}")
-            } else {
-                format!("cons:TRON:{asset}:{index}")
-            };
-            remember(
-                ctx,
-                &format!("{prefix}{label}"),
-                Chain::Tron,
-                &txid,
-                cfg.fee_sun as u128,
-                bal,
-                Some(json.to_string()),
-            )?;
-            tracing::info!(index, asset, amount = bal, %txid, sweep = sweeping, "tron consolidation broadcast");
-        }
-    }
-
-    let (trx, trc20) = tron::account_balances(api, &hot).await?;
-    if sweeping {
-        let mut moves: Vec<(String, Option<String>, u128)> = tokens
-            .iter()
-            .filter_map(|(asset, contract)| {
-                let bal = trc20
-                    .iter()
-                    .find(|(c, _)| {
-                        c.eq_ignore_ascii_case(contract)
-                            || tron::to_base58(c).ok().as_deref() == Some(contract.as_str())
-                    })
-                    .map(|(_, n)| *n)
-                    .unwrap_or(0);
-                (bal > 0).then(|| (asset.clone(), Some(contract.clone()), bal))
-            })
-            .collect();
-        let keep = (cfg.fee_limit_sun as u128).saturating_mul(1 + tokens.len() as u128);
-        if trx > keep {
-            moves.push(("TRON.TRX".into(), None, trx - keep));
-        }
-        for (asset, contract, bal) in moves {
-            found_funds = true;
-            let key = format!("{prefix}sweep:TRON:{asset}");
-            if record(ctx, &key).is_some() || !ctx.may_build(&from.vault, move_id(&key)) {
-                continue;
-            }
-            let owner = t21(&hot)?;
-            let dest = t21(&target)?;
-            let raw = match &contract {
-                Some(c) => builder.trc20_transfer(&owner, &t21(c)?, &dest, bal),
-                None => builder.transfer(&owner, &dest, bal as u64),
-            };
-            let context = SignContext::TronSweep {
-                custodian: custodian.clone(),
-                from_gen: from.vault.gen,
-                raw_data: hex::encode(raw.to_bytes()),
-            };
-            let (txid, json) =
-                tron_sign_and_send(ctx, api, from, cfg.hot_index, &raw, context).await?;
             remember(
                 ctx,
                 &key,
@@ -1018,18 +498,17 @@ pub async fn tron(
                 bal,
                 Some(json.to_string()),
             )?;
-            tracing::info!(asset, amount = bal, %txid, gen = from.vault.gen, "tron sweep broadcast");
+            tracing::info!(index, asset, amount = bal, %txid, "tron consolidation broadcast");
         }
-    } else if from.vault.is_draining()
+    }
+
+    let (trx, trc20) = tron::account_balances(api, &hot).await?;
+    if from.vault.is_draining()
         && (trx > cfg.fee_limit_sun as u128 || trc20.values().any(|n| *n > 0))
     {
         found_funds = true;
     }
-    if from.vault.is_draining()
-        && !found_funds
-        && !in_flight(ctx, &prefix)
-        && (!from.vault.sweep || from.vault.swept_any)
-    {
+    if from.vault.is_draining() && !found_funds && !in_flight(ctx, &prefix) {
         report_empty(ctx, from).await?;
     }
     let _ = BTreeSet::<u64>::new();
@@ -1074,15 +553,13 @@ pub(crate) async fn sol_sign_and_send(
 }
 
 /// One Solana pass for a custody book (see [`evm`]): every deposit index
-/// with a balance is moved to the hot address (the active generation's
-/// when draining with `sweep`), paid by the hot address so no gas funding
-/// is needed; the hot address itself is swept when draining with `sweep`;
-/// a draining generation holding nothing is reported empty.
+/// with a balance is moved to this key's own hot address, paid by that hot
+/// address so no gas funding is needed; a draining generation holding
+/// nothing is reported empty.
 pub async fn solana(
     ctx: &OutboundContext<'_>,
     rpc: &dyn SolRpc,
     from: &AddressBook,
-    active: Option<&AddressBook>,
     cfg: &SolanaConfig,
 ) -> anyhow::Result<()> {
     let tip = sol::slot(rpc).await?;
@@ -1092,15 +569,6 @@ pub async fn solana(
         .ok_or_else(|| anyhow::anyhow!("hot address not derived"))?
         .to_string();
     let hot32 = keel_chains::sol::decode(&hot)?;
-    let sweeping = from.vault.is_draining() && from.vault.sweep && active.is_some();
-    let target = match (sweeping, active) {
-        (true, Some(a)) => a
-            .address(cfg.hot_index)
-            .ok_or_else(|| anyhow::anyhow!("active hot address not derived"))?
-            .to_string(),
-        _ => hot.clone(),
-    };
-    let target32 = keel_chains::sol::decode(&target)?;
     let prefix = from.key_prefix();
     let custodian = custodian_hex(from);
     let mut found_funds = false;
@@ -1116,51 +584,6 @@ pub async fn solana(
         })
         .collect();
 
-    // Sweeps another observer reported: find the transaction among the
-    // hot address's newest signatures by the chain's hash of its
-    // signature, and check the balance deltas.
-    if sweeping {
-        let hot_c = hot.clone();
-        let target_c = target.clone();
-        let tokens_c = tokens.clone();
-        let limit = cfg.signature_limit;
-        verify_pending(ctx, from, |p| {
-            let hot = hot_c.clone();
-            let target = target_c.clone();
-            let tokens = tokens_c.clone();
-            async move {
-                let want = hex::decode(p.tx_hash_hex.trim_start_matches("0x")).unwrap_or_default();
-                for s in sol::signatures(rpc, &hot, limit).await? {
-                    let sig = sol::decode_signature(&s.signature)?;
-                    if sol::tx_hash_of(&sig).as_slice() != want.as_slice() {
-                        continue;
-                    }
-                    let Some(view) = sol::transaction(rpc, &s.signature).await? else {
-                        return Ok(None);
-                    };
-                    if !view.success || tip.saturating_sub(view.slot) < required {
-                        return Ok(None);
-                    }
-                    let ok = if p.asset == "SOL.SOL" {
-                        view.lamport_delta(&target)
-                            .is_some_and(|(_, d)| d == p.amount as i128)
-                    } else {
-                        match tokens.iter().find(|(a, _, _)| *a == p.asset) {
-                            Some((_, mint, _)) => view
-                                .token_deltas(&target)
-                                .iter()
-                                .any(|(_, m, d)| m == mint && *d == p.amount as i128),
-                            None => false,
-                        }
-                    };
-                    return Ok(ok.then_some(view.fee as u128));
-                }
-                Ok(None)
-            }
-        })
-        .await?;
-    }
-
     // Settle what is in flight.
     let keys: Vec<String> = ctx.state.read(|d| {
         d.moves
@@ -1174,26 +597,7 @@ pub async fn solana(
             continue;
         };
         match sol::signature_status(rpc, &tx.txid).await? {
-            Some((slot, true, failed)) if tip.saturating_sub(slot) >= required => {
-                let label = &key[prefix.len()..];
-                if !failed && label.starts_with("sweep:SOL:") {
-                    let asset = &label["sweep:SOL:".len()..];
-                    let sig = sol::decode_signature(&tx.txid)?;
-                    let fee = sol::transaction(rpc, &tx.txid)
-                        .await?
-                        .map(|v| v.fee as u128)
-                        .unwrap_or(tx.fee_hint);
-                    report_sweep(
-                        ctx,
-                        from,
-                        asset,
-                        &hex::encode(sol::tx_hash_of(&sig)),
-                        sol::tx_hash_of(&sig),
-                        tx.amount.unwrap_or(0),
-                        fee,
-                    )
-                    .await?;
-                }
+            Some((slot, true, _)) if tip.saturating_sub(slot) >= required => {
                 forget(ctx, &key)?;
             }
             None if now_unix().saturating_sub(tx.broadcast_unix_secs) > 90 => {
@@ -1211,7 +615,7 @@ pub async fn solana(
             .then(|| keel_chains::sol::set_compute_unit_price(cfg.priority_micro_lamports))
     };
 
-    // Deposit indexes → the target hot address, paid by this hot address.
+    // Deposit indexes → our own hot address, which pays.
     for (index, addr) in from.addresses() {
         if index == cfg.hot_index || from.owner(index).is_none() {
             continue;
@@ -1240,93 +644,27 @@ pub async fn solana(
                 Some((mint, decimals)) => {
                     let mint32 = keel_chains::sol::decode(mint)?;
                     ixs.push(keel_chains::sol::create_associated_token_account(
-                        &hot32, &target32, &mint32,
+                        &hot32, &hot32, &mint32,
                     )?);
                     ixs.push(keel_chains::sol::transfer_checked(
                         &keel_chains::sol::associated_token_account(&addr32, &mint32)?,
                         &mint32,
-                        &keel_chains::sol::associated_token_account(&target32, &mint32)?,
+                        &keel_chains::sol::associated_token_account(&hot32, &mint32)?,
                         &addr32,
                         bal,
                         *decimals,
                     ));
                 }
-                None => ixs.push(keel_chains::sol::transfer_lamports(&addr32, &target32, bal)),
+                None => ixs.push(keel_chains::sol::transfer_lamports(&addr32, &hot32, bal)),
             }
             let msg = keel_chains::sol::build_message(&hot32, &ixs, blockhash)?;
             let context = SignContext::SolConsolidate {
                 custodian: custodian.clone(),
                 index,
-                sweep: sweeping,
                 message: hex::encode(msg.serialize()),
             };
             let (txid, raw) =
                 sol_sign_and_send(ctx, rpc, from, &[cfg.hot_index, index], &msg, context).await?;
-            let label = if sweeping {
-                format!("sweep:SOL:{asset}")
-            } else {
-                format!("cons:SOL:{asset}:{index}")
-            };
-            remember(
-                ctx,
-                &format!("{prefix}{label}"),
-                Chain::Solana,
-                &txid,
-                fee_hint,
-                bal as u128,
-                Some(raw),
-            )?;
-            tracing::info!(index, asset, amount = bal, %txid, sweep = sweeping, "solana consolidation broadcast");
-        }
-    }
-
-    // The hot address itself, when sweeping; keep the fees for the moves.
-    let hot_lamports = sol::balance(rpc, &hot).await?;
-    if sweeping {
-        let mut moves: Vec<SolMove> = Vec::new();
-        for (asset, mint, decimals) in &tokens {
-            let bal = sol::token_account_balance(rpc, &sol::ata(&hot, mint)?).await?;
-            if bal > 0 {
-                moves.push((asset.clone(), Some((mint.clone(), *decimals)), bal));
-            }
-        }
-        let keep = (fee_hint as u64 + keel_chains::sol::ATA_RENT_LAMPORTS)
-            .saturating_mul(1 + tokens.len() as u64);
-        if hot_lamports > keep {
-            moves.push(("SOL.SOL".into(), None, hot_lamports - keep));
-        }
-        for (asset, token, bal) in moves {
-            found_funds = true;
-            let key = format!("{prefix}sweep:SOL:{asset}");
-            if record(ctx, &key).is_some() || !ctx.may_build(&from.vault, move_id(&key)) {
-                continue;
-            }
-            let mut ixs: Vec<keel_chains::sol::Instruction> = priority().into_iter().collect();
-            match &token {
-                Some((mint, decimals)) => {
-                    let mint32 = keel_chains::sol::decode(mint)?;
-                    ixs.push(keel_chains::sol::create_associated_token_account(
-                        &hot32, &target32, &mint32,
-                    )?);
-                    ixs.push(keel_chains::sol::transfer_checked(
-                        &keel_chains::sol::associated_token_account(&hot32, &mint32)?,
-                        &mint32,
-                        &keel_chains::sol::associated_token_account(&target32, &mint32)?,
-                        &hot32,
-                        bal,
-                        *decimals,
-                    ));
-                }
-                None => ixs.push(keel_chains::sol::transfer_lamports(&hot32, &target32, bal)),
-            }
-            let msg = keel_chains::sol::build_message(&hot32, &ixs, blockhash)?;
-            let context = SignContext::SolSweep {
-                custodian: custodian.clone(),
-                from_gen: from.vault.gen,
-                message: hex::encode(msg.serialize()),
-            };
-            let (txid, raw) =
-                sol_sign_and_send(ctx, rpc, from, &[cfg.hot_index], &msg, context).await?;
             remember(
                 ctx,
                 &key,
@@ -1336,9 +674,12 @@ pub async fn solana(
                 bal as u128,
                 Some(raw),
             )?;
-            tracing::info!(asset, amount = bal, %txid, gen = from.vault.gen, "solana sweep broadcast");
+            tracing::info!(index, asset, amount = bal, %txid, "solana consolidation broadcast");
         }
-    } else if from.vault.is_draining() {
+    }
+
+    let hot_lamports = sol::balance(rpc, &hot).await?;
+    if from.vault.is_draining() {
         if hot_lamports > fee_hint as u64 {
             found_funds = true;
         }
@@ -1348,11 +689,7 @@ pub async fn solana(
             }
         }
     }
-    if from.vault.is_draining()
-        && !found_funds
-        && !in_flight(ctx, &prefix)
-        && (!from.vault.sweep || from.vault.swept_any)
-    {
+    if from.vault.is_draining() && !found_funds && !in_flight(ctx, &prefix) {
         report_empty(ctx, from).await?;
     }
     Ok(())

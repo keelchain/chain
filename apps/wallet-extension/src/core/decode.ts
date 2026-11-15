@@ -406,11 +406,13 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'New public key', field: { k: 'hash', value: str(p['public_key']) } },
         { name: 'Chain code', field: { k: 'hash', value: str(p['chain_code']) } },
         { name: 'New signer URL', field: { k: 'text', value: str(p['signer_url']) } },
-        { name: 'Sweep old coins', field: { k: 'bool', value: Boolean(p['sweep']) } },
       ];
+      // `sweep` is a legacy field the chain refuses when set: generations are
+      // separate pools. Shown only if someone tries, so the signer sees it.
+      if (p['sweep']) fields.push({ name: 'Sweep old coins (refused by the chain)', field: { k: 'bool', value: true } });
       if (present(p['activate_at'])) fields.push({ name: 'Activate at height', field: { k: 'number', value: amountStr(p['activate_at']) } });
       const when = present(p['activate_at']) ? ` at height ${amountStr(p['activate_at'])}` : ' now';
-      return view(`Rotate your ${str(p['chain'])} vault to a fresh key${when}${p['sweep'] ? ', sweeping the old coins' : ''}`, fields);
+      return view(`Rotate your ${str(p['chain'])} vault to a fresh key${when}`, fields);
     }
     case 'CancelCustodyRotation':
       return view(`Cancel the pending ${str(p['chain'])} vault rotation`, [{ name: 'Chain', field: { k: 'text', value: str(p['chain']) } }]);
