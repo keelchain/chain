@@ -28,7 +28,11 @@ pub struct BudgetParams {
 impl Default for BudgetParams {
     fn default() -> Self {
         Self {
-            base: 10_000,
+            // Onboarding size, not a lifetime allowance (2026-11-15): a
+            // per-address grant is a per-keypair grant, so anything an
+            // address does at volume comes from KEEL locked (linear in KEEL,
+            // additive across addresses, refundable) or earned by filling.
+            base: 500,
             per_usd_filled: 1,
             cancel_bonus: 100_000,
             max_per_block: 200,

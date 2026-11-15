@@ -5,6 +5,33 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **time-weighted reference price.** Settlement (surcharge
+  thresholds, the withdrawal flat fee, budget earned per dollar, the
+  liquidity pool's mark, the buyback) reads a time-weighted average of each
+  pair's fills over `prices.twap_window_secs` (default 10 minutes) instead
+  of the last print; the book still shows and trades at the last fill.
+  `GET /v1/markets/{pair}` adds `reference_price`. Snapshot schema 11;
+  schema 10 migrates with the window at 0 (last fill, as before).
+- Explorer: the market page has a **Trade** card: connect Keel Wallet, place
+  a limit or market buy or sell on the pair's book, see and cancel your
+  open orders on it. The KEEL-KUSD page is where KEEL is bought and sold.
+- Chain: **staking emission.** The genesis `validator_bootstrap` bucket
+  (10% of the supply) pays validators, observers and delegators
+  `emission.validator_bps_per_year` (default 10%) of what remains per year,
+  accrued at each epoch boundary into `validator_rewards` and paid by the
+  epoch distribution (`EmissionPaid`, ledger type `emission`). Nothing is
+  minted. Snapshot schema 10; schema 9 migrates with the rate at 0.
+- Chain: **client usage prices are non-zero by default** (0.01 KEEL per
+  filled order, 0.1 KEEL per release, withdrawal and deposit address, 1 KEEL
+  per ruling), so the protocol-fee waiver is paid for by clients in KEEL and
+  the fee split sees revenue from client flows. Governance parameters;
+  existing chains keep their values.
+- Chain: **the free budget is an onboarding grant, not a lifetime
+  allowance.** `budget.base` defaults to 500 actions (was 10,000). With a
+  per-address grant and near-free keypairs, any volume could be run for
+  free by spreading it over addresses; capacity at volume now comes from
+  locked KEEL, which is linear in KEEL and additive across addresses.
+  Existing chains keep their value; governance moves it.
 - Chain: **an address must hold KEEL before its free budget counts.**
   `budget.activation_keel` (0.1 KEEL by default; spendable, locked,
   unlocking and bonded KEEL and the offer and proposal deposits count) is

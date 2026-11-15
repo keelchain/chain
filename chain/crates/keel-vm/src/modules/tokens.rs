@@ -115,7 +115,10 @@ pub fn usd_value(state: &State, asset: &Asset, amount: Amount) -> Option<Amount>
     }
     let decimals = state.tokens.decimals(asset)?;
     let symbol = format!("{}-{}", asset.symbol(), state.tokens.stable);
-    let price = state.markets.price_of(&symbol)?;
+    // The time-weighted reference when the window is on; the book's own
+    // price (last fill, house mid, book mid) otherwise.
+    let price =
+        super::prices::reference(state, &symbol).or_else(|| state.markets.price_of(&symbol))?;
     mul_div_floor(amount, price, pow10(decimals))
 }
 

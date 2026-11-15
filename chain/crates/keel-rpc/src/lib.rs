@@ -292,6 +292,8 @@ async fn params(AxumState(node): AxumState<Node>) -> Json<Value> {
         map.insert("clients".into(), to_json(&s.clients.params));
         map.insert("liquidity".into(), to_json(&s.liquidity.params));
         map.insert("recovery".into(), to_json(&s.recovery.params));
+        map.insert("emission".into(), to_json(&s.emission.params));
+        map.insert("prices".into(), to_json(&s.prices.params));
         // Limits that were constants: already dotted, listed flat.
         for key in keel_vm::modules::limits::PARAM_KEYS {
             if let Some(v) = keel_vm::modules::limits::get_param(&s, key) {
@@ -413,16 +415,23 @@ async fn account_trades(
 async fn markets(AxumState(node): AxumState<Node>) -> Json<Value> {
     let state = node.state();
     let s = state.lock().expect("state lock");
-    let list: Vec<Value> = s.markets.pairs.values().map(market_summary).collect();
+    let list: Vec<Value> = s
+        .markets
+        .pairs
+        .values()
+        .map(|m| market_summary(&s, m))
+        .collect();
     Json(json!({ "markets": list }))
 }
 
-fn market_summary(m: &keel_vm::modules::markets::Market) -> Value {
+fn market_summary(s: &keel_vm::State, m: &keel_vm::modules::markets::Market) -> Value {
     json!({
         "symbol": m.cfg.symbol,
         "cfg": to_json(&m.cfg),
         "house": to_json(&m.house),
         "last_price": m.last_price.map(|p| p.to_string()),
+        "reference_price": keel_vm::modules::prices::reference(s, &m.cfg.symbol).map(|p| p.to_string()),
+        "twap_window_secs": s.prices.params.twap_window_secs,
         "best_bid": m.book.best_price(Side::Buy).map(|p| p.to_string()),
         "best_ask": m.book.best_price(Side::Sell).map(|p| p.to_string()),
         "volume_base": m.volume_base.to_string(),
@@ -442,7 +451,7 @@ async fn market(
         .pairs
         .get(&pair)
         .ok_or_else(|| not_found("pair"))?;
-    Ok(Json(market_summary(m)))
+    Ok(Json(market_summary(&s, m)))
 }
 
 #[derive(Deserialize)]

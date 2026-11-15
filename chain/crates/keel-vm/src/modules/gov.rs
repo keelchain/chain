@@ -118,6 +118,10 @@ fn module_param_get(state: &State, key: &str) -> Option<u128> {
         super::recovery::get_param(state, key)
     } else if super::limits::PARAM_KEYS.contains(&key) {
         super::limits::get_param(state, key)
+    } else if key.starts_with("emission.") {
+        super::emission::get_param(state, key)
+    } else if key.starts_with("prices.") {
+        super::prices::get_param(state, key)
     } else {
         None
     }
@@ -141,6 +145,10 @@ fn module_param_set(
         Some(super::recovery::set_param(state, key, value))
     } else if super::limits::PARAM_KEYS.contains(&key) {
         Some(super::limits::set_param(state, key, value))
+    } else if key.starts_with("emission.") {
+        Some(super::emission::set_param(state, key, value))
+    } else if key.starts_with("prices.") {
+        Some(super::prices::set_param(state, key, value))
     } else {
         None
     }

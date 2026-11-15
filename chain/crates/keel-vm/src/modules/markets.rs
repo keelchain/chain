@@ -439,6 +439,7 @@ pub(crate) fn place(
         market.volume_quote = market.volume_quote.saturating_add(plan.spent_quote);
         if let Some(last) = plan.fills.last() {
             market.last_price = Some(last.price);
+            super::prices::record(&mut state.prices, &o.pair, last.price, ctx.timestamp);
         }
     }
     for f in &plan.fills {

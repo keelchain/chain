@@ -9,12 +9,12 @@ action's JSON they are 32-element byte arrays (serde form).
 |---|---|---|
 | POST | `/v1/actions` | body: `SignedAction` JSON (`{envelope:{signer,nonce,chain_id,action},signature}`) → 202 `{tx_id, admitted:true}` or 422 `{admitted:false, code, error}` |
 | GET | `/v1/status` | `{chain_id, height, timestamp, state_hash, validators[], mempool, accounts, orders}` |
-| GET | `/v1/params` | every governance parameter (`docs/governance.md`): the scalar `Params`, nested `clients`/`liquidity`/`recovery`, and the dotted limit keys (`budget.activation_keel`, `sessions.max_secs`, …) flat |
+| GET | `/v1/params` | every governance parameter (`docs/governance.md`): the scalar `Params`, nested `clients`/`liquidity`/`recovery`/`emission`/`prices`, and the dotted limit keys (`budget.activation_keel`, `sessions.max_secs`, …) flat |
 | GET | `/v1/accounts/{addr}` | `{nonce, activated, budget{activation_keel, activation_balance, fee_mode, action_fee_keel, used,limit,cancel_limit,remaining,earned,…}, tier, tier_expires_at, balances[{asset,account_type,balance}]}` |
 | GET | `/v1/accounts/{addr}/orders` | `{open:[OrderRecord]}` |
 | GET | `/v1/accounts/{addr}/trades` | `{trades:[Trade]}` |
 | GET | `/v1/markets` | `{markets:[summary]}` |
-| GET | `/v1/markets/{pair}` | summary: cfg, house quote, last price, best bid/ask, volumes |
+| GET | `/v1/markets/{pair}` | summary: cfg, house quote, `last_price`, `reference_price` (time-weighted over `twap_window_secs`, what settlement reads; null when the window is 0), best bid/ask, volumes |
 | GET | `/v1/markets/{pair}/book?depth=20` | `{bids:[{price,size,orders}], asks:[…], house, height}` |
 | GET | `/v1/orders/{id}` | OrderRecord |
 | GET | `/v1/offers?asset=&side=&fiat=` | `{offers:[Offer]}` (open offers only, each with `arbitrators[]`) |

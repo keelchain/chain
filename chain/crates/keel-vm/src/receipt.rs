@@ -576,6 +576,14 @@ pub enum Event {
         owner: Address,
         amount: Amount,
     },
+    /// Staking emission: KEEL moved from the genesis `validator_bootstrap`
+    /// bucket into `validator_rewards` at an epoch boundary, paid out by
+    /// the same epoch's distribution.
+    EmissionPaid {
+        epoch: u64,
+        amount: Amount,
+        remaining: Amount,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

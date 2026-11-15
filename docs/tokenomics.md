@@ -4,7 +4,11 @@
 
 - Hard cap: **21,000,000,000 KEEL** (matches the existing `KEEL_MAX_SUPPLY`).
 - Smallest unit: 10^-6 KEEL.
-- No inflation beyond the cap. Fee revenue, not issuance, pays operators.
+- No inflation beyond the cap. Operators are paid from fee revenue (in kind,
+  through the fee split) and, since 2026-11-15, from the genesis validator
+  bucket paid out over time (`emission.validator_bps_per_year`, 10% of what
+  remains per year by default): coins that exist from genesis, reaching
+  validators, observers and delegators pro rata to stake.
 - Burn: the `fee_split_burn_bps` share of every fee (launch proposal 10%)
   plus vetoed proposal deposits and slashed bonds.
 
@@ -34,7 +38,7 @@ them; `--no-allocation` skips issuance on test networks.
 | Team grants | A list of (chain address, share of the team bucket in bps) and, if different, the cliff and duration | no grants; the whole 15% waits in `team_reserve` |
 | Bucket shares | Only if the 35/25/15/10/10/5 split changes; must sum to 100% | the split above |
 | Community emissions | A schedule (how much per epoch to trading/referral rewards); executed as proposals or a later emissions module | nothing emitted automatically |
-| Validator bootstrap use | Whether the first operators get their bonds from this bucket (and the lock-up) | nothing distributed |
+| Validator bootstrap use | Decided 2026-11-15: the bucket is the staking emission, `emission.validator_bps_per_year` of what remains per year, accrued at each epoch boundary into `validator_rewards` and distributed pro rata (`docs/governance.md`) | 10% a year |
 | Super admin | The chain address that will hold `param_admin` (the backoffice super admin's chain key) | devnet: seed 0; mainnet: must be passed to `genesis-from-export --param-admin` |
 
 ## Demand sinks
@@ -44,10 +48,15 @@ them; `--no-allocation` skips issuance on test networks.
 - Governance vote weight.
 - Action capacity by locking (2026-09-08, the Tron energy model):
   each whole KEEL locked grants `budget.per_locked_keel_per_day` actions per
-  day (default 100) on top of the free base; unlocking returns the KEEL in
-  full after `budget.unlock_delay_secs` (default 3 days). Nothing is paid,
-  so it adds demand without adding a fee. Buying budget (0.001 KEEL per
-  action) stays as the no-wait fallback.
+  day (default 100) on top of a free base that is only an onboarding grant
+  (`budget.base`, 500 actions since 2026-11-15; a per-address grant is a
+  per-keypair grant, so volume cannot be free); unlocking returns the KEEL
+  in full after `budget.unlock_delay_secs` (default 3 days). Nothing is
+  paid, so it adds demand without adding a fee, and the demand is linear
+  in use: an exchange locks in proportion to its volume however many
+  addresses it spreads it over. Buying budget (0.001 KEEL per action)
+  stays as the no-wait fallback. An address also needs
+  `budget.activation_keel` (0.1 KEEL) before any action counts.
 - Offer listing deposit: 10 KEEL per live offer (refundable).
 - Proposal deposit: 1,000,000 KEEL (refunded on pass or reject; burned on veto).
 - Fee tier discounts for stakers (planned parameter).
@@ -74,7 +83,10 @@ proposal, after which only `ParamChange` proposals can move them.
 | Liquidity pool profit share | 50% of the pool's gain above its high-water mark, in kind, each epoch | the pool (depositors) |
 
 Accounts attested by a live client pay none of the first four; their
-client pays usage in KEEL instead (below).
+client pays usage in KEEL instead (below): 0.01 KEEL per filled order,
+0.1 KEEL per release, per withdrawal and per deposit address, 1 KEEL per
+ruling by default (all governance parameters; zero before 2026-11-15,
+which made the waiver a full subsidy).
 
 Split: 50% treasury, 40% validators + observers + delegators (observers
 take 25% of that share first), 10% burn. All splits are on-chain ledger
@@ -84,7 +96,14 @@ legs, auditable per fee.
 
 At each epoch boundary the accumulated `validator_rewards` balance per asset
 is paid out in kind (KUSD, BTC.BTC, …), so operators earn the exchange's
-revenue directly rather than a native inflation subsidy.
+revenue directly. The same boundary first accrues the staking emission:
+`remaining × emission.validator_bps_per_year × elapsed / year` of the
+`validator_bootstrap` bucket moves into `validator_rewards` in KEEL and is
+paid by the same distribution (observers' share first, then validators and
+their delegators pro rata to power). KEEL has no price model, so the
+emission is defined as a share of stake, not a value: what it is worth
+follows the demand sinks above, chiefly KEEL locked for action capacity and
+KEEL clients buy to pay usage.
 
 ## Wholesale and retail: how clients and Keel are paid
 

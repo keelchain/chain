@@ -66,6 +66,10 @@ pub struct State {
     /// floor and fee, session, offer, dispute, proposal and memo caps
     /// (schema 9).
     pub limits: limits::LimitsState,
+    /// Staking emission from the genesis validator bucket (schema 10).
+    pub emission: emission::EmissionState,
+    /// Time-weighted reference prices per pair (schema 11).
+    pub prices: prices::PricesState,
 }
 
 impl State {

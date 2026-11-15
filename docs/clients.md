@@ -30,10 +30,12 @@ keelchain.com/docs, and `@keelchain/sdk` on npm tracks them.
   client its roles and a starting balance of KEEL and KUSD; on mainnet the
   same goes through a governance proposal. `GET /v1/gov/roles` shows the
   current sets.
-- **Budget, not gas.** Every account gets a free action budget
-  (`budget.base`, 10,000 actions by default, for life); an operator account
-  that signs at volume locks KEEL for capacity (`LockBudget`) or buys it
-  (`BuyBudget`). `GET /v1/accounts/{addr}` shows the budget left and whether
+- **Budget, not gas.** Every account gets a free action budget to onboard
+  with (`budget.base`, 500 actions by default); an account that signs at
+  volume, yours or a user's, locks KEEL for capacity (`LockBudget`: 100
+  actions a day per KEEL, refundable) or buys it (`BuyBudget`). Capacity is
+  linear in KEEL and additive across addresses, so spreading work over
+  many accounts does not change what you lock in total. `GET /v1/accounts/{addr}` shows the budget left and whether
   the account is `activated`.
 - **Activation dust.** An account's budget counts only once it holds
   `budget.activation_keel` KEEL (0.1 KEEL by default; `GET /v1/params`),

@@ -259,6 +259,8 @@ tx_types! {
     LiquidityFee => "liquidity_fee",
     // fee mode (budget.base = 0): what an action costs
     ActionFee => "action_fee",
+    // staking emission: validator_bootstrap -> validator_rewards each epoch
+    Emission => "emission",
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@ import { useCandles, useFills, useMarket, useMarkets, useOrder } from '../api/ho
 import type { CandleInterval } from '../api/types';
 import { CandleChart } from '../components/charts/CandleChart';
 import { DepthChart } from '../components/charts/DepthChart';
+import { TradeCard } from '../components/TradeCard';
 import { FillsTable } from '../components/tables';
 import { AddressLink, Amount, Badge, BlockLink, Card, ErrorState, KV, Loading, PairLink, Price, StatTile, StatusBadge, TxLink } from '../components/ui';
 import { useDecimals } from '../lib/assets';
@@ -111,6 +112,7 @@ export function MarketPage() {
       >
         {candles.isLoading ? <Loading rows={4} /> : candles.isError ? <ErrorState error={candles.error} what="candles" /> : <CandleChart candles={candles.data ?? []} baseDecimals={bd} quoteDecimals={qd} base={base} quote={quote} />}
       </Card>
+      <TradeCard pair={pair} base={base} quote={quote} baseDecimals={bd} quoteDecimals={qd} lastPrice={m.last_price ?? null} />
       <div className="grid-2">
         <Card title="Depth">
           <DepthChart bids={m.book.bids} asks={m.book.asks} baseDecimals={bd} quoteDecimals={qd} base={base} quote={quote} />

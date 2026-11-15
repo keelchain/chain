@@ -75,15 +75,19 @@ impl Default for ClientParams {
             fee_cap_p2p_bps: 200,
             fee_cap_taker_bps: 50,
             fee_cap_withdraw_bps: 100,
-            usage_address_keel: 0,
-            usage_outbound_keel: 0,
+            // Non-zero since 2026-11-15: with the protocol fee waived for a
+            // client's users, these are what the client pays Keel, in KEEL,
+            // and the only revenue the fee split (and so the validators)
+            // see from client flows. Governance parameters.
+            usage_address_keel: 100_000, // 0.1 KEEL per deposit address issued
+            usage_outbound_keel: 100_000, // 0.1 KEEL per withdrawal queued
             buyback_max_slippage_bps: 500,
             buyback_dust_usd_micro: 1_000_000,
             service_dedicated_keel_per_period: 0,
             protocol_fee_waived: 1,
-            usage_fill_keel: 0,
-            usage_release_keel: 0,
-            usage_ruling_keel: 0,
+            usage_fill_keel: 10_000,      // 0.01 KEEL per order that filled
+            usage_release_keel: 100_000,  // 0.1 KEEL per escrow release
+            usage_ruling_keel: 1_000_000, // 1 KEEL per dispute ruling
         }
     }
 }

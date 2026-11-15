@@ -113,15 +113,19 @@ fn attester_sets_a_schedule_and_earns_on_taker_fills() {
         "{:?}",
         r.events
     );
+    // v earned the retail leg and paid Keel the fill usage (non-zero by
+    // default since 2026-11-15), which went through the fee split.
+    let usage = c.state.clients.params.usage_fill_keel;
+    assert!(usage > 0);
     assert_eq!(
         acct(&c.state, v.addr(), &keel(), "deposit"),
-        v_keel_before + retail as i128
+        v_keel_before + retail as i128 - usage as i128
     );
     assert_eq!(
         c.state.clients.earned.get(&(v.addr(), keel())).copied(),
         Some(retail)
     );
-    assert_eq!(sys(&c.state, &keel(), "treasury"), treasury_before);
+    assert!(sys(&c.state, &keel(), "treasury") > treasury_before);
     audit_clean(&c.state);
 
     // bob (no client) pays the protocol fee and no retail leg when he takes.

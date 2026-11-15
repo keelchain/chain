@@ -128,14 +128,21 @@ membership of those sets is a governance decision (`SetObservers`,
 
 ### 2.4 How validators are paid
 
-There is no block reward and no inflation. Every fee the chain collects is
-split at collection time (section 5); the validators' share lands in a
-system account `validator_rewards` **in the asset the fee was paid in**
-(KUSD, BTC.BTC, …). At each epoch boundary that balance is distributed:
-observers first take `observer_reward_bps` (25%) split equally, then the
-remainder goes to validators pro rata to power, with each validator's
-delegators receiving their pro-rata slice automatically. There is no claim
-step.
+There is no inflation: the supply is fixed at genesis. Two things pay
+operators. Every fee the chain collects is split at collection time
+(section 5); the validators' share lands in a system account
+`validator_rewards` **in the asset the fee was paid in** (KUSD, BTC.BTC,
+KEEL from client usage). And the genesis validator bucket (10% of the
+supply) is paid out over time as a **staking emission**
+(`emission.validator_bps_per_year`, 10% of what remains per year by
+default; `docs/governance.md`): at each epoch boundary the share earned
+since the last boundary moves into `validator_rewards` in KEEL. Nothing is
+minted; the bucket's coins exist from genesis and the emission decides when
+they reach operators, decaying on its own because it is a share of what is
+left. At each epoch boundary the pool is distributed: observers first take
+`observer_reward_bps` (25%) split equally, then the remainder goes to
+validators pro rata to power, with each validator's delegators receiving
+their pro-rata slice automatically. There is no claim step.
 
 Slashing parameters exist (`slash_double_sign_bps` 5%,
 `slash_false_observation_bps` 100%) and the slashing routine is written
@@ -330,8 +337,10 @@ for a non-custodial user without a wallet popup per click.
 ## 7. Quota per address: budgets instead of gas
 
 Every address has a **budget**: `limit = base + earned`, with
-`budget.base` = 10,000 free actions by default. Each action, successful or
-not, spends one unit; observers' attestations spend none. `earned` grows by one
+`budget.base` = 500 free actions by default: an onboarding grant (receive,
+request deposit addresses, a first round of trades), not a lifetime
+allowance. Each action, successful or not, spends one unit; observers'
+attestations spend none. `earned` grows by one
 action per whole USD the address fills on an KUSD-quoted pair (taker or
 maker) and by purchase (`BuyBudget`, 0.001 KEEL per action, routed through
 the fee split). Cancels (cancel order, close offer, cancel trade) draw on
@@ -339,7 +348,7 @@ a separate ceiling `min(limit + 100,000, 2 × limit)` so a capped address
 can always unwind. A per-block cap (`budget.max_per_block` = 200) bounds
 burst.
 
-The free budget does not regenerate. Capacity for heavy users comes from
+The free budget does not regenerate. Capacity beyond it comes from
 **locking KEEL** (the Tron energy model, decided 2026-09-08): each
 whole KEEL locked grants `budget.per_locked_keel_per_day` (100) actions per
 day into a pool that refills linearly over 24 hours; the pool is spent
@@ -347,6 +356,17 @@ after the free budget. `UnlockBudget` returns the KEEL in full after
 `budget.unlock_delay_secs` (3 days). Nothing is paid, so it adds demand for
 KEEL without adding a fee. The wallet page shows the capacity card and the
 backoffice user page shows each user's lock.
+
+Why the base is small (2026-11-15): a grant per address is a grant per
+keypair, and the activation floor only makes keypairs cost dust that stays
+the owner's. Had the base stayed at 10,000, an exchange could run any
+volume for free by spreading it over addresses, and no paid path (locking,
+buying) could compete. Locked capacity has the property a per-address grant
+lacks: it is linear in KEEL and additive across addresses, so ten addresses
+with one KEEL each get exactly what one address with ten KEEL gets. A
+retail user who locks two or three KEEL has a few hundred actions a day for
+as long as the lock stands; an exchange locks in proportion to its volume
+however it splits its keys.
 
 Other per-address caps: at most 500 open orders (currently counted across
 pairs, see section 17) and a P2P offer allowance that starts at 2 live
@@ -637,6 +657,22 @@ ask, valid_until }`; the quote appears as synthetic levels clamped to the
 house inventory and expires after at most 60 blocks. This is how the
 platform provides a price from block one without a market-making bot
 having to post real orders.
+
+**Reference price (2026-11-15).** Traders see and trade at the last fill,
+but nothing on the chain settles against it. Wherever a module needs a
+dollar value (the small-trade surcharge, the withdrawal flat fee, the budget
+earned per dollar filled, the liquidity pool's mark, the epoch buyback) it
+reads a time-weighted average of the pair's fills over
+`prices.twap_window_secs` (10 minutes by default; `docs/governance.md`):
+the price between two fills counts as the earlier fill's for the time it
+stood. One order at an absurd price therefore moves the reference by the
+share of the window it held, and moving it for real means holding that
+price against everyone who arbitrages it back. This is the standard design
+(an on-chain TWAP; the mark price of a perpetual exchange; a settlement
+window on a futures exchange). There is still no oracle: the chain's own
+book is the only price source, the house maker seeds it, and the reference
+only decides how a print becomes a price. `GET /v1/markets/{pair}` reports
+both `last_price` and `reference_price`.
 
 **Pooled liquidity (0.2.0).** The house maker's inventory is a pool anyone
 can fund. `DepositLiquidity { asset, amount }` moves the asset into

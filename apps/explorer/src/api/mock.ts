@@ -251,7 +251,7 @@ const DEFAULT_PARAMS: Record<string, string> = {
   outbound_batch_interval_blocks: '20',
   house_quote_max_ttl_blocks: '60',
   max_open_orders_per_pair: '500',
-  'budget.base': '10000',
+  'budget.base': '500',
   'budget.per_usd_filled': '1',
   'budget.cancel_bonus': '100000',
   'budget.max_per_block': '50',

@@ -422,6 +422,7 @@ pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
     if ctx.height > 0 && ctx.height.is_multiple_of(len) {
         state.staking.epoch += 1;
         let epoch = state.staking.epoch;
+        events.extend(super::emission::accrue(state, ctx, epoch));
         events.extend(distribute_rewards(state, epoch));
         events.push(Event::EpochAdvanced {
             epoch,

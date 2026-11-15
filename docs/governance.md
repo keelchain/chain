@@ -26,7 +26,7 @@ tuned by vote, not by code:
 
 | Key | Default | What it does |
 |---|---|---|
-| `budget.base` | 10,000 | Free actions every address gets, once, for life. **Set to 0 and the chain is in fee mode**: there is no free budget, and an address pays `budget.action_fee_keel` for every action it has no earned or locked capacity for. |
+| `budget.base` | 500 | Free actions every address gets, once: enough to onboard (receive, request addresses, first trades), not a lifetime allowance. Capacity at volume comes from locked KEEL (below), which is linear in KEEL and additive across addresses, so splitting work over many addresses buys nothing. **Set to 0 and the chain is in fee mode**: there is no free budget, and an address pays `budget.action_fee_keel` for every action it has no earned or locked capacity for. |
 | `budget.action_fee_keel` | 1,000 (0.001 KEEL) | The price of one action in fee mode. Routed through the fee split like every other fee. In fee mode a value of 0 means an address may act only on earned or locked capacity. Dormant while `budget.base` is above 0. |
 | `budget.activation_keel` | 100,000 (0.1 KEEL) | The least KEEL an address must hold before any budget-spending action from it is accepted (`NOT_ACTIVATED` otherwise). Spendable, locked, unlocking and bonded KEEL and the refundable offer and proposal deposits all count; trade escrow does not. Observer actions, cancels and a session key revoking itself are exempt. 0 turns the floor off. |
 
@@ -97,11 +97,17 @@ Client pricing (`clients.*`, the fee waiver of 0.2.0):
 | `clients.fee_cap_p2p_bps` | 200 | Cap on a client's retail P2P fee while the waiver is off. |
 | `clients.fee_cap_taker_bps` | 50 | Cap on a client's retail taker fee while the waiver is off. |
 | `clients.fee_cap_withdraw_bps` | 100 | Cap on a client's retail withdrawal fee while the waiver is off. |
-| `clients.usage_address_keel` | 0 | KEEL a client pays per deposit address issued to one of its accounts. |
-| `clients.usage_outbound_keel` | 0 | KEEL per withdrawal queued for one of its accounts. |
-| `clients.usage_fill_keel` | 0 | KEEL per order of its accounts that filled. |
-| `clients.usage_release_keel` | 0 | KEEL per escrow release. |
-| `clients.usage_ruling_keel` | 0 | KEEL per dispute ruling. |
+| `clients.usage_address_keel` | 100,000 (0.1 KEEL) | KEEL a client pays per deposit address issued to one of its accounts. |
+| `clients.usage_outbound_keel` | 100,000 (0.1 KEEL) | KEEL per withdrawal queued for one of its accounts. |
+| `clients.usage_fill_keel` | 10,000 (0.01 KEEL) | KEEL per order of its accounts that filled. |
+| `clients.usage_release_keel` | 100,000 (0.1 KEEL) | KEEL per escrow release. |
+| `clients.usage_ruling_keel` | 1,000,000 (1 KEEL) | KEEL per dispute ruling. |
+
+These five are what Keel earns from a client's flows while the protocol fee
+is waived for its users, and the only revenue the fee split, and so the
+validators, see from them. At zero (the value before 2026-11-15) the waiver
+was a full subsidy. Clients buy KEEL to pay them, which is where KEEL
+demand from exchanges comes from.
 | `clients.buyback_max_slippage_bps` | 500 | The epoch buyback skips an asset whose best ask is further than this above the last price. |
 | `clients.buyback_dust_usd_micro` | 1,000,000 | Balances below this are not swept by the buyback. |
 | `clients.service_dedicated_keel_per_period` | 0 | KEEL per 30 days for a dedicated node (informational for the gateway). |
@@ -149,6 +155,24 @@ rotation, `recovery.fee_keel` (0) per recovery request.
 | `observer_reward_bps` | 2,500 | Share of validator rewards paid to observers before stake weighting. |
 | `slash_double_sign_bps` | 500 | Slash for a double sign (routine exists, not yet called). |
 | `slash_false_observation_bps` | 10,000 | Slash for a false observation (same). |
+
+## Reference prices
+
+| Key | Default | Bounds | What it does |
+|---|---|---|---|
+| `prices.twap_window_secs` | 600 (10 minutes) | 0..=7 days | Window of the time-weighted average fill price per pair that settlement reads wherever it needs a dollar value: the small-trade surcharge, the withdrawal flat fee, the budget earned per dollar, the liquidity pool's mark, the buyback. The book trades at the last fill; the reference is what the chain prices with, so one print cannot set it. 0 = off (the last fill is used). |
+
+## Staking emission
+
+| Key | Default | Bounds | What it does |
+|---|---|---|---|
+| `emission.validator_bps_per_year` | 1,000 (10% a year) | 0..=10,000 | Share of the remaining genesis `validator_bootstrap` bucket (10% of the supply by default, 2.1 billion KEEL) paid per year to validators, observers and delegators. Accrued at every epoch boundary for the time elapsed since the last, moved into `validator_rewards`, and paid by the same epoch's pro-rata distribution (`EmissionPaid`). 0 = off. |
+
+Nothing is minted: the bucket exists from genesis and the emission decides
+when its coins reach operators. Because it is a share of what is left, it
+decays on its own and never runs dry abruptly. It needs no price for KEEL:
+a validator with 1% of the stake earns 1% of the emission in the unit it
+bonded. A chain that predates the module migrates with the rate at 0.
 
 ## Governance itself
 
