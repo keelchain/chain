@@ -60,7 +60,7 @@ them; `--no-allocation` skips issuance on test networks.
 - Offer listing deposit: 10 KEEL per live offer (refundable).
 - Proposal deposit: 1,000,000 KEEL (refunded on pass or reject; burned on veto).
 - Fee tier discounts for stakers (planned parameter).
-- Liquidity-pool deposits (2026-10-02): KEEL, KUSD or BTC put into the
+- Liquidity-pool deposits (2026-10-02): KEEL, USDT or BTC put into the
   house maker's pool earns the depositor's share of the spread; the
   protocol keeps `liquidity.protocol_share_bps` (50%) of the pool's gain
   through the fee split.
@@ -95,7 +95,7 @@ legs, auditable per fee.
 ## Epoch rewards
 
 At each epoch boundary the accumulated `validator_rewards` balance per asset
-is paid out in kind (KUSD, BTC.BTC, …), so operators earn the exchange's
+is paid out in kind (USDT, BTC.BTC, …), so operators earn the exchange's
 revenue directly. The same boundary first accrues the staking emission:
 `remaining × emission.validator_bps_per_year × elapsed / year` of the
 `validator_bootstrap` bucket moves into `validator_rewards` in KEEL and is
@@ -142,7 +142,7 @@ pricing (protocol fee plus a capped retail fee).
 
 **The buyback.** At every epoch boundary the chain sweeps the non-KEEL
 balances of the three system accounts: for each asset with a `KEEL-<asset>`
-pair (`KEEL-KUSD` at launch) it places a market buy for KEEL with that
+pair (`KEEL-USDT` at launch) it places a market buy for KEEL with that
 balance against the order book, moves the KEEL bought back into the same
 system account and returns any budget the book could not fill. The burn
 account's KEEL is the burn. Balances below `clients.buyback_dust_usd_micro`

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Keel testnet faucet</title>
-<meta name="description" content="Free testnet KEEL and KUSD for any Keel account address: one claim per address per day.">
+<meta name="description" content="Free testnet KEEL and USDT for any Keel account address: one claim per address per day.">
 <link rel="icon" href="https://keelchain.com/keel-mark.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -26,7 +26,7 @@
   <div>
     <div class="eyebrow">Keelchain · testnet faucet</div>
     <h1>Test coins, on request.</h1>
-    <p class="lead">Paste a Keel account address and the faucet sends it KEEL for action budgets and offer deposits, and KUSD to trade with. One claim per address a day; nothing here has value.</p>
+    <p class="lead">Paste a Keel account address and the faucet sends it KEEL for action budgets and offer deposits, and USDT to trade with. One claim per address a day; nothing here has value.</p>
     <form id="claim" class="faucet-form" autocomplete="off">
       <label for="address">Account address</label>
       <div class="faucet-row">
@@ -38,7 +38,7 @@
     <div id="result" class="faucet-result" hidden></div>
     <div class="stats faucet-stats" id="stats">
       <div class="stat"><b data-k="keel">—</b><span>KEEL per claim</span></div>
-      <div class="stat"><b data-k="kusd">—</b><span>KUSD per claim</span></div>
+      <div class="stat"><b data-k="kusd">—</b><span>USDT per claim</span></div>
       <div class="stat"><b data-k="left">—</b><span>KEEL left in the faucet</span></div>
       <div class="stat"><b data-k="today">—</b><span>claims today</span></div>
     </div>
@@ -73,7 +73,7 @@
   <h2>Enough to build with, not enough to hoard.</h2>
   <div class="cards">
     <div class="card"><div class="ic">1</div><h3>One claim a day</h3><p>Per address, and a handful per network address. The exact numbers are in the stats above; they come from the faucet's own configuration.</p></div>
-    <div class="card"><div class="ic">2</div><h3>Two assets</h3><p>KEEL pays for action budgets and offer deposits; KUSD is the chain's one-to-one dollar, the quote asset of every market and most P2P offers.</p></div>
+    <div class="card"><div class="ic">2</div><h3>Two assets</h3><p>KEEL pays for action budgets and offer deposits; USDT is the chain's dollar, one balance backed by the USDT its vaults hold on every network, and the quote asset of every market and most P2P offers.</p></div>
     <div class="card"><div class="ic">3</div><h3>No value, ever</h3><p>The testnet resets between releases; balances and claims reset with it. A client's own operator account is funded through onboarding, not here.</p></div>
     <div class="card"><div class="ic">4</div><h3>Scripted</h3><p><code>POST https://testnet.keelchain.com/api/v1/faucet</code> with <code>{"address":"…"}</code>; <code>GET /v1/faucet</code> for amounts and balances, <code>GET /v1/faucet/claims</code> for history.</p></div>
   </div>
@@ -111,7 +111,7 @@
     try {
       const r = await fetch(`${API}/v1/faucet`); info = await r.json();
       if (!r.ok) throw new Error(info.error?.message || 'faucet off');
-      set('keel', info.amounts.KEEL); set('kusd', info.amounts.KUSD);
+      set('keel', info.amounts.KEEL); set('kusd', info.amounts.USDT);
       set('left', Number(info.balances.KEEL).toLocaleString()); set('today', info.claims_today);
     } catch (e) {
       const res = $('#result'); res.hidden = false; res.className = 'faucet-result err';

@@ -12,7 +12,7 @@ use keel_types::{OrderType, Side};
 use keel_vm::{Event, VmError};
 
 const KEEL: u128 = 1_000_000;
-const KUSD: u128 = 1_000_000;
+const USDT: u128 = 1_000_000;
 
 fn attest(c: &mut Chain, v: &mut Actor, who: &Actor, expires_at: u64) {
     let (r, _) = c.block(&[v.act(Action::Attest {
@@ -25,10 +25,10 @@ fn attest(c: &mut Chain, v: &mut Actor, who: &Actor, expires_at: u64) {
 
 fn rest_sell(c: &mut Chain, who: &mut Actor, qty: u128) {
     let (r, _) = c.block(&[who.act(Action::PlaceOrder(PlaceOrder {
-        pair: "KEEL-KUSD".into(),
+        pair: "KEEL-USDT".into(),
         side: Side::Sell,
         order_type: OrderType::Limit,
-        price: Some(KUSD),
+        price: Some(USDT),
         quantity: Some(qty),
         quote_budget: None,
         client_id: None,
@@ -38,7 +38,7 @@ fn rest_sell(c: &mut Chain, who: &mut Actor, qty: u128) {
 
 fn market_buy(c: &mut Chain, who: &mut Actor, qty: u128) -> keel_vm::Receipt {
     let (r, _) = c.block(&[who.act(Action::PlaceOrder(PlaceOrder {
-        pair: "KEEL-KUSD".into(),
+        pair: "KEEL-USDT".into(),
         side: Side::Buy,
         order_type: OrderType::Market,
         price: None,
@@ -93,7 +93,7 @@ fn attester_sets_a_schedule_and_earns_on_taker_fills() {
         withdraw_bps: 10,
     }));
 
-    // bob rests 10 KEEL at 1 KUSD; alice (attested by v) takes 4 KEEL: no
+    // bob rests 10 KEEL at 1 USDT; alice (attested by v) takes 4 KEEL: no
     // protocol fee, the retail leg to v, and v billed the fill usage.
     rest_sell(&mut c, &mut bob, 10 * KEEL);
     let v_keel_before = acct(&c.state, v.addr(), &keel(), "deposit");

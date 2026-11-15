@@ -137,9 +137,9 @@ export function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
-/** Splits "BTC.BTC/KUSD" into base and quote. */
+/** Splits "BTC.BTC/USDT" into base and quote. */
 /**
- * On-chain symbols are `BASE-QUOTE` (`BTC-KUSD`, base asset `BTC.BTC`);
+ * On-chain symbols are `BASE-QUOTE` (`BTC-USDT`, base asset `BTC.BTC`);
  * `BASE/QUOTE` is accepted too. Asset ids never contain a dash, so the last
  * dash is the separator.
  */
@@ -156,7 +156,7 @@ export function splitPair(pair: string): { base: string; quote: string } {
 /** Well-known decimals, used only when a response lacks `decimals`. */
 export const KNOWN_DECIMALS: Record<string, number> = {
   KEEL: 6,
-  KUSD: 6,
+  USDT: 6,
   'BTC.BTC': 8,
   'ETH.ETH': 18,
   'ETH.USDT': 6,
@@ -180,7 +180,7 @@ export function decimalsOf(asset: string, table: Record<string, number> = KNOWN_
 /** Human label for an asset: "BTC (Bitcoin vault)". */
 export function assetLabel(asset: string): string {
   if (asset === 'KEEL') return 'KEEL';
-  if (asset === 'KUSD') return 'KUSD';
+  if (asset === 'USDT') return 'USDT';
   return asset;
 }
 

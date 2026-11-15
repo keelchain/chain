@@ -1475,7 +1475,7 @@ mod tests {
     fn ctx() -> Ctx {
         let mut c = Ctx::default();
         c.markets
-            .insert("BTC-KUSD".into(), ("BTC.BTC".into(), "KUSD".into()));
+            .insert("BTC-USDT".into(), ("BTC.BTC".into(), "USDT".into()));
         c
     }
 
@@ -1629,11 +1629,11 @@ mod tests {
             10,
             OrderInfo {
                 owner: maker.clone(),
-                pair: "BTC-KUSD".into(),
+                pair: "BTC-USDT".into(),
                 side: Some("sell".into()),
             },
         );
-        let place = json!({"PlaceOrder": {"pair": "BTC-KUSD", "side": "buy", "order_type": "limit", "price": 50_000_000_000u64, "quantity": 200_000u64, "quote_budget": null, "client_id": 9}});
+        let place = json!({"PlaceOrder": {"pair": "BTC-USDT", "side": "buy", "order_type": "limit", "price": 50_000_000_000u64, "quantity": 200_000u64, "quote_budget": null, "client_id": 9}});
         let b = BlockData {
             height: 8,
             timestamp: Some(125_500),
@@ -1641,9 +1641,9 @@ mod tests {
                 0,
                 &taker,
                 vec![
-                    json!({"OrderAccepted": {"order_id": 11, "owner": taker, "pair": "BTC-KUSD", "resting": 0}}),
-                    json!({"OrderFilled": {"order_id": 11, "maker_order_id": 10, "pair": "BTC-KUSD", "price": 50_000_000_000u64, "quantity": 100_000u64, "quote": 50_000_000u64, "fee": 100}}),
-                    json!({"OrderFilled": {"order_id": 11, "maker_order_id": null, "pair": "BTC-KUSD", "price": 51_000_000_000u64, "quantity": 100_000u64, "quote": 51_000_000u64, "fee": 100}}),
+                    json!({"OrderAccepted": {"order_id": 11, "owner": taker, "pair": "BTC-USDT", "resting": 0}}),
+                    json!({"OrderFilled": {"order_id": 11, "maker_order_id": 10, "pair": "BTC-USDT", "price": 50_000_000_000u64, "quantity": 100_000u64, "quote": 50_000_000u64, "fee": 100}}),
+                    json!({"OrderFilled": {"order_id": 11, "maker_order_id": null, "pair": "BTC-USDT", "price": 51_000_000_000u64, "quantity": 100_000u64, "quote": 51_000_000u64, "fee": 100}}),
                 ],
             )],
             actions: Some(vec![ActionRow {
@@ -1692,7 +1692,7 @@ mod tests {
                 m.transfers[1].asset.as_str(),
                 m.transfers[1].amount
             ),
-            ("fill_quote", "KUSD", 50_000_000)
+            ("fill_quote", "USDT", 50_000_000)
         );
         assert_eq!(
             (m.transfers[2].kind.as_str(), m.transfers[2].amount),
@@ -1700,7 +1700,7 @@ mod tests {
         );
         // One 1m candle for the minute starting at 120_000.
         assert_eq!(m.candles.len(), 1);
-        let c1 = &m.candles[&("BTC-KUSD".to_string(), 120_000)];
+        let c1 = &m.candles[&("BTC-USDT".to_string(), 120_000)];
         assert_eq!(
             *c1,
             Candle {

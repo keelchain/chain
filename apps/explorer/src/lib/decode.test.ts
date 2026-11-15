@@ -11,7 +11,7 @@ describe('decodeAction', () => {
     expect(v.fields[1]!.field).toMatchObject({ k: 'amount', value: '1000000', asset: 'KEEL' });
   });
   it('decodes orders with a price and quantity in the pair assets', () => {
-    const v = decodeAction({ PlaceOrder: { pair: 'BTC-KUSD', side: 'buy', order_type: 'limit', price: 50_000_000_000, quantity: 200_000, quote_budget: null, client_id: 1 } });
+    const v = decodeAction({ PlaceOrder: { pair: 'BTC-USDT', side: 'buy', order_type: 'limit', price: 50_000_000_000, quantity: 200_000, quote_budget: null, client_id: 1 } });
     expect(v.label.toLowerCase()).toContain('order');
     const q = v.fields.find((f) => f.name === 'Quantity')!.field;
     expect(q).toMatchObject({ k: 'amount', asset: 'BTC' });
@@ -26,8 +26,8 @@ describe('decodeAction', () => {
 
 describe('decodeEvent', () => {
   it('labels flattened events and keeps their fields', () => {
-    const e = decodeEvent({ type: 'OrderFilled', order_id: 11, maker_order_id: 10, pair: 'BTC-KUSD', price: 50_000_000_000, quantity: 100_000, quote: 50_000_000, fee: 100 });
+    const e = decodeEvent({ type: 'OrderFilled', order_id: 11, maker_order_id: 10, pair: 'BTC-USDT', price: 50_000_000_000, quantity: 100_000, quote: 50_000_000, fee: 100 });
     expect(e.label.length).toBeGreaterThan(0);
-    expect(JSON.stringify(e)).toContain('BTC-KUSD');
+    expect(JSON.stringify(e)).toContain('BTC-USDT');
   });
 });

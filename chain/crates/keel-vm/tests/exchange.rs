@@ -59,7 +59,7 @@ fn btc() -> Asset {
     Asset::new("BTC.BTC")
 }
 fn usds() -> Asset {
-    Asset::new("KUSD")
+    Asset::new("USDT")
 }
 fn px(usd: u128) -> u128 {
     usd * 1_000_000
@@ -135,7 +135,7 @@ fn limit_orders_cross_settle_and_split_fees() {
     let (mut state, mut alice, mut bob) = setup();
     // Alice sells 1 BTC at 60,000; Bob buys 0.5 BTC at 60,010 (gets Alice's price).
     let sell = alice.act(Action::PlaceOrder(PlaceOrder {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         side: Side::Sell,
         order_type: OrderType::Limit,
         price: Some(px(60_000)),
@@ -144,7 +144,7 @@ fn limit_orders_cross_settle_and_split_fees() {
         client_id: Some(1),
     }));
     let buy = bob.act(Action::PlaceOrder(PlaceOrder {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         side: Side::Buy,
         order_type: OrderType::Limit,
         price: Some(px(60_010)),
@@ -156,7 +156,7 @@ fn limit_orders_cross_settle_and_split_fees() {
     assert!(r[0].ok, "{:?}", r[0].error);
     assert!(r[1].ok, "{:?}", r[1].error);
 
-    // Alice: 1 BTC locked, 0.5 filled -> deposit 99.0 BTC, escrow 0.5 BTC, +30,000 KUSD.
+    // Alice: 1 BTC locked, 0.5 filled -> deposit 99.0 BTC, escrow 0.5 BTC, +30,000 USDT.
     assert_eq!(tokens::balance(&state, alice.addr(), &btc()), 9_900_000_000);
     let alice_escrow = AccountKey::new(alice.addr(), btc(), "order_escrow").unwrap();
     assert_eq!(state.ledger.balance(&alice_escrow), 50_000_000);
@@ -184,7 +184,7 @@ fn limit_orders_cross_settle_and_split_fees() {
     assert_eq!(sys("validator_rewards"), (fee * 4 / 10) as i128);
     assert_eq!(sys("burn"), (fee / 10) as i128);
     // Book: Alice's remainder rests; last price set; USD valuation works.
-    let m = &state.markets.pairs["BTC-KUSD"];
+    let m = &state.markets.pairs["BTC-USDT"];
     assert_eq!(m.book.best_price(Side::Sell), Some(px(60_000)));
     assert_eq!(m.last_price, Some(px(60_000)));
     assert_eq!(
@@ -209,7 +209,7 @@ fn limit_orders_cross_settle_and_split_fees() {
     assert!(r[0].ok, "{:?}", r[0].error);
     assert_eq!(state.ledger.balance(&alice_escrow), 0);
     assert_eq!(tokens::balance(&state, alice.addr(), &btc()), 9_950_000_000);
-    assert!(state.markets.pairs["BTC-KUSD"].book.is_empty());
+    assert!(state.markets.pairs["BTC-USDT"].book.is_empty());
     // Bob cannot cancel Alice's order; a second cancel is refused.
     let (r, _) = apply_block(
         &mut state,
@@ -229,7 +229,7 @@ fn insufficient_funds_leaves_state_untouched() {
         &mut state,
         &ctx(1),
         &[alice.act(Action::PlaceOrder(PlaceOrder {
-            pair: "BTC-KUSD".into(),
+            pair: "BTC-USDT".into(),
             side: Side::Sell,
             order_type: OrderType::Limit,
             price: Some(px(60_000)),
@@ -258,7 +258,7 @@ fn market_buy_by_budget_and_house_quote() {
     let (mut state, mut alice, mut bob) = setup();
     // Nobody may quote for the system house until governance sets an operator.
     let q = HouseQuote {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         bid: Some((px(59_000), 100_000_000)),
         ask: Some((px(61_000), 100_000_000)),
         valid_until: 10,
@@ -292,12 +292,12 @@ fn market_buy_by_budget_and_house_quote() {
         .unwrap();
     let (r, _) = apply_block(&mut state, &ctx(2), &[alice.act(Action::HouseQuote(q))]);
     assert!(r[0].ok, "{:?}", r[0].error);
-    // Bob market-buys with a 1,000 KUSD budget: fills the house ask at 61,000.
+    // Bob market-buys with a 1,000 USDT budget: fills the house ask at 61,000.
     let (r, _) = apply_block(
         &mut state,
         &ctx(3),
         &[bob.act(Action::PlaceOrder(PlaceOrder {
-            pair: "BTC-KUSD".into(),
+            pair: "BTC-USDT".into(),
             side: Side::Buy,
             order_type: OrderType::Market,
             price: None,
@@ -323,7 +323,7 @@ fn market_buy_by_budget_and_house_quote() {
     assert_eq!(state.ledger.balance(&pool), spent as i128);
     // Quote expires at end of block 10.
     apply_block(&mut state, &ctx(11), &[]);
-    assert!(state.markets.pairs["BTC-KUSD"].house.is_none());
+    assert!(state.markets.pairs["BTC-USDT"].house.is_none());
     assert!(state.ledger.audit().mismatches.is_empty());
 }
 

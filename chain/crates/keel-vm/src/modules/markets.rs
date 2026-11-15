@@ -118,7 +118,7 @@ impl MarketsState {
 /// lot 1000 base units, notional 1..1,000,000,000 quote (the old $10k cap
 /// was a swap-desk knob, not a market rule), house = system swap_pool.
 /// [`default_pair`] with its own price tick (quote smallest units), for
-/// assets priced far from the 0.01 KUSD default tick.
+/// assets priced far from the 0.01 USDT default tick.
 pub fn pair_with_tick(
     symbol: &str,
     base: Asset,

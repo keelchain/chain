@@ -70,6 +70,8 @@ pub struct State {
     pub emission: emission::EmissionState,
     /// Time-weighted reference prices per pair (schema 11).
     pub prices: prices::PricesState,
+    /// USDT conversion on deposit and the rebalancing premium (schema 12).
+    pub stable_conversion: stable::ConversionState,
 }
 
 impl State {

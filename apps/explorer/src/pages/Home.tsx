@@ -22,7 +22,7 @@ export function HomePage() {
   });
   const highlightAbove = seen.current ?? undefined;
   const s = stats.data;
-  const fee = s?.fees_24h.find((f) => f.asset === 'KUSD');
+  const fee = s?.fees_24h.find((f) => f.asset === 'USDT');
 
   return (
     <div className="stack">
@@ -40,7 +40,7 @@ export function HomePage() {
         <StatTile label="Actions / s" value={s ? s.tps_1h.toFixed(1) : <span className="skeleton" />} hint={s ? `${formatCompact(s.actions_24h)} in 24h` : undefined} />
         <StatTile label="Accounts" value={s ? formatCompact(s.accounts) : <span className="skeleton" />} hint="seen on chain" />
         <StatTile label="TVL" value={s ? formatUsd(s.tvl_usd, { compact: true }) : <span className="skeleton" />} hint="vault reserves at spot" />
-        <StatTile label="Fees 24h" value={s ? (fee ? <Amount value={fee.amount} asset="KUSD" /> : '—') : <span className="skeleton" />} hint={s ? `+${s.fees_24h.filter((f) => f.asset !== 'KUSD').length} other assets` : undefined} />
+        <StatTile label="Fees 24h" value={s ? (fee ? <Amount value={fee.amount} asset="USDT" /> : '—') : <span className="skeleton" />} hint={s ? `+${s.fees_24h.filter((f) => f.asset !== 'USDT').length} other assets` : undefined} />
       </div>
       <div className="grid-2">
         <Card

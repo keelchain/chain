@@ -5,10 +5,33 @@ Dates are UTC.
 
 ## Unreleased
 
-- Chain: genesis lists a KUSD book for every non-dollar vault asset, not
-  only BTC and KEEL: `ETH-KUSD`, `TRX-KUSD`, `BNB-KUSD`, `SOL-KUSD`,
-  `USDC-KUSD`, with ticks suited to each price scale (`pair_with_tick`).
-  USDT stays unlisted: it moves through the KUSD basket at par. Genesis
+- Chain: **KUSD is retired; the dollar is `USDT`, one balance on every
+  network.** The stable asset's ticker is `USDT` (traders know it; a house
+  dollar scared them), backed one to one by each network's vaulted USDT
+  (Ethereum, Tron, BNB Smart Chain) with a cap per network. USDC is not in
+  the basket: it stays `SOL.USDC` with a `USDC-USDT` book. Every pair now
+  quotes in `USDT` (`BTC-USDT`, `KEEL-USDT`, …), the faucet sends `USDT`,
+  and the marketplace's USDT balance is the chain's.
+- Chain: **USDT deposits convert on arrival and withdraw in one step.** A
+  USDT deposit on any network is credited as the unified `USDT`
+  (`stable.auto_convert`, default on; a disabled or full basket entry
+  leaves it as credited). `WithdrawStable { via, to, amount }` redeems the
+  balance into the chosen network's USDT and queues the payout. Custody
+  vaults are not converted. A chain's USDT is valued at par by `usd_value`.
+- Chain: **rebalancing by premium and rebate, no moderator.** Each network
+  has a target share of the reserve (its cap's share); a `WithdrawStable`
+  through a network below target pays up to
+  `stable.rebalance_max_premium_bps` (1%) scaled by the shortfall into a
+  `stable_rebalance` pool (`StablePremiumPaid`), and a USDT deposit on that
+  network earns the same rate back (`StableRebatePaid`). `GET /v1/stable`
+  shows reserves, targets, shares and live premiums. Snapshot schema 12;
+  schema 11 migrates with conversion and premium off. Wallet: USDT
+  withdrawals pick the network; the Receive card and the new
+  keelchain.com/policy page state that USDT on any network is one balance.
+- Chain: genesis lists a USDT book for every non-dollar vault asset, not
+  only BTC and KEEL: `ETH-USDT`, `TRX-USDT`, `BNB-USDT`, `SOL-USDT`,
+  `USDC-USDT`, with ticks suited to each price scale (`pair_with_tick`).
+  Per-network USDT has no book: it is the unified `USDT` at par. Genesis
   changes; the testnet deploy needs `reset_chain`.
 - Chain: **time-weighted reference price.** Settlement (surcharge
   thresholds, the withdrawal flat fee, budget earned per dollar, the

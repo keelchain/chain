@@ -776,13 +776,13 @@ mod tests {
             None,
             None,
             vec![
-                Record::debit(sys("KUSD", "vault_asset"), 1_000),
-                Record::credit(sys("KUSD", "swap_pool"), 600),
-                Record::credit(sys("KUSD", "treasury"), 400),
+                Record::debit(sys("USDT", "vault_asset"), 1_000),
+                Record::credit(sys("USDT", "swap_pool"), 600),
+                Record::credit(sys("USDT", "treasury"), 400),
             ],
         )
         .expect("seed");
-        assert_eq!(l.user_liabilities(&Asset::new("KUSD")), 0);
+        assert_eq!(l.user_liabilities(&Asset::new("USDT")), 0);
         // The pool is restricted: it cannot pay what it does not hold.
         let err = l
             .post(
@@ -791,8 +791,8 @@ mod tests {
                 None,
                 None,
                 vec![
-                    Record::debit(sys("KUSD", "swap_pool"), 601),
-                    Record::credit(key(1, "KUSD", "deposit"), 601),
+                    Record::debit(sys("USDT", "swap_pool"), 601),
+                    Record::credit(key(1, "USDT", "deposit"), 601),
                 ],
             )
             .unwrap_err();

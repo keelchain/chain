@@ -6,8 +6,8 @@ describe('search', () => {
   it('classifies syntax locally', () => {
     expect(classifyLocally('12345')).toEqual({ kind: 'block', ref: '12345' });
     expect(classifyLocally('offer #7')).toEqual({ kind: 'offer', ref: '7' });
-    expect(classifyLocally('btc/kusd')).toEqual({ kind: 'market', ref: 'BTC/KUSD' });
-    expect(classifyLocally('btc-kusd')).toEqual({ kind: 'market', ref: 'BTC-KUSD' });
+    expect(classifyLocally('btc/usdt')).toEqual({ kind: 'market', ref: 'BTC/USDT' });
+    expect(classifyLocally('btc-usdt')).toEqual({ kind: 'market', ref: 'BTC-USDT' });
     expect(classifyLocally('')).toBeNull();
     expect(pathFor('tx', 'ab')).toBe('/tx/ab');
   });

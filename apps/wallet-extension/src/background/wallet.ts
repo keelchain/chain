@@ -372,7 +372,7 @@ export class Wallet {
       case 'recoveries':
         return this.recoveries();
       case 'send':
-        return this.send(String(p['kind'] ?? 'transfer'), String(p['asset'] ?? ''), String(p['to'] ?? ''), String(p['amount'] ?? ''), typeof p['memo'] === 'string' ? p['memo'] : undefined);
+        return this.send(String(p['kind'] ?? 'transfer'), String(p['asset'] ?? ''), String(p['to'] ?? ''), String(p['amount'] ?? ''), typeof p['memo'] === 'string' ? p['memo'] : undefined, typeof p['via'] === 'string' ? p['via'] : undefined);
       case 'custodian':
         return this.custodian();
       case 'addNetwork':
@@ -391,7 +391,7 @@ export class Wallet {
    * `amount` is in the asset's smallest units. No site is involved, so the
    * form is the approval; the popup shows the decoded summary first.
    */
-  async send(kind: string, asset: string, to: string, amountRaw: string, memo?: string): Promise<{ txId: string; ok: boolean; error: string | null }> {
+  async send(kind: string, asset: string, to: string, amountRaw: string, memo?: string, via?: string): Promise<{ txId: string; ok: boolean; error: string | null }> {
     const s = await this.st();
     const account = this.activeAccount(s);
     const network = this.requireSigningNetwork(s);
@@ -403,6 +403,12 @@ export class Wallet {
     if (kind === 'transfer') {
       if (!/^[0-9a-f]{64}$/i.test(to)) throw new UiError('A Keel address is 64 hex characters.');
       action = { Transfer: { to: to.toLowerCase(), asset, amount, memo: memo && memo.length > 0 ? memo : null } } as unknown as Action;
+    } else if (kind === 'withdraw' && asset === 'USDT') {
+      // One USDT, many networks: the balance is redeemed into the chosen
+      // network's USDT and paid out in one action (docs/deposits.md).
+      if (!via || !via.includes('.')) throw new UiError('Choose the network to receive your USDT on.');
+      if (to.trim().length < 20) throw new UiError('Enter the destination address on the external chain.');
+      action = { WithdrawStable: { via, to: to.trim(), amount } } as unknown as Action;
     } else if (kind === 'withdraw' || kind === 'withdraw-custody') {
       if (!asset.includes('.')) throw new UiError(`${asset} is a Keel asset; withdrawals go to an external chain (BTC.BTC, TRON.USDT, …).`);
       if (to.trim().length < 20) throw new UiError('Enter the destination address on the external chain.');

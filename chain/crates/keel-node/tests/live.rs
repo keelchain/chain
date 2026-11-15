@@ -293,7 +293,7 @@ async fn websocket_account_channel_delivers_receipts() {
     let bob = Keypair::from_seed(1);
     let sub = serde_json::json!({
         "op": "subscribe",
-        "channels": [format!("account:{}", bob.address().to_hex()), "book:BTC-KUSD?depth=5"],
+        "channels": [format!("account:{}", bob.address().to_hex()), "book:BTC-USDT?depth=5"],
     });
     socket
         .send(Message::Text(sub.to_string().into()))
@@ -322,7 +322,7 @@ async fn websocket_account_channel_delivers_receipts() {
     assert_eq!(first["channels"].as_array().unwrap().len(), 2);
     let snap = next_json(&mut socket).await;
     assert_eq!(snap["type"], "book_snapshot", "{snap}");
-    assert_eq!(snap["pair"], "BTC-KUSD");
+    assert_eq!(snap["pair"], "BTC-USDT");
     assert_eq!(snap["seq"], 2);
 
     let sa = SignedAction::sign(

@@ -60,8 +60,8 @@ export const ACTION_LABELS: Record<string, string> = {
   RuleDispute: 'Rule dispute',
   RequestDepositAddress: 'Request deposit address',
   Withdraw: 'Withdraw',
-  MintStable: 'Mint KUSD',
-  BurnStable: 'Redeem KUSD',
+  MintStable: 'Mint USDT',
+  BurnStable: 'Redeem USDT',
   Bond: 'Bond',
   Unbond: 'Unbond',
   Delegate: 'Delegate',
@@ -98,8 +98,8 @@ const MOVES_FUNDS: Record<string, string> = {
   ReleaseTrade: 'This releases escrowed funds to the buyer. Only approve after you received the payment.',
   LockBudget: 'This locks KEEL in your budget; it can be unlocked later.',
   StartTrade: 'This locks the trade amount in escrow.',
-  MintStable: 'This converts reserve assets into KUSD.',
-  BurnStable: 'This converts KUSD into a reserve asset.',
+  MintStable: 'This converts reserve assets into USDT.',
+  BurnStable: 'This converts USDT into a reserve asset.',
   Bond: 'This locks KEEL as a bond.',
   Delegate: 'This delegates KEEL to a validator.',
   WithdrawCustody: 'This sends funds out of the chain to an external address, paid from your custodian\'s vault.',
@@ -259,6 +259,15 @@ export function decodeAction(action: unknown): DecodedAction {
       ]);
     case 'RequestDepositAddress':
       return view(`Request ${str(p['chain'])} deposit address`, [{ name: 'Chain', field: { k: 'text', value: str(p['chain']) } }]);
+    case 'WithdrawStable': {
+      const via = str(p['via']);
+      const chain = via.split('.')[0] ?? '';
+      return view(`Withdraw ${formatAmount(amountStr(p['amount']), 6)} USDT as ${via} to ${str(p['to'])}`, [
+        { name: 'Amount', field: amount(p['amount'], 'USDT') },
+        { name: 'Paid out in', field: { k: 'asset', value: via } },
+        { name: 'Destination', field: { k: 'external', chain, value: str(p['to']) } },
+      ]);
+    }
     case 'Withdraw': {
       const asset = str(p['asset']);
       const chain = asset.split('.')[0] ?? '';
@@ -269,13 +278,13 @@ export function decodeAction(action: unknown): DecodedAction {
       ]);
     }
     case 'MintStable':
-      return view(`Mint KUSD from ${str(p['asset'])}`, [
+      return view(`Mint USDT from ${str(p['asset'])}`, [
         { name: 'Reserve asset', field: { k: 'asset', value: str(p['asset']) } },
         { name: 'Amount', field: amount(p['amount'], str(p['asset'])) },
       ]);
     case 'BurnStable':
-      return view(`Redeem KUSD into ${str(p['asset'])}`, [
-        { name: 'Burned', field: amount(p['amount'], 'KUSD') },
+      return view(`Redeem USDT into ${str(p['asset'])}`, [
+        { name: 'Burned', field: amount(p['amount'], 'USDT') },
         { name: 'Redeemed into', field: { k: 'asset', value: str(p['asset']) } },
       ]);
     case 'Bond': {

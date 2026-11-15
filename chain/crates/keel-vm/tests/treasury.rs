@@ -1,5 +1,5 @@
-//! The epoch buyback: fee income in KUSD becomes KEEL through the
-//! KEEL-KUSD book, the burn share is burned, thin books are skipped, and
+//! The epoch buyback: fee income in USDT becomes KEEL through the
+//! KEEL-USDT book, the burn share is burned, thin books are skipped, and
 //! the whole thing is deterministic.
 #![allow(clippy::unwrap_used)]
 
@@ -12,9 +12,9 @@ use keel_types::{Address, OrderType, Side};
 use keel_vm::{modules::tokens, Event, State};
 
 const KEEL: u128 = 1_000_000;
-const KUSD: u128 = 1_000_000;
+const USDT: u128 = 1_000_000;
 
-/// Put `amount` KUSD of fee income into a system account, as fees would.
+/// Put `amount` USDT of fee income into a system account, as fees would.
 fn fund_system(state: &mut State, kind: &str, amount: u128, tag: &str) {
     state
         .ledger
@@ -33,7 +33,7 @@ fn fund_system(state: &mut State, kind: &str, amount: u128, tag: &str) {
 
 fn rest_sell(bob: &mut Actor, qty: u128, price: u128) -> keel_actions::SignedAction {
     bob.act(Action::PlaceOrder(PlaceOrder {
-        pair: "KEEL-KUSD".into(),
+        pair: "KEEL-USDT".into(),
         side: Side::Sell,
         order_type: OrderType::Limit,
         price: Some(price),
@@ -47,11 +47,11 @@ fn rest_sell(bob: &mut Actor, qty: u128, price: u128) -> keel_actions::SignedAct
 fn epoch_sweep_buys_keel_and_burns_the_burn_share() {
     let (mut state, _alice, mut bob, _v) = setup(0);
     state.params.epoch_length_blocks = 3;
-    fund_system(&mut state, "treasury", 1_000 * KUSD, "fee:t");
-    fund_system(&mut state, "burn", 50 * KUSD, "fee:b");
+    fund_system(&mut state, "treasury", 1_000 * USDT, "fee:t");
+    fund_system(&mut state, "burn", 50 * USDT, "fee:b");
     let mut c = Chain::new(state);
-    // bob rests 100 KEEL at 1 KUSD: the book has 100 KUSD of depth.
-    let (r, _) = c.block(&[rest_sell(&mut bob, 100 * KEEL, KUSD)]);
+    // bob rests 100 KEEL at 1 USDT: the book has 100 USDT of depth.
+    let (r, _) = c.block(&[rest_sell(&mut bob, 100 * KEEL, USDT)]);
     ok(&r[0]);
     let bob_kusd_before = acct(&c.state, bob.addr(), &usds(), "deposit");
 
@@ -61,8 +61,8 @@ fn epoch_sweep_buys_keel_and_burns_the_burn_share() {
         .iter()
         .filter(|e| matches!(e, Event::TreasurySwept { .. }))
         .collect();
-    // The treasury's 1,000 KUSD met 100 KUSD of asks: 100 KEEL bought, the
-    // rest returned; the burn's 50 KUSD then found an empty book and waited.
+    // The treasury's 1,000 USDT met 100 USDT of asks: 100 KEEL bought, the
+    // rest returned; the burn's 50 USDT then found an empty book and waited.
     assert_eq!(swept.len(), 1, "{events:?}");
     assert!(matches!(swept[0], Event::TreasurySwept { kind, .. } if kind == "treasury"));
     let treasury_keel = sys(&c.state, &keel(), "treasury");
@@ -73,11 +73,11 @@ fn epoch_sweep_buys_keel_and_burns_the_burn_share() {
     );
     assert_eq!(
         treasury_kusd,
-        900 * KUSD as i128,
+        900 * USDT as i128,
         "unfilled budget returned"
     );
     assert!(
-        acct(&c.state, bob.addr(), &usds(), "deposit") >= bob_kusd_before + 100 * KUSD as i128,
+        acct(&c.state, bob.addr(), &usds(), "deposit") >= bob_kusd_before + 100 * USDT as i128,
         "bob was paid"
     );
     // The system deposit accounts used for the swap hold nothing afterwards.
@@ -97,9 +97,9 @@ fn epoch_sweep_buys_keel_and_burns_the_burn_share() {
     assert!(c.state.clients.last_buyback.contains_key(&usds()));
 
     // Later in the same epoch nothing runs; at the next boundary bob's new
-    // ask is deep enough for the treasury's remaining 900 KUSD and then the
-    // burn account's 50 KUSD, and the KEEL the burn bought is burned.
-    let (r, _) = c.block(&[rest_sell(&mut bob, 2_000 * KEEL, KUSD)]);
+    // ask is deep enough for the treasury's remaining 900 USDT and then the
+    // burn account's 50 USDT, and the KEEL the burn bought is burned.
+    let (r, _) = c.block(&[rest_sell(&mut bob, 2_000 * KEEL, USDT)]);
     ok(&r[0]);
     let burn_keel_before = sys(&c.state, &keel(), "burn");
     let events = c.advance_to(6);
@@ -115,23 +115,23 @@ fn epoch_sweep_buys_keel_and_burns_the_burn_share() {
 fn sweep_skips_empty_books_dust_and_slippage() {
     let (mut state, _alice, mut bob, _v) = setup(0);
     state.params.epoch_length_blocks = 2;
-    fund_system(&mut state, "treasury", 1_000 * KUSD, "fee:t");
+    fund_system(&mut state, "treasury", 1_000 * USDT, "fee:t");
     let mut c = Chain::new(state);
     // No asks: nothing moves.
     let events = c.advance_to(2);
     assert!(!events
         .iter()
         .any(|e| matches!(e, Event::TreasurySwept { .. })));
-    assert_eq!(sys(&c.state, &usds(), "treasury"), 1_000 * KUSD as i128);
+    assert_eq!(sys(&c.state, &usds(), "treasury"), 1_000 * USDT as i128);
 
     // An ask far above the last price is skipped once a last price exists.
-    let (r, _) = c.block(&[rest_sell(&mut bob, 10 * KEEL, KUSD)]);
+    let (r, _) = c.block(&[rest_sell(&mut bob, 10 * KEEL, USDT)]);
     ok(&r[0]);
     let events = c.advance_to(4);
     assert!(events
         .iter()
         .any(|e| matches!(e, Event::TreasurySwept { .. })));
-    let (r, _) = c.block(&[rest_sell(&mut bob, 10 * KEEL, 3 * KUSD)]);
+    let (r, _) = c.block(&[rest_sell(&mut bob, 10 * KEEL, 3 * USDT)]);
     ok(&r[0]);
     let kusd_before = sys(&c.state, &usds(), "treasury");
     let events = c.advance_to(6);
@@ -146,9 +146,9 @@ fn sweep_skips_empty_books_dust_and_slippage() {
     // Dust is left alone.
     let (mut state, _alice, mut bob, _v) = setup(0);
     state.params.epoch_length_blocks = 2;
-    fund_system(&mut state, "treasury", KUSD / 10, "fee:dust");
+    fund_system(&mut state, "treasury", USDT / 10, "fee:dust");
     let mut c = Chain::new(state);
-    let (r, _) = c.block(&[rest_sell(&mut bob, 10 * KEEL, KUSD)]);
+    let (r, _) = c.block(&[rest_sell(&mut bob, 10 * KEEL, USDT)]);
     ok(&r[0]);
     let events = c.advance_to(2);
     assert!(!events
@@ -161,10 +161,10 @@ fn sweep_is_deterministic() {
     let run = || {
         let (mut state, _alice, mut bob, _v) = setup(0);
         state.params.epoch_length_blocks = 2;
-        fund_system(&mut state, "treasury", 500 * KUSD, "fee:t");
-        fund_system(&mut state, "validator_rewards", 200 * KUSD, "fee:v");
+        fund_system(&mut state, "treasury", 500 * USDT, "fee:t");
+        fund_system(&mut state, "validator_rewards", 200 * USDT, "fee:v");
         let mut c = Chain::new(state);
-        let (r, _) = c.block(&[rest_sell(&mut bob, 1_000 * KEEL, KUSD)]);
+        let (r, _) = c.block(&[rest_sell(&mut bob, 1_000 * KEEL, USDT)]);
         ok(&r[0]);
         c.advance_to(4);
         c.state.compute_hash()

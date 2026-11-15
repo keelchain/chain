@@ -122,6 +122,8 @@ fn module_param_get(state: &State, key: &str) -> Option<u128> {
         super::emission::get_param(state, key)
     } else if key.starts_with("prices.") {
         super::prices::get_param(state, key)
+    } else if key.starts_with("stable.") {
+        super::stable::get_param(state, key)
     } else {
         None
     }
@@ -149,6 +151,8 @@ fn module_param_set(
         Some(super::emission::set_param(state, key, value))
     } else if key.starts_with("prices.") {
         Some(super::prices::set_param(state, key, value))
+    } else if key.starts_with("stable.") {
+        Some(super::stable::set_param(state, key, value))
     } else {
         None
     }

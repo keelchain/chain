@@ -8,8 +8,8 @@ so a client can tell exactly what it received and what it missed.
 ## Client → server
 
 ```json
-{"op":"subscribe","channels":["blocks","account:<hex>","pair:BTC-KUSD","deposits:BTC:<hex>","book:BTC-KUSD?depth=20"],"from_height":120}
-{"op":"unsubscribe","channels":["pair:BTC-KUSD"]}
+{"op":"subscribe","channels":["blocks","account:<hex>","pair:BTC-USDT","deposits:BTC:<hex>","book:BTC-USDT?depth=20"],"from_height":120}
+{"op":"unsubscribe","channels":["pair:BTC-USDT"]}
 {"op":"ping"}
 ```
 
@@ -60,5 +60,5 @@ ws.on("book_delta", (f) => applyDelta(f.pair, f.changes));
 ws.on("gap", async (f) => {
   for (let h = f.from_height; h <= f.to_height; h++) await reconcile(h); // GET /v1/blocks/{h}/receipts
 });
-await ws.subscribe([`account:${me}`, "book:BTC-KUSD?depth=10"]);
+await ws.subscribe([`account:${me}`, "book:BTC-USDT?depth=10"]);
 ```

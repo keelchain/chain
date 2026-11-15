@@ -64,7 +64,7 @@ Variables:
 | `SOLANA_RPC_URL`, `SOLANA_USDC_MINT` | optional; a Solana JSON-RPC and the USDC mint. Defaults: the public devnet RPC (`https://api.devnet.solana.com`) and devnet USDC `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`. The Solana vault is an Ed25519 key: the ceremony's second (FROST) share, or the development signer's Ed25519 key in `local` mode |
 | `BSC_RPC_URL`, `BSC_USDT_CONTRACT` | optional; a BNB Smart Chain JSON-RPC and the chain's USDT (BEP-20) contract. Defaults: the public BSC testnet RPC (`https://data-seed-prebsc-1-s1.bnbchain.org:8545`, chain id 97) and its USDT `0x337610d27c682E347C9cD60BD4b3b107C9d34dDd`. The BSC vault is registered with the same key as the other chains, so an account's BSC address is its Ethereum address |
 | `EXPLORER_NETWORKS` | JSON network list baked into the explorer build |
-| `KEEL_FAUCET_KEEL`, `KEEL_FAUCET_KUSD` | optional; coins per claim (default 100 each). Cooldown per address 24 h, 5 claims per IP per day |
+| `KEEL_FAUCET_KEEL`, `KEEL_FAUCET_USDT` | optional; coins per claim (default 100 each). Cooldown per address 24 h, 5 claims per IP per day |
 | `KEEL_FAUCET_FLOAT_CLAIMS` | optional; how many claims' worth of each asset the faucet should hold (default 500). Every deploy of host 0 tops the faucet up from the genesis account when it holds less than half of that, so it works again after a reset |
 | `AGE_RECIPIENT` | optional; an `age` public key; backups are encrypted to it (keep the identity off the boxes) |
 | `KEEL_CLIENTS` | optional; JSON list of clients to re-onboard after a reset and to pre-approve in governance votes: `[{"address":"<hex>","attester":true,"param_admin":false,"keel":100000,"kusd":100000}]` |
@@ -80,7 +80,7 @@ Variables:
    `genesis.json` with `keel genesis-build`: the hosts as validators and
    observers (threshold from `KEEL_OBSERVER_THRESHOLD`), the arbitrator,
    attester and param admin from the variables, an operating float of KEEL
-   for every validator account and KUSD for host 0, `genesis-params.json`
+   for every validator account and USDT for host 0, `genesis-params.json`
    applied. The file is deterministic; a deploy without `reset_chain` refuses
    to run when it differs from the installed genesis.
 4. `deploy` (one job per host): installs the binaries, renders the WireGuard
@@ -219,7 +219,7 @@ piped into `gh`, never pasted into a terminal or a chat.
    gh variable set KEEL_PARAM_ADMIN -R $R --env $E --body <address>
    gh variable set KEEL_ATTESTER    -R $R --env $E --body <address>
    gh variable set KEEL_ARBITRATOR  -R $R --env $E --body <address>
-   gh variable set KEEL_GENESIS_FUNDS -R $R --env $E --body '<param admin address>:KEEL:1000000000000,<param admin address>:KUSD:1000000000000'
+   gh variable set KEEL_GENESIS_FUNDS -R $R --env $E --body '<param admin address>:KEEL:1000000000000,<param admin address>:USDT:1000000000000'
    ```
 
 6. **Host 0 credentials.** Read on the box and piped straight into GitHub:
@@ -265,7 +265,7 @@ vaults with the development signer as before.
 
 `.github/workflows/onboard-client.yml` runs `onboard-client.sh` on host 0:
 attester and param-admin roles through governance (propose with host 0's
-validator account, vote, wait for the timelock, execute) and KEEL / KUSD
+validator account, vote, wait for the timelock, execute) and KEEL / USDT
 transfers from that account's operating float. With three validators the
 other hosts' vote timers do not cover client proposals yet, so run the
 workflow while the proposal is open and vote from the other hosts'

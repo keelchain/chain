@@ -21,7 +21,7 @@ export function AssetsPage() {
     <div className="stack">
       <div className="page-head">
         <h1>Assets</h1>
-        <span className="sub">KEEL (native), KUSD (1:1 USD stablecoin) and vault assets held on other chains by threshold-signature vaults</span>
+        <span className="sub">KEEL (native), USDT (1:1 USD stablecoin) and vault assets held on other chains by threshold-signature vaults</span>
       </div>
       <Card flush>
         <div className="table-wrap">

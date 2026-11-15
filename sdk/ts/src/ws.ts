@@ -3,7 +3,7 @@
 //   const ws = new KeelSocket("wss://testnet.keelchain.com/rpc/v1/ws");
 //   ws.on("event", (m) => console.log(m.channel, m.data));
 //   ws.on("gap", (m) => resync(m.from_height, m.to_height));
-//   await ws.subscribe([`account:${me}`, "book:BTC-KUSD?depth=10"]);
+//   await ws.subscribe([`account:${me}`, "book:BTC-USDT?depth=10"]);
 //
 // Every server frame carries `seq` (per connection, monotonic) and `height`.
 // The client checks `seq` and reports a hole as a synthetic `gap`; on a

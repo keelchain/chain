@@ -74,7 +74,7 @@ export function SearchPage() {
         {state.loading ? (
           <Loading rows={3} />
         ) : state.suggestions.length === 0 ? (
-          <Empty>No match. Search accepts a block height, a 64-hex transaction id or address, an asset (BTC.BTC), a pair (BTC.BTC/KUSD), or “offer 12” / “trade 12”.</Empty>
+          <Empty>No match. Search accepts a block height, a 64-hex transaction id or address, an asset (BTC.BTC), a pair (BTC.BTC/USDT), or “offer 12” / “trade 12”.</Empty>
         ) : (
           <ul style={{ margin: 0, padding: '8px 16px', listStyle: 'none' }}>
             {state.suggestions.map((s) => (

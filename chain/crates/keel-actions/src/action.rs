@@ -236,7 +236,7 @@ pub enum Action {
     },
     // ---- liquidity (the pooled house-maker inventory)
     /// Fund the house maker's pool with `amount` of `asset`; mints pool
-    /// shares at the pool's USD value (last fill on `<ASSET>-KUSD`).
+    /// shares at the pool's USD value (last fill on `<ASSET>-USDT`).
     DepositLiquidity {
         asset: Asset,
         amount: Amount,
@@ -253,6 +253,9 @@ pub enum Action {
     RequestRecovery(RecoveryRequest),
     /// Observer: the recovery transaction and its outcome.
     ObserveRecovery(RecoveryObservation),
+    /// Redeem USDT into one chain's dollar stablecoin and withdraw it in
+    /// one step (2026-11-15): the user never handles the reserve asset.
+    WithdrawStable(WithdrawStable),
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -380,6 +383,7 @@ impl Action {
             | Action::RetireCustodyGeneration { .. } => "pools",
             Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. } => "liquidity",
             Action::RequestRecovery(_) | Action::ObserveRecovery(_) => "recovery",
+            Action::WithdrawStable(_) => "stable",
         }
     }
 }
@@ -639,6 +643,19 @@ pub struct OutboundObservation {
     /// The native transaction id when it is not the hex of `tx_hash`
     /// (Solana: the base58 signature).
     pub external_tx: Option<String>,
+}
+
+/// Redeem USDT and withdraw the proceeds (`WithdrawStable`).
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct WithdrawStable {
+    /// The reserve asset to pay out in: which chain's USDT or USDC
+    /// (`ETH.USDT`, `TRON.USDT`, `BSC.USDT`, `SOL.USDC`).
+    pub via: Asset,
+    /// Destination address on that asset's chain.
+    pub to: String,
+    /// USDT units to redeem. The rebalancing premium of `via`, if any, is
+    /// charged on top.
+    pub amount: Amount,
 }
 
 /// A recovery request (`RequestRecovery`, docs/deposits.md "Sent on the

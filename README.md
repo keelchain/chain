@@ -3,7 +3,7 @@
 # Keelchain
 
 A settlement chain for peer-to-peer trading: on-chain escrow with arbitrated
-disputes, threshold-signed vaults for Bitcoin, Ethereum and Tron, the `KUSD`
+disputes, threshold-signed vaults for Bitcoin, Ethereum and Tron, the `USDT`
 stablecoin backed one to one by vaulted USDT, and a free action budget instead
 of gas. Public testnet at https://testnet.keelchain.com, site and wallet at
 https://keelchain.com. Front ends are clients of the chain; anyone can build one

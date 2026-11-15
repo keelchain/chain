@@ -287,11 +287,11 @@ f=next(x for x in d['floats'] if x['asset']=='BTC.BTC')
 assert int(f['custody'])==$((CUSTODY_BEFORE + SWAP_SATS)) and int(f['deposit'])==$((CLIENT_DEP_BEFORE - SWAP_SATS)), f" || fail "/v1/custody floats disagree with the ledger"
 say "the swapped balance trades on the chain's book: the user sells $SELL_SATS sats, validator 1 buys"
 BUYER_SECRET=${OBS_SECRET[1]}
-"$KEEL" --rpc "$RPC0" send --secret "$USER_SECRET" --wait 30 raw "{\"PlaceOrder\":{\"pair\":\"BTC-KUSD\",\"side\":\"sell\",\"order_type\":\"limit\",\"price\":60000000000,\"quantity\":$SELL_SATS,\"quote_budget\":null,\"client_id\":null}}" > "$KEEL_DEVNET_DIR/sell.json"
+"$KEEL" --rpc "$RPC0" send --secret "$USER_SECRET" --wait 30 raw "{\"PlaceOrder\":{\"pair\":\"BTC-USDT\",\"side\":\"sell\",\"order_type\":\"limit\",\"price\":60000000000,\"quantity\":$SELL_SATS,\"quote_budget\":null,\"client_id\":null}}" > "$KEEL_DEVNET_DIR/sell.json"
 grep -qE '"ok": *true' "$KEEL_DEVNET_DIR/sell.json" || { cat "$KEEL_DEVNET_DIR/sell.json"; fail "sell order refused"; }
-"$KEEL" --rpc "$RPC0" send --secret "$BUYER_SECRET" --wait 30 raw "{\"PlaceOrder\":{\"pair\":\"BTC-KUSD\",\"side\":\"buy\",\"order_type\":\"limit\",\"price\":60010000000,\"quantity\":$SELL_SATS,\"quote_budget\":null,\"client_id\":null}}" > "$KEEL_DEVNET_DIR/buy.json"
+"$KEEL" --rpc "$RPC0" send --secret "$BUYER_SECRET" --wait 30 raw "{\"PlaceOrder\":{\"pair\":\"BTC-USDT\",\"side\":\"buy\",\"order_type\":\"limit\",\"price\":60010000000,\"quantity\":$SELL_SATS,\"quote_budget\":null,\"client_id\":null}}" > "$KEEL_DEVNET_DIR/buy.json"
 grep -qE '"ok": *true' "$KEEL_DEVNET_DIR/buy.json" || { cat "$KEEL_DEVNET_DIR/buy.json"; fail "buy order refused"; }
-wait_for "the fill to settle" 30 bash -c "[[ \$(balance $USER KUSD deposit) -gt 0 ]]"
+wait_for "the fill to settle" 30 bash -c "[[ \$(balance $USER USDT deposit) -gt 0 ]]"
 [[ "$(balance "$USER" BTC.BTC deposit)" == "$BACK_SATS" ]] || fail "user deposit balance after the sale is not $BACK_SATS"
 say "the client brings the remaining $BACK_SATS sats back into its own vault on the user's behalf"
 "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 custody swap BTC.BTC "$BACK_SATS" --to custody --on-behalf-of "$USER" > "$KEEL_DEVNET_DIR/swap-back.json"
@@ -310,5 +310,5 @@ d=json.load(sys.stdin)
 print(next((b['balance'] for b in d['balances'] if b['asset']=='BTC.BTC' and b['account_type']=='custody'),0))")
   [[ "$b" == "$USER_AFTER" ]] || fail "node $i disagrees on the user's custody balance after the swaps ($b vs $USER_AFTER)"
 done
-say "float swap: $SWAP_SATS sats to the market, $SELL_SATS sold on BTC-KUSD, $BACK_SATS back into custody; no external transaction, reserve == liabilities == $RES"
+say "float swap: $SWAP_SATS sats to the market, $SELL_SATS sold on BTC-USDT, $BACK_SATS back into custody; no external transaction, reserve == liabilities == $RES"
 say "PASS: $DEPOSIT_SATS sats credited as custody in the client's vault; $WITHDRAW_SATS sats withdrawn through the client's own signer ($OUT_TXID); fee $FEE sats from the client's gas; reserve == liabilities == $RES; network reserve untouched"

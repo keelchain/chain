@@ -68,7 +68,7 @@ fn keel() -> Asset {
     Asset::new("KEEL")
 }
 fn usds() -> Asset {
-    Asset::new("KUSD")
+    Asset::new("USDT")
 }
 
 fn sell_offer(asset: Asset, min: u128, max: u128) -> OfferSpec {
@@ -355,7 +355,7 @@ fn sell_offer_trade_happy_path_with_fee_split() {
 #[test]
 fn small_stable_trade_pays_the_surcharge() {
     let (mut state, mut alice, mut bob) = setup();
-    // 40 KUSD is below the $50 threshold: 1% + 1%.
+    // 40 USDT is below the $50 threshold: 1% + 1%.
     let amount = 40_000_000u128;
     let (r, _) = apply_block(
         &mut state,

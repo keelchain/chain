@@ -181,7 +181,7 @@ fn decimals_convert_between_reserve_and_stable() {
         amount: 999_999_999_999,
     })]);
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
-    // Burn 1 KUSD -> 1e12 wei back.
+    // Burn 1 USDT -> 1e12 wei back.
     let (r, _) = c.block(&[alice.act(Action::BurnStable {
         asset: eth(),
         amount: 1_000_000,
@@ -217,4 +217,260 @@ fn stable_pause_stops_mints() {
     })]);
     ok(&r[0]);
     invariant(&c.state);
+}
+
+// ---------------- one dollar (2026-11-15): conversion on arrival, one-step
+// withdrawal, and rebalancing by premium and rebate.
+
+fn tron_usdt() -> Asset {
+    Asset::new("TRON.USDT")
+}
+
+fn register_tron(c: &mut Chain, v: &mut Actor) {
+    register(c, v, keel_actions::Chain::Tron);
+}
+
+fn register(c: &mut Chain, v: &mut Actor, chain: keel_actions::Chain) {
+    let (r, _) = c.block(&[
+        v.act(Action::RegisterVault(keel_actions::VaultRegistration {
+            chain,
+            epoch: 1,
+            public_key: vec![2u8; 33],
+            chain_code: Some([7u8; 32]),
+            signers: vec![v.addr()],
+            threshold: 1,
+        })),
+    ]);
+    ok(&r[0]);
+}
+
+fn deposit_tron_usdt(
+    c: &mut Chain,
+    v: &mut Actor,
+    deposit_index: u64,
+    amount: u128,
+    tx: u8,
+) -> keel_vm::Receipt {
+    let (r, _) = c.block(&[
+        v.act(Action::ObserveDeposit(keel_actions::DepositObservation {
+            external_tx: None,
+            chain: keel_actions::Chain::Tron,
+            asset: tron_usdt(),
+            tx_hash: [tx; 32],
+            index: 0,
+            deposit_index,
+            amount,
+            external_height: 100,
+            tip_height: 200,
+            proof: keel_actions::Proof::None,
+        })),
+    ]);
+    r.into_iter().next().unwrap()
+}
+
+#[test]
+fn a_usdt_deposit_on_any_network_is_one_usdt_balance_withdrawn_in_one_step() {
+    let (mut state, mut alice, _bob, mut v) = setup(0);
+    state.gov.param_admin = Some(alice.addr());
+    assert_eq!(state.stable_conversion.params.auto_convert, 1);
+    assert!(
+        !state.stable.basket.contains_key(&Asset::new("SOL.USDC")),
+        "USDC is not USDT: it stays USDC with its own book"
+    );
+    let mut c = Chain::new(state);
+    register_tron(&mut c, &mut v);
+    let (r, _) = c.block(&[alice.act(Action::RequestDepositAddress {
+        chain: keel_actions::Chain::Tron,
+    })]);
+    ok(&r[0]);
+    let index = r[0]
+        .events
+        .iter()
+        .find_map(|e| match e {
+            Event::DepositAddressAssigned { index, .. } => Some(*index),
+            _ => None,
+        })
+        .unwrap();
+    let usdt_before = acct(&c.state, alice.addr(), &usds(), "deposit");
+
+    // 10 USDT arrive on Tron: alice holds 10 more USDT, no TRON.USDT.
+    let r = deposit_tron_usdt(&mut c, &mut v, index, 10_000_000, 1);
+    ok(&r);
+    assert!(r.events.contains(&Event::StableMinted {
+        owner: alice.addr(),
+        from: tron_usdt(),
+        amount: 10_000_000
+    }));
+    assert_eq!(acct(&c.state, alice.addr(), &tron_usdt(), "deposit"), 0);
+    assert_eq!(
+        acct(&c.state, alice.addr(), &usds(), "deposit"),
+        usdt_before + 10_000_000
+    );
+    assert_eq!(c.state.stable.basket[&tron_usdt()].reserve, 10_000_000);
+    invariant(&c.state);
+
+    // Tron holds the whole reserve: no premium to leave through it. The
+    // withdrawal spends exactly 5 USDT: the $1 flat fee comes out of it and
+    // 4 USDT are queued for the destination; alice never sees TRON.USDT.
+    assert_eq!(stable::premium_bps(&c.state, &tron_usdt()), 0);
+    let (r, _) = c.block(&[
+        alice.act(Action::WithdrawStable(keel_actions::WithdrawStable {
+            via: tron_usdt(),
+            to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+            amount: 5_000_000,
+        })),
+    ]);
+    ok(&r[0]);
+    assert!(r[0].events.iter().any(|e| matches!(
+        e,
+        Event::StableBurned {
+            amount: 5_000_000,
+            ..
+        }
+    )));
+    assert!(r[0].events.iter().any(|e| matches!(
+        e,
+        Event::WithdrawalQueued {
+            amount: 4_000_000,
+            ..
+        }
+    )));
+    assert!(!r[0]
+        .events
+        .iter()
+        .any(|e| matches!(e, Event::StablePremiumPaid { .. })));
+    assert_eq!(
+        acct(&c.state, alice.addr(), &usds(), "deposit"),
+        usdt_before + 5_000_000
+    );
+    assert_eq!(acct(&c.state, alice.addr(), &tron_usdt(), "deposit"), 0);
+    assert_eq!(c.state.stable.basket[&tron_usdt()].reserve, 5_000_000);
+    // Through a network that holds nothing: refused, nothing to pay from.
+    let (r, _) = c.block(&[
+        alice.act(Action::WithdrawStable(keel_actions::WithdrawStable {
+            via: eth_usdt(),
+            to: "0x000000000000000000000000000000000000dEaD".into(),
+            amount: 2_000_000,
+        })),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("reserve")));
+    invariant(&c.state);
+
+    // Conversion off: the next deposit stays per-network.
+    let (r, _) = c.block(&[alice.act(Action::SetParam {
+        key: "stable.auto_convert".into(),
+        value: 0,
+    })]);
+    ok(&r[0]);
+    let r = deposit_tron_usdt(&mut c, &mut v, index, 1_000_000, 2);
+    ok(&r);
+    assert_eq!(
+        acct(&c.state, alice.addr(), &tron_usdt(), "deposit"),
+        1_000_000
+    );
+    invariant(&c.state);
+}
+
+#[test]
+fn a_short_network_charges_a_premium_and_pays_it_back_as_a_rebate() {
+    let (mut state, mut alice, _bob, mut v) = setup(0);
+    state.gov.param_admin = Some(alice.addr());
+    let mut c = Chain::new(state);
+    register_tron(&mut c, &mut v);
+    register(&mut c, &mut v, keel_actions::Chain::Ethereum);
+    // Reserves: 10 ETH.USDT and 90 TRON.USDT; three equal caps, so each
+    // network's target is a third. Ethereum holds 10%: 70% below target,
+    // and with a 1% maximum the premium through it is 69 bps (floored).
+    fund_vault_asset(&mut c.state, alice.addr(), &eth_usdt(), 10_000_000, "e");
+    fund_vault_asset(&mut c.state, alice.addr(), &tron_usdt(), 90_000_000, "t");
+    let (r, _) = c.block(&[
+        alice.act(Action::MintStable {
+            asset: eth_usdt(),
+            amount: 10_000_000,
+        }),
+        alice.act(Action::MintStable {
+            asset: tron_usdt(),
+            amount: 90_000_000,
+        }),
+    ]);
+    ok(&r[0]);
+    ok(&r[1]);
+    assert_eq!(
+        stable::shares_ppm(&c.state, &eth_usdt()),
+        Some((333_333, 100_000))
+    );
+    assert_eq!(stable::premium_bps(&c.state, &eth_usdt()), 69);
+    assert_eq!(stable::premium_bps(&c.state, &tron_usdt()), 0);
+
+    // Withdraw 5 USDT through Ethereum: 0.0345 USDT premium into the pool.
+    let usdt_before = acct(&c.state, alice.addr(), &usds(), "deposit");
+    let (r, _) = c.block(&[
+        alice.act(Action::WithdrawStable(keel_actions::WithdrawStable {
+            via: eth_usdt(),
+            to: "0x000000000000000000000000000000000000dEaD".into(),
+            amount: 5_000_000,
+        })),
+    ]);
+    ok(&r[0]);
+    assert!(r[0].events.contains(&Event::StablePremiumPaid {
+        owner: alice.addr(),
+        via: eth_usdt(),
+        amount: 34_500
+    }));
+    assert_eq!(stable::rebalance_pool(&c.state), 34_500);
+    assert_eq!(
+        acct(&c.state, alice.addr(), &usds(), "deposit"),
+        usdt_before - 5_034_500
+    );
+    // Ethereum is shorter still (5 of 95): the premium rises to 84 bps.
+    assert_eq!(stable::premium_bps(&c.state, &eth_usdt()), 84);
+
+    // A deposit that refills Ethereum earns the rebate, bounded by the pool.
+    // (Ethereum deposits need light-client proofs in tests; the rebate path
+    // is the same for every basket asset, so refill through the module.)
+    fund_vault_asset(&mut c.state, alice.addr(), &eth_usdt(), 20_000_000, "e2");
+    let before = acct(&c.state, alice.addr(), &usds(), "deposit");
+    let events = stable::auto_convert(
+        &mut c.state,
+        alice.addr(),
+        &eth_usdt(),
+        20_000_000,
+        "refill",
+    )
+    .unwrap();
+    assert!(events.contains(&Event::StableRebatePaid {
+        owner: alice.addr(),
+        from: eth_usdt(),
+        amount: 34_500
+    }));
+    assert_eq!(
+        acct(&c.state, alice.addr(), &usds(), "deposit"),
+        before + 20_000_000 + 34_500
+    );
+    assert_eq!(stable::rebalance_pool(&c.state), 0);
+
+    // The premium is a governance parameter; 0 turns rebalancing off.
+    let (r, _) = c.block(&[
+        alice.act(Action::SetParam {
+            key: "stable.rebalance_max_premium_bps".into(),
+            value: 20_000,
+        }),
+        alice.act(Action::SetParam {
+            key: "stable.rebalance_max_premium_bps".into(),
+            value: 0,
+        }),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    ok(&r[1]);
+    assert_eq!(stable::premium_bps(&c.state, &eth_usdt()), 0);
+    invariant(&c.state);
+}
+
+#[test]
+fn a_migrated_chain_keeps_per_network_deposits_until_governance_turns_conversion_on() {
+    let m = stable::ConversionState::migrated();
+    assert_eq!(
+        (m.params.auto_convert, m.params.rebalance_max_premium_bps),
+        (0, 0)
+    );
 }

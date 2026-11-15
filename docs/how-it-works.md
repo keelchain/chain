@@ -131,7 +131,7 @@ membership of those sets is a governance decision (`SetObservers`,
 There is no inflation: the supply is fixed at genesis. Two things pay
 operators. Every fee the chain collects is split at collection time
 (section 5); the validators' share lands in a system account
-`validator_rewards` **in the asset the fee was paid in** (KUSD, BTC.BTC,
+`validator_rewards` **in the asset the fee was paid in** (USDT, BTC.BTC,
 KEEL from client usage). And the genesis validator bucket (10% of the
 supply) is paid out over time as a **staking emission**
 (`emission.validator_bps_per_year`, 10% of what remains per year by
@@ -175,21 +175,44 @@ the address from a set. This is listed in section 17.
 I still have to decide the team grant list and the mainnet address
 of the parameter admin; both are genesis inputs.
 
-### 3.2 KUSD
+### 3.2 USDT: one balance on every network
 
-The unit of account is a stablecoin minted 1:1 against a governance-set
-basket of vaulted USD tokens (launch: USDT on Ethereum and Tron), held in
-the chain's own `stable_reserve` accounts. Each basket entry has a cap and
-an enable flag (`SetStableBasket`). Minting moves the reserve token into
-the reserve and issues KUSD; burning does the reverse and is refused if
-that asset's reserve cannot cover it. Conversions floor, so rounding can
-only leave reserve behind, never issue unbacked coin. Mint and burn charge
-no fee. The reserve is visible at every block. A crypto-collateralized mint
-path is planned but not built.
+The unit of account is `USDT`: one balance, the way an exchange shows one
+USDT balance whatever network it arrived on. It is backed one to one by
+the USDT the vaults hold on each supported network (Ethereum, Tron, BNB
+Smart Chain), kept in the chain's own `stable_reserve` accounts and
+visible at every block (`GET /v1/stable`). Each network's entry in that
+basket has a cap and an enable flag (`SetStableBasket`), so no single
+network can be more than its share of the reserve. USDC is not USDT and is
+not in the basket: it stays `SOL.USDC`, with its own book quoted in USDT.
+There was a house ticker before 2026-11-15; it was retired because traders
+know USDT and should not have to learn a new dollar.
 
-Note for the testnet: the marketplace currently maps its "USDT" balance to
-native KUSD (`CHAIN_USDT_ASSET=KUSD`), which is why the explorer shows
-KUSD for offers created in USDT. That mapping is an open decision.
+**Conversion is automatic (2026-11-15).** A USDT deposit on any network is
+converted into the unified `USDT` as it is credited (`stable.auto_convert`,
+on by default); the user never holds `TRON.USDT` or `BSC.USDT`. A
+withdrawal is one action, `WithdrawStable { via, to, amount }`: it redeems
+the balance into the chosen network's USDT and queues the payout. The
+explicit `MintStable` and `BurnStable` remain for anyone holding a
+per-chain asset (custody vaults are not converted: an exchange's users hold
+the coin they deposited, and it leaves on the same network). Conversions
+floor, so rounding can only leave reserve behind, never issue unbacked
+coin; mint and burn charge no fee. A basket entry that is disabled or at
+its cap leaves the deposit as credited.
+
+**Rebalancing without a moderator.** A network's reserve can only pay out
+what it holds, and nobody at Keel moves coins between networks. Each
+enabled network has a target share of the reserve (its cap's share of the
+caps). Withdrawing through a network below its target pays a premium of up
+to `stable.rebalance_max_premium_bps` (1% by default), scaled by how far
+below target it is, into a pool; a deposit of USDT on that network earns
+the same rate back out of the pool as a rebate. The gap is an arbitrage
+that refills the short network, with nothing moving through Keel. Both
+knobs are governance parameters (`docs/governance.md`); a chain that
+predates the module migrates with conversion and premium off.
+
+The marketplace's "USDT" balance is now literally the chain's `USDT`. A
+crypto-collateralized mint path is planned but not built.
 
 ## 4. Governance: who holds which power
 
@@ -283,7 +306,7 @@ fee waived the client's retail schedule (`SetClientFee`) is uncapped.
 `clients.protocol_fee_waived = 0` restores the previous pricing. Unattested
 accounts pay the table above. The split must always sum to 100%. USD values
 for the P2P surcharge and withdrawal fee come from the chain's own
-`<ASSET>-KUSD` order book, not an external oracle.
+`<ASSET>-USDT` order book, not an external oracle.
 
 The marketplace charges its own withdrawal fee schedule on top (the
 tiered flat fee on the backoffice Fees page). Note: that fee is USD
@@ -341,7 +364,7 @@ Every address has a **budget**: `limit = base + earned`, with
 request deposit addresses, a first round of trades), not a lifetime
 allowance. Each action, successful or not, spends one unit; observers'
 attestations spend none. `earned` grows by one
-action per whole USD the address fills on an KUSD-quoted pair (taker or
+action per whole USD the address fills on an USDT-quoted pair (taker or
 maker) and by purchase (`BuyBudget`, 0.001 KEEL per action, routed through
 the fee split). Cancels (cancel order, close offer, cancel trade) draw on
 a separate ceiling `min(limit + 100,000, 2 × limit)` so a capped address
@@ -629,7 +652,7 @@ is governance and observer actions:
 3. Observers run a key generation and submit `RegisterVault { chain, epoch,
    public_key, chain_code, signers, threshold }`; the highest epoch is the
    active vault.
-4. `ListPair` to open an `ASSET-KUSD` book, and, if it is a USD token,
+4. `ListPair` to open an `ASSET-USDT` book, and, if it is a USD token,
    `SetStableBasket` to admit it as reserve.
 5. The marketplace maps its currency/network names to the chain asset
    (`mapping.ts`) and, for Lightning-like rails, points at observer APIs.
@@ -646,12 +669,12 @@ self-trade prevention, tick and lot alignment, minimum and maximum
 notional, at most 500 open orders per owner. One `PlaceOrder` action locks
 funds, matches against the book, settles every fill through the ledger
 (base, quote, fee, release legs) and rests the remainder. A fill on an
-KUSD-quoted pair also earns both sides budget. Pairs are listed and
-delisted by governance. Genesis lists one KUSD book for KEEL and for every
-non-dollar asset the chain holds: `BTC-KUSD`, `KEEL-KUSD`, `ETH-KUSD`,
-`TRX-KUSD`, `BNB-KUSD`, `SOL-KUSD` and `USDC-KUSD`, each with a tick suited
+USDT-quoted pair also earns both sides budget. Pairs are listed and
+delisted by governance. Genesis lists one USDT book for KEEL and for every
+non-dollar asset the chain holds: `BTC-USDT`, `KEEL-USDT`, `ETH-USDT`,
+`TRX-USDT`, `BNB-USDT`, `SOL-USDT` and `USDC-USDT`, each with a tick suited
 to the asset's price scale. USDT has no book: it enters and leaves through
-the KUSD basket at par. The VM settles
+the USDT basket at par. The VM settles
 roughly 156,000 orders per second on one core.
 
 **House maker.** A pair may have a house party (by default the system
@@ -680,8 +703,8 @@ both `last_price` and `reference_price`.
 
 **Pooled liquidity (0.2.0).** The house maker's inventory is a pool anyone
 can fund. `DepositLiquidity { asset, amount }` moves the asset into
-`swap_pool` and mints shares on its USD value (KUSD at par, anything else
-at the last fill on its `<ASSET>-KUSD` book; deposits are refused while
+`swap_pool` and mints shares on its USD value (USDT at par, anything else
+at the last fill on its `<ASSET>-USDT` book; deposits are refused while
 the pool holds an asset without a price). The protocol itself holds shares
 for whatever the pool held when the first depositor arrived, the genesis
 KEEL bucket. House fills grow the pool by the spread they capture. At
@@ -879,7 +902,7 @@ rotates the vault. Validators and honest users elsewhere are untouched.
 
 Precisely:
 
-- **On-chain assets (KEEL, KUSD, trades, orders, escrow): non-custodial
+- **On-chain assets (KEEL, USDT, trades, orders, escrow): non-custodial
   once the user is in wallet mode.** The key is in the user's extension; the
   chain enforces that nothing else can move the balance. Escrow is held by
   the chain's rules, not by an operator. Trades are peer to peer with

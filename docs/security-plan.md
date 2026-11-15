@@ -269,17 +269,17 @@ read from the deploy script rather than from the design:
 | Key on the box | Put there by | Moves | Threshold? |
 |---|---|---|---|
 | Vault signer seed (`KEEL_SIGNER_SEED`, rendered as `tss_url = "local:…"` in the observer config) | the deploy, `local` mode | every Bitcoin and Tron vault payout: the whole vault | **No.** The live testnet runs the development signer because there is one box. The threshold signer (`keel-tss`, CGGMP21, 2-of-3 exercised nightly) exists and is the deploy's default mode; it is not what is running. |
-| Validator seed | the deploy | signs blocks; is also the validator's account: the bond, a 1,000,000 KEEL float, on host 0 a 1,000,000 KUSD float, and the rewards; signs observer attestations with the same key; and, because the three role variables are unset, it is the parameter admin, the attester and the arbitrator | **No, and block signing never can be.** Everything else attached to it can come off. |
-| Faucet secret | the deploy, or generated on host 0 | the faucet balance (50,000 KEEL and 50,000 KUSD) | No; hot by design |
+| Validator seed | the deploy | signs blocks; is also the validator's account: the bond, a 1,000,000 KEEL float, on host 0 a 1,000,000 USDT float, and the rewards; signs observer attestations with the same key; and, because the three role variables are unset, it is the parameter admin, the attester and the arbitrator | **No, and block signing never can be.** Everything else attached to it can come off. |
+| Faucet secret | the deploy, or generated on host 0 | the faucet balance (50,000 KEEL and 50,000 USDT) | No; hot by design |
 | TSS share and `KEEL_TSS_PASSPHRASE` (`tss` mode) | the ceremony and the deploy | one share of the vault key; the passphrase that decrypts it sits in the same box's env file | Yes: one share moves nothing. The passphrase protects backups and a stolen disk, not a running box. |
 | Bitcoin Core wallet | the observer | nothing: created with `disable_private_keys` | watch-only, as it should be |
 | Treasury, community and team buckets | genesis | only by `TreasurySpend` proposals; system accounts, no key anywhere | keyless, as it should be |
 | Lightning (LND) | not deployed on the testnet | the pool balance when it is | hot by nature, bounded by the pool cap |
 
 So: the vault is threshold in design and single-key in fact; the chain-side
-funds (float, rewards, faucet, the KUSD onboarding float) sit behind plain
+funds (float, rewards, faucet, the USDT onboarding float) sit behind plain
 hot keys; and the on-box key wears every admin hat. One root shell on
-host 0 today is the vault, a million KEEL, a million KUSD, the faucet and
+host 0 today is the vault, a million KEEL, a million USDT, the faucet and
 the parameter admin. That is the testnet, where none of it has value, but
 it is not the shape mainnet can inherit.
 
@@ -300,7 +300,7 @@ What changes:
    validator's key after a delay; rewards and the bond on exit go there,
    never to the consensus account. The genesis float shrinks to what a
    validator needs to submit its own actions (votes and attestations are
-   system actions already), not a million KEEL, and the KUSD onboarding
+   system actions already), not a million KEEL, and the USDT onboarding
    float moves to an off-box onboarding key. Target: the account behind a
    consensus seed holds budget capacity and nothing worth stealing.
 3. **Separate the observer key from the consensus key.** Today they are

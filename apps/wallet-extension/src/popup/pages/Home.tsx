@@ -124,7 +124,7 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
             </>
           ) : (
             <>
-              <p className="muted small">Fund this account from {externalName(network.id, 'BTC')}, {externalName(network.id, 'TRON')}, {externalName(network.id, 'BSC')} or {externalName(network.id, 'SOL')}. The address belongs to the Keelchain vault, or to your exchange's own vault when it holds your coins in custody; the chain credits you after that chain's confirmations. Coins sent on any other network do not arrive.{ownAddrs?.supported && <> <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show my own address instead</a></>}</p>
+              <p className="muted small">Fund this account from {externalName(network.id, 'BTC')}, {externalName(network.id, 'TRON')}, {externalName(network.id, 'BSC')} or {externalName(network.id, 'SOL')}. The address belongs to the Keelchain vault, or to your exchange's own vault when it holds your coins in custody; the chain credits you after that chain's confirmations. Coins sent on any other network do not arrive. <b>USDT sent on any network is credited as one USDT balance</b>, backed by the USDT Keel holds on every supported network; you withdraw it as USDT on the network you choose (<a href="https://keelchain.com/policy/" target="_blank" rel="noreferrer">policy</a>).{ownAddrs?.supported && <> <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show my own address instead</a></>}</p>
               <div className="row">
                 {DEPOSIT_CHAINS.map((c) => (
                   <button key={c} className="mini" disabled={depositBusy !== null} onClick={() => receive(c)}>

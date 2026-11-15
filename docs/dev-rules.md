@@ -32,8 +32,8 @@ Read `plan.md` first. These rules keep parallel work from colliding.
   `external_tx` inside `State.vaults` and `State.custody` (attestations and
   outbounds), 8 appended `State.recovery`, 9 appended `State.limits` (the
   caps that used to be constants), 10 appended `State.emission`, 11
-  appended `State.prices`; every older layout is a frozen `StateVn` in
-  `migrate.rs`.
+  appended `State.prices`, 12 appended `State.stable_conversion`; every
+  older layout is a frozen `StateVn` in `migrate.rs`.
   Changing the layout of `State` or anything inside it means: bump `SCHEMA`,
   keep a frozen copy of the old struct in `migrate.rs`, add the upgrade step,
   and add a fixture of the old schema under `keel-vm/tests/fixtures/` with a

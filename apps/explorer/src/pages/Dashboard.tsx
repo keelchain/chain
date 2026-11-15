@@ -441,8 +441,8 @@ function BillingSection({ w, p }: { w: WalletValue; p: ReturnType<typeof usePart
     const units = toUnits(budget, 6);
     if (units === null) return;
     void act.run(
-      { PlaceOrder: { pair: 'KEEL-KUSD', side: 'buy', order_type: 'market', price: null, quantity: null, quote_budget: units, client_id: null } },
-      `Buy KEEL with ${budget} KUSD`,
+      { PlaceOrder: { pair: 'KEEL-USDT', side: 'buy', order_type: 'market', price: null, quantity: null, quote_budget: units, client_id: null } },
+      `Buy KEEL with ${budget} USDT`,
     );
   };
   return (
@@ -458,11 +458,11 @@ function BillingSection({ w, p }: { w: WalletValue; p: ReturnType<typeof usePart
             ['Attested accounts', c ? formatInt(c.attested_accounts) : '—'],
           ]}
         />
-        <p className="text-2 small">Everything Keel charges is paid in KEEL from your deposit balance; there is no invoice. Buy KEEL on the chain's own book with KUSD.</p>
+        <p className="text-2 small">Everything Keel charges is paid in KEEL from your deposit balance; there is no invoice. Buy KEEL on the chain's own book with USDT.</p>
       </Card>
       <Card title={<h2>Buy KEEL</h2>}>
         <form className="form" onSubmit={buy}>
-          <Field label="Spend (KUSD)">
+          <Field label="Spend (USDT)">
             <input className="input" value={budget} onChange={(e) => setBudget(e.target.value)} inputMode="decimal" required />
           </Field>
           <div className="row">

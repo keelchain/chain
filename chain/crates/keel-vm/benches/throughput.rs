@@ -46,7 +46,7 @@ fn main() {
                 round,
                 CHAIN_ID_DEVNET,
                 Action::PlaceOrder(PlaceOrder {
-                    pair: "BTC-KUSD".into(),
+                    pair: "BTC-USDT".into(),
                     side: if sell { Side::Sell } else { Side::Buy },
                     order_type: OrderType::Limit,
                     price: Some(price),

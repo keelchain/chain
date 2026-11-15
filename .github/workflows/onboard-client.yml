@@ -21,7 +21,7 @@ on:
         description: KEEL to send (whole units)
         default: "100000"
       kusd:
-        description: KUSD to send (whole units)
+        description: USDT to send (whole units)
         default: "100000"
 
 jobs:

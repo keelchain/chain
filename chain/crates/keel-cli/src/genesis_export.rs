@@ -79,7 +79,7 @@ pub fn map_currency(code: &str) -> Option<Asset> {
         "BTC" => Some(Asset::new("BTC.BTC")),
         "ETH" => Some(Asset::new("ETH.ETH")),
         "TRX" => Some(Asset::new("TRON.TRX")),
-        "USDT" | "USDC" | "USDT-ERC20" | "USDT-TRC20" => Some(Asset::new("KUSD")),
+        "USDT" | "USDC" | "USDT-ERC20" | "USDT-TRC20" => Some(Asset::new("USDT")),
         "KEEL" => Some(Asset::new("KEEL")),
         _ => None,
     }
@@ -257,7 +257,7 @@ mod tests {
         let (accounts, summary) = convert(csv, &addrs(), false, false).unwrap();
         assert_eq!(accounts.len(), 3);
         assert_eq!(summary.totals[&Asset::new("BTC.BTC")], 150_000_000);
-        assert_eq!(summary.totals[&Asset::new("KUSD")], 5_000_000);
+        assert_eq!(summary.totals[&Asset::new("USDT")], 5_000_000);
         assert_eq!(summary.system_rows, 2);
         // Builds into a valid genesis when reserves cover the stable supply.
         let mut g = Genesis::devnet(1, &[], vec![]);
@@ -288,7 +288,7 @@ mod tests {
         let mut g = Genesis::devnet(1, &[], vec![]);
         g.accounts = vec![GenesisAccount {
             address: Address::tagged(1),
-            asset: Asset::new("KUSD"),
+            asset: Asset::new("USDT"),
             amount: 10,
         }];
         g.stable_reserves = vec![(Asset::new("ETH.USDT"), 5)];

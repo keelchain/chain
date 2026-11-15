@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end devnet check: 4 validators, a crossing sell/buy on BTC-KUSD
+# End-to-end devnet check: 4 validators, a crossing sell/buy on BTC-USDT
 # between two funded devnet accounts, receipts, cross-node balance and
 # state-hash agreement, then a kill/restart catch-up test.
 set -euo pipefail
@@ -11,7 +11,7 @@ KEEL="${CARGO_TARGET_DIR:-$ROOT/chain/target}/release/keel"
 RPC0="http://127.0.0.1:$RPC_BASE"
 RPC1="http://127.0.0.1:$((RPC_BASE+1))"
 RPC3="http://127.0.0.1:$((RPC_BASE+3))"
-PX=$((60000 * 1000000))     # 60,000.00 KUSD per BTC, in micro-KUSD
+PX=$((60000 * 1000000))     # 60,000.00 USDT per BTC, in micro-USDT
 QTY=100000000               # 1 BTC in sats
 
 cleanup() { "$ROOT/infra/dev/devnet.sh" stop >/dev/null 2>&1 || true; }
@@ -43,14 +43,14 @@ BOB_SECRET=$("$KEEL" keygen --seed 1 | python3 -c 'import sys,json;print(json.lo
 BOB=$("$KEEL" keygen --seed 1 | python3 -c 'import sys,json;print(json.load(sys.stdin)["address"])')
 say "alice=$ALICE bob=$BOB"
 
-A_BTC0=$(balance "$RPC0" "$ALICE" BTC.BTC deposit); A_USD0=$(balance "$RPC0" "$ALICE" KUSD deposit)
-B_BTC0=$(balance "$RPC0" "$BOB" BTC.BTC deposit);   B_USD0=$(balance "$RPC0" "$BOB" KUSD deposit)
+A_BTC0=$(balance "$RPC0" "$ALICE" BTC.BTC deposit); A_USD0=$(balance "$RPC0" "$ALICE" USDT deposit)
+B_BTC0=$(balance "$RPC0" "$BOB" BTC.BTC deposit);   B_USD0=$(balance "$RPC0" "$BOB" USDT deposit)
 say "before: alice btc=$A_BTC0 usds=$A_USD0 | bob btc=$B_BTC0 usds=$B_USD0"
 
 say "alice sells 1 BTC @ 60000 (via node 0)"
-"$KEEL" --rpc "$RPC0" send --secret "$ALICE_SECRET" --wait 30 order place BTC-KUSD sell --price "$PX" --quantity "$QTY" > "$KEEL_DEVNET_DIR/sell.json"
+"$KEEL" --rpc "$RPC0" send --secret "$ALICE_SECRET" --wait 30 order place BTC-USDT sell --price "$PX" --quantity "$QTY" > "$KEEL_DEVNET_DIR/sell.json"
 say "bob buys 1 BTC @ 60000 (via node 1)"
-"$KEEL" --rpc "$RPC1" send --secret "$BOB_SECRET" --wait 30 order place BTC-KUSD buy --price "$PX" --quantity "$QTY" > "$KEEL_DEVNET_DIR/buy.json"
+"$KEEL" --rpc "$RPC1" send --secret "$BOB_SECRET" --wait 30 order place BTC-USDT buy --price "$PX" --quantity "$QTY" > "$KEEL_DEVNET_DIR/buy.json"
 grep -q '"OrderFilled"' "$KEEL_DEVNET_DIR/buy.json" || { say "buy receipt has no fill:"; cat "$KEEL_DEVNET_DIR/buy.json"; exit 1; }
 
 FEE=$((QTY * 10 / 10000))
@@ -59,8 +59,8 @@ EXP_A_BTC=$((A_BTC0 - QTY)); EXP_A_USD=$((A_USD0 + QUOTE))
 EXP_B_BTC=$((B_BTC0 + QTY - FEE)); EXP_B_USD=$((B_USD0 - QUOTE))
 sleep 2
 for rpc in "$RPC0" "$RPC3"; do
-  a_btc=$(balance "$rpc" "$ALICE" BTC.BTC deposit); a_usd=$(balance "$rpc" "$ALICE" KUSD deposit)
-  b_btc=$(balance "$rpc" "$BOB" BTC.BTC deposit);   b_usd=$(balance "$rpc" "$BOB" KUSD deposit)
+  a_btc=$(balance "$rpc" "$ALICE" BTC.BTC deposit); a_usd=$(balance "$rpc" "$ALICE" USDT deposit)
+  b_btc=$(balance "$rpc" "$BOB" BTC.BTC deposit);   b_usd=$(balance "$rpc" "$BOB" USDT deposit)
   say "$rpc after: alice btc=$a_btc usds=$a_usd | bob btc=$b_btc usds=$b_usd"
   [[ "$a_btc" == "$EXP_A_BTC" && "$a_usd" == "$EXP_A_USD" && "$b_btc" == "$EXP_B_BTC" && "$b_usd" == "$EXP_B_USD" ]] \
     || { say "balance mismatch on $rpc (expected alice $EXP_A_BTC/$EXP_A_USD bob $EXP_B_BTC/$EXP_B_USD)"; exit 1; }
@@ -68,9 +68,9 @@ done
 say "balances agree on node 0 and node 3"
 
 # The pooled house-maker inventory (0.2.0): alice funds the pool with 1,000
-# KUSD and the node reports her shares (1 share per micro-USD).
-say "alice deposits 1000 KUSD into the liquidity pool"
-"$KEEL" --rpc "$RPC0" send --secret "$ALICE_SECRET" --wait 30 liquidity deposit KUSD 1000000000 > "$KEEL_DEVNET_DIR/liq.json"
+# USDT and the node reports her shares (1 share per micro-USD).
+say "alice deposits 1000 USDT into the liquidity pool"
+"$KEEL" --rpc "$RPC0" send --secret "$ALICE_SECRET" --wait 30 liquidity deposit USDT 1000000000 > "$KEEL_DEVNET_DIR/liq.json"
 grep -q '"LiquidityDeposited"' "$KEEL_DEVNET_DIR/liq.json" || { say "deposit receipt has no LiquidityDeposited:"; cat "$KEEL_DEVNET_DIR/liq.json"; exit 1; }
 sleep 2
 POOL_SHARES=$(curl -s "$RPC0/v1/liquidity" | python3 -c 'import sys,json;print(json.load(sys.stdin)["pool"]["total_shares"])')

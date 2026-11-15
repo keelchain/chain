@@ -483,7 +483,7 @@ fn swap_between_custody_and_the_market() {
     // It trades on the chain's book like any wallet user's balance.
     let (r, _) = c.block(&[
         alice.act(Action::PlaceOrder(PlaceOrder {
-            pair: "BTC-KUSD".into(),
+            pair: "BTC-USDT".into(),
             side: Side::Sell,
             order_type: OrderType::Limit,
             price: Some(60_000_000_000),
@@ -492,7 +492,7 @@ fn swap_between_custody_and_the_market() {
             client_id: None,
         })),
         bob.act(Action::PlaceOrder(PlaceOrder {
-            pair: "BTC-KUSD".into(),
+            pair: "BTC-USDT".into(),
             side: Side::Buy,
             order_type: OrderType::Limit,
             price: Some(60_010_000_000),

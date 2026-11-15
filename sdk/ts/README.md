@@ -6,7 +6,7 @@ TypeScript client for the Keelchain.
 import { Keypair, RpcClient } from "@keelchain/sdk";
 const rpc = new RpcClient("http://127.0.0.1:5000");
 const key = Keypair.fromSecret(process.env.KEEL_SECRET!);       // 32-byte hex
-const tx = await rpc.send(key, { Transfer: { to: "<hex address>", asset: "KUSD", amount: 5_000_000n } });
+const tx = await rpc.send(key, { Transfer: { to: "<hex address>", asset: "USDT", amount: 5_000_000n } });
 const receipt = await rpc.waitReceipt(tx);
 ```
 
@@ -56,7 +56,7 @@ if (!r.ready) console.log("not yet:", r.reasons);
 const ws = new KeelSocket(rpc.wsUrl());
 ws.on("event", (f) => console.log(f.channel, f.data));
 ws.on("gap", (f) => console.log("missed", f.from_height, "to", f.to_height));
-await ws.subscribe([`account:${me}`, "book:BTC-KUSD?depth=10"]);
+await ws.subscribe([`account:${me}`, "book:BTC-USDT?depth=10"]);
 
 // History from the indexer; the node keeps only recent receipts.
 const page = await idx.accountTxs(me, { limit: 50 });

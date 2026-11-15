@@ -584,6 +584,20 @@ pub enum Event {
         amount: Amount,
         remaining: Amount,
     },
+    /// A withdrawal of USDT through a chain whose reserve is below its
+    /// target paid this premium (USDT) into the rebalancing pool.
+    StablePremiumPaid {
+        owner: Address,
+        via: Asset,
+        amount: Amount,
+    },
+    /// A deposit that refilled a short reserve received this rebate (USDT)
+    /// from the rebalancing pool.
+    StableRebatePaid {
+        owner: Address,
+        from: Asset,
+        amount: Amount,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]

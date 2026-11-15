@@ -23,7 +23,7 @@ use crate::state::State;
 use borsh::BorshDeserialize;
 
 /// Current snapshot schema.
-pub const SCHEMA: u32 = 11;
+pub const SCHEMA: u32 = 12;
 
 /// Magic prefix of a versioned snapshot.
 pub const MAGIC: &[u8; 4] = b"KEEL";
@@ -59,7 +59,8 @@ pub fn upgrade(schema: u32, payload: &[u8]) -> Option<State> {
         // `external_tx` inside `vaults`/`custody` (attestations, outbounds),
         // schema 8 appended `State.recovery`, schema 9 appended
         // `State.limits`, schema 10 appended `State.emission`, schema 11
-        // appended `State.prices`.
+        // appended `State.prices`, schema 12 appended
+        // `State.stable_conversion`.
         0 | 1 => StateV1::try_from_slice(payload).ok().map(State::from),
         2 => StateV2::try_from_slice(payload).ok().map(State::from),
         3 => StateV3::try_from_slice(payload).ok().map(State::from),
@@ -70,7 +71,8 @@ pub fn upgrade(schema: u32, payload: &[u8]) -> Option<State> {
         8 => StateV8::try_from_slice(payload).ok().map(State::from),
         9 => StateV9::try_from_slice(payload).ok().map(State::from),
         10 => StateV10::try_from_slice(payload).ok().map(State::from),
-        11 => State::try_from_slice(payload).ok(),
+        11 => StateV11::try_from_slice(payload).ok().map(State::from),
+        12 => State::try_from_slice(payload).ok(),
         _ => None,
     }
 }
@@ -251,6 +253,7 @@ impl From<StateV5> for State {
             limits: crate::modules::limits::LimitsState::migrated(),
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
@@ -288,6 +291,7 @@ impl From<StateV4> for State {
             limits: crate::modules::limits::LimitsState::migrated(),
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
@@ -325,6 +329,7 @@ impl From<StateV3> for State {
             limits: crate::modules::limits::LimitsState::migrated(),
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
@@ -362,6 +367,7 @@ impl From<StateV2> for State {
             limits: crate::modules::limits::LimitsState::migrated(),
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
@@ -399,6 +405,7 @@ impl From<StateV1> for State {
             limits: crate::modules::limits::LimitsState::migrated(),
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
@@ -468,6 +475,7 @@ impl From<StateV6> for State {
             limits: crate::modules::limits::LimitsState::migrated(),
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
@@ -723,6 +731,7 @@ impl From<StateV7> for State {
             limits: crate::modules::limits::LimitsState::migrated(),
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
@@ -794,6 +803,7 @@ impl From<StateV8> for State {
             limits: crate::modules::limits::LimitsState::migrated(),
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
@@ -865,11 +875,12 @@ impl From<StateV9> for State {
             // Off until governance sets the rate: old blocks replay unchanged.
             emission: crate::modules::emission::EmissionState::migrated(),
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }
 
-/// Schema 10: everything of the current layout but `prices`.
+/// Schema 10: schema 11 without `prices`.
 #[derive(BorshDeserialize)]
 pub struct StateV10 {
     pub chain_id: u32,
@@ -937,6 +948,81 @@ impl From<StateV10> for State {
             emission: v.emission,
             // Off until governance sets the window: old blocks replay unchanged.
             prices: crate::modules::prices::PricesState::migrated(),
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
+        }
+    }
+}
+
+/// Schema 11: everything of the current layout but `stable_conversion`.
+#[derive(BorshDeserialize)]
+pub struct StateV11 {
+    pub chain_id: u32,
+    pub height: u64,
+    pub timestamp: u64,
+    pub params: crate::params::Params,
+    pub accounts: std::collections::BTreeMap<keel_types::Address, crate::state::AccountMeta>,
+    pub ledger: keel_ledger::Ledger,
+    pub tokens: crate::modules::tokens::TokensState,
+    pub markets: crate::modules::markets::MarketsState,
+    pub p2p: crate::modules::p2p::P2pState,
+    pub disputes: crate::modules::disputes::DisputesState,
+    pub vaults: crate::modules::vaults::VaultsState,
+    pub stable: crate::modules::stable::StableState,
+    pub staking: crate::modules::staking::StakingState,
+    pub gov: crate::modules::gov::GovState,
+    pub attest: crate::modules::attest::AttestState,
+    pub budgets: crate::modules::budgets::BudgetsState,
+    pub sessions: crate::modules::sessions::SessionsState,
+    pub lightning: crate::modules::lightning::LightningState,
+    pub paused: std::collections::BTreeMap<String, u64>,
+    pub gov_house_operator: Option<keel_types::Address>,
+    pub last_hash: keel_crypto::Hash32,
+    pub clients: crate::modules::clients::ClientsState,
+    pub custody: crate::modules::custody::CustodyState,
+    pub arbitration: crate::modules::arbitration::ArbitrationState,
+    pub pools: crate::modules::pools::PoolsState,
+    pub liquidity: crate::modules::liquidity::LiquidityState,
+    pub recovery: crate::modules::recovery::RecoveryState,
+    pub limits: crate::modules::limits::LimitsState,
+    pub emission: crate::modules::emission::EmissionState,
+    pub prices: crate::modules::prices::PricesState,
+}
+
+impl From<StateV11> for State {
+    fn from(v: StateV11) -> Self {
+        State {
+            chain_id: v.chain_id,
+            height: v.height,
+            timestamp: v.timestamp,
+            params: v.params,
+            accounts: v.accounts,
+            ledger: v.ledger,
+            tokens: v.tokens,
+            markets: v.markets,
+            p2p: v.p2p,
+            disputes: v.disputes,
+            vaults: v.vaults,
+            stable: v.stable,
+            staking: v.staking,
+            gov: v.gov,
+            attest: v.attest,
+            budgets: v.budgets,
+            sessions: v.sessions,
+            lightning: v.lightning,
+            paused: v.paused,
+            gov_house_operator: v.gov_house_operator,
+            last_hash: v.last_hash,
+            clients: v.clients,
+            custody: v.custody,
+            arbitration: v.arbitration,
+            pools: v.pools,
+            liquidity: v.liquidity,
+            recovery: v.recovery,
+            limits: v.limits,
+            emission: v.emission,
+            prices: v.prices,
+            // Off until governance turns conversion on: old blocks replay unchanged.
+            stable_conversion: crate::modules::stable::ConversionState::migrated(),
         }
     }
 }

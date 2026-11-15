@@ -1,5 +1,5 @@
 //! The testnet faucet: `GET /v1/faucet` describes it, `POST /v1/faucet`
-//! sends a fixed amount of KEEL and KUSD to an address, once per address
+//! sends a fixed amount of KEEL and USDT to an address, once per address
 //! per cooldown and a few times per IP per day. The faucet key is an
 //! ordinary account funded from genesis; every send is a plain `Transfer`
 //! the explorer shows like any other, and every claim is a row here.
@@ -121,10 +121,10 @@ pub async fn info(State(app): State<App>) -> ApiResult {
     Ok(Json(json!({
         "enabled": true,
         "address": address,
-        "amounts": { "KEEL": cfg.keel.to_string(), "KUSD": cfg.kusd.to_string() },
+        "amounts": { "KEEL": cfg.keel.to_string(), "USDT": cfg.kusd.to_string() },
         "cooldown_secs": cfg.cooldown_secs,
         "ip_per_day": cfg.ip_per_day,
-        "balances": { "KEEL": balance_of("KEEL"), "KUSD": balance_of("KUSD") },
+        "balances": { "KEEL": balance_of("KEEL"), "USDT": balance_of("USDT") },
         "claims_today": claims_today,
         "explorer_url": cfg.explorer_url,
     })))
@@ -167,7 +167,7 @@ pub async fn claims(State(app): State<App>, Query(q): Query<ClaimsQuery>) -> Api
     })))
 }
 
-/// Send KEEL and KUSD to `address`, within the limits.
+/// Send KEEL and USDT to `address`, within the limits.
 pub async fn claim(
     State(app): State<App>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -226,7 +226,7 @@ pub async fn claim(
         .unwrap_or(0);
 
     let mut sent = Vec::new();
-    for (asset, coins) in [("KEEL", cfg.keel), ("KUSD", cfg.kusd)] {
+    for (asset, coins) in [("KEEL", cfg.keel), ("USDT", cfg.kusd)] {
         if coins == 0 {
             continue;
         }

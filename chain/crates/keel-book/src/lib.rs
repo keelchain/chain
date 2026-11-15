@@ -494,12 +494,12 @@ mod tests {
         }
     }
 
-    /// BTC-KUSD: 8/6 decimals, tick 0.01, lot 1000 sats, 0.2% taker.
+    /// BTC-USDT: 8/6 decimals, tick 0.01, lot 1000 sats, 0.2% taker.
     fn cfg() -> PairConfig {
         PairConfig {
-            symbol: "BTC-KUSD".into(),
+            symbol: "BTC-USDT".into(),
             base_asset: Asset::new("BTC.BTC"),
-            quote_asset: Asset::new("KUSD"),
+            quote_asset: Asset::new("USDT"),
             base_decimals: 8,
             quote_decimals: 6,
             tick_size: 10_000,
@@ -669,7 +669,7 @@ mod tests {
             order_type: OrderType::Market,
             price: None,
             quantity: None,
-            quote_budget: Some(1_000_000_000), // 1,000 KUSD
+            quote_budget: Some(1_000_000_000), // 1,000 USDT
         };
         let plan = match_incoming(&book, &[], &incoming, &cfg());
         assert_eq!(plan.filled_quantity, 1_666_000);

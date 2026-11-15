@@ -77,6 +77,9 @@ pub const ACCOUNT_TYPES: &[(&str, NormalSide, bool)] = &[
     // Basket assets backing the USD stable 1:1. Restricted credit-normal:
     // the stable can never be minted past what the reserve holds.
     ("stable_reserve", NormalSide::Credit, true),
+    // USDT premiums paid by withdrawals on a chain whose reserve is short,
+    // paid back as rebates to deposits that refill it (2026-11-15).
+    ("stable_rebalance", NormalSide::Credit, true),
     // Bonds are the user's money, locked: restricted, user-owned, so they
     // stay inside user liabilities.
     ("stake_bond", NormalSide::Credit, true),
@@ -259,6 +262,9 @@ tx_types! {
     LiquidityFee => "liquidity_fee",
     // fee mode (budget.base = 0): what an action costs
     ActionFee => "action_fee",
+    // stable rebalancing: premium into the pool, rebate out of it
+    StablePremium => "stable_premium",
+    StableRebate => "stable_rebate",
     // staking emission: validator_bootstrap -> validator_rewards each epoch
     Emission => "emission",
 }

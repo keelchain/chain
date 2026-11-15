@@ -71,8 +71,8 @@ export const ACTION_LABELS: Record<string, string> = {
   ReportNetworkFee: 'Report network fee',
   Withdraw: 'Withdraw',
   RegisterVault: 'Register vault',
-  MintStable: 'Mint KUSD',
-  BurnStable: 'Redeem KUSD',
+  MintStable: 'Mint USDT',
+  BurnStable: 'Redeem USDT',
   Bond: 'Bond',
   Unbond: 'Unbond',
   Delegate: 'Delegate',
@@ -372,6 +372,15 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
         { name: 'Destination', field: { k: 'external', chain, value: str(p['to']), what: 'address' } },
       ]);
     }
+    case 'WithdrawStable': {
+      const via = str(p['via']);
+      const chain = via.split('.')[0] ?? '';
+      return view(`Withdraw USDT as ${via}`, [
+        { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: 'USDT' } },
+        { name: 'Paid out in', field: { k: 'asset', value: via } },
+        { name: 'Destination', field: { k: 'external', chain, value: str(p['to']), what: 'address' } },
+      ]);
+    }
     case 'RegisterVault':
       return view(`Register ${chainCode(str(p['chain']))} vault for epoch ${str(p['epoch'])}`, [
         { name: 'Chain', field: { k: 'chain', value: chainCode(str(p['chain'])) } },
@@ -380,14 +389,14 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
         ...(Array.isArray(p['signers']) ? (p['signers'] as unknown[]).map((s, i): NamedField => ({ name: `Signer ${i + 1}`, field: { k: 'address', value: str(s) } })) : []),
       ]);
     case 'MintStable':
-      return view(`Mint KUSD from ${str(p['asset'])}`, [
+      return view(`Mint USDT from ${str(p['asset'])}`, [
         { name: 'Reserve asset', field: { k: 'asset', value: str(p['asset']) } },
         { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: str(p['asset']) } },
-        { name: 'Minted', field: { k: 'amount', value: amountStr(p['amount']), asset: 'KUSD' } },
+        { name: 'Minted', field: { k: 'amount', value: amountStr(p['amount']), asset: 'USDT' } },
       ]);
     case 'BurnStable':
-      return view(`Redeem KUSD into ${str(p['asset'])}`, [
-        { name: 'Burned', field: { k: 'amount', value: amountStr(p['amount']), asset: 'KUSD' } },
+      return view(`Redeem USDT into ${str(p['asset'])}`, [
+        { name: 'Burned', field: { k: 'amount', value: amountStr(p['amount']), asset: 'USDT' } },
         { name: 'Redeemed into', field: { k: 'asset', value: str(p['asset']) } },
         { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: str(p['asset']) } },
       ]);

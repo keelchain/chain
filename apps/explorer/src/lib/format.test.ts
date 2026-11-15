@@ -22,11 +22,11 @@ describe('helpers', () => {
     expect(formatBps(200)).toBe('2%');
     expect(formatBps(15)).toBe('0.15%');
     expect(truncateHex('ced54e07087d13d96890053bd0db9deb8dd3d9a22b2e56d52d06a6b9c4de01e4')).toBe('ced54e07…de01e4');
-    expect(splitPair('BTC-KUSD')).toEqual({ base: 'BTC', quote: 'KUSD' });
-    expect(splitPair('BTC.BTC/KUSD')).toEqual({ base: 'BTC.BTC', quote: 'KUSD' });
+    expect(splitPair('BTC-USDT')).toEqual({ base: 'BTC', quote: 'USDT' });
+    expect(splitPair('BTC.BTC/USDT')).toEqual({ base: 'BTC.BTC', quote: 'USDT' });
     expect(decimalsOf('BTC')).toBe(8);
     expect(decimalsOf('BTC.BTC')).toBe(8);
-    expect(decimalsOf('KUSD')).toBe(6);
+    expect(decimalsOf('USDT')).toBe(6);
   });
   it('relative time reads naturally', () => {
     const now = 1_788_842_973_244;

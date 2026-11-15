@@ -587,6 +587,13 @@ fn observe_deposit(
             asset: o.asset.clone(),
             amount: o.amount,
         });
+        // A dollar stablecoin becomes USDT on arrival (one dollar balance
+        // whatever chain it came on); anything else, or a basket at its
+        // cap, stays as credited.
+        events.extend(
+            super::stable::auto_convert(state, owner, &o.asset, o.amount, &external_id)
+                .unwrap_or_default(),
+        );
     }
     Ok(events)
 }
@@ -680,7 +687,7 @@ fn asset_units_for_usd(state: &State, asset: &Asset, usd_micro: Amount) -> Optio
     mul_div_floor(usd_micro, unit, price)
 }
 
-fn withdraw(
+pub(crate) fn withdraw(
     state: &mut State,
     ctx: &BlockContext,
     signer: Address,
@@ -708,39 +715,12 @@ fn withdraw(
         )));
     }
     let id = tokens::hex(tx_id);
-    let native = native_asset(chain);
-    let is_native = native == w.asset;
-
-    // Flat fee in the withdrawn asset (0 when no price exists yet, or when
-    // the withdrawer's client pays usage instead, 0.2.0).
-    let flat = if super::clients::waives_fee(state, ctx.height, &signer, ctx.seconds()).is_some() {
-        0
-    } else {
-        asset_units_for_usd(
-            state,
-            &w.asset,
-            state.params.withdraw_flat_fee_usd_micro as Amount,
-        )
-        .unwrap_or(0)
-    };
+    let (flat, fee_asset, fee_estimate) = withdrawal_fees(state, ctx, signer, &w.asset)?;
     if flat >= w.amount {
         return Err(VmError::Invalid(
             "amount does not cover the withdrawal fee".into(),
         ));
     }
-    // Network fee estimate in the chain's native asset.
-    let rate = state.vaults.fee_rate(chain);
-    let native_fee = (rate as Amount).saturating_mul(fee_size(chain, is_native) as Amount);
-    let (fee_asset, fee_estimate) = if native_fee == 0 {
-        (native.clone(), 0)
-    } else if is_native || tokens::balance(state, signer, &native) >= native_fee {
-        (native.clone(), native_fee)
-    } else {
-        // Charge the USD equivalent in the withdrawn asset.
-        let usd = tokens::usd_value(state, &native, native_fee).unwrap_or(0);
-        let equiv = asset_units_for_usd(state, &w.asset, usd).unwrap_or(0);
-        (w.asset.clone(), equiv)
-    };
 
     let outbound_id = state.vaults.next_outbound_id;
     let group = format!("outbound:{outbound_id}");
@@ -824,6 +804,45 @@ fn withdraw(
         to: w.to.clone(),
     });
     Ok(out)
+}
+
+/// What a withdrawal of `asset` costs on top of the amount paid out:
+/// `(flat fee in the asset, fee asset, network fee estimate)`. The flat fee
+/// is 0 when no price exists yet or when the withdrawer's client pays
+/// usage instead (0.2.0); the network fee is charged in the chain's native
+/// asset when the withdrawer holds it, else as its USD equivalent in the
+/// withdrawn asset.
+pub(crate) fn withdrawal_fees(
+    state: &State,
+    ctx: &BlockContext,
+    signer: Address,
+    asset: &Asset,
+) -> Result<(Amount, Asset, Amount), VmError> {
+    let chain = chain_of(state, asset)?;
+    let native = native_asset(chain);
+    let is_native = native == *asset;
+    let flat = if super::clients::waives_fee(state, ctx.height, &signer, ctx.seconds()).is_some() {
+        0
+    } else {
+        asset_units_for_usd(
+            state,
+            asset,
+            state.params.withdraw_flat_fee_usd_micro as Amount,
+        )
+        .unwrap_or(0)
+    };
+    let rate = state.vaults.fee_rate(chain);
+    let native_fee = (rate as Amount).saturating_mul(fee_size(chain, is_native) as Amount);
+    let (fee_asset, fee_estimate) = if native_fee == 0 {
+        (native.clone(), 0)
+    } else if is_native || tokens::balance(state, signer, &native) >= native_fee {
+        (native.clone(), native_fee)
+    } else {
+        let usd = tokens::usd_value(state, &native, native_fee).unwrap_or(0);
+        let equiv = asset_units_for_usd(state, asset, usd).unwrap_or(0);
+        (asset.clone(), equiv)
+    };
+    Ok((flat, fee_asset, fee_estimate))
 }
 
 fn escrow_key(owner: Address, asset: &Asset) -> AccountKey {
@@ -1020,9 +1039,19 @@ pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
             {
                 events.push(Event::DepositReleased {
                     owner: h.owner,
-                    asset: h.asset,
+                    asset: h.asset.clone(),
                     amount: h.amount,
                 });
+                events.extend(
+                    super::stable::auto_convert(
+                        state,
+                        h.owner,
+                        &h.asset,
+                        h.amount,
+                        &format!("{}:release", h.external_id),
+                    )
+                    .unwrap_or_default(),
+                );
             }
         }
     }

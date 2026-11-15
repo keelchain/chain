@@ -1,6 +1,6 @@
 //! `keel load`: throughput and latency against a running devnet.
 //!
-//! 1. Fund `--accounts` fresh keys (seeds 10_000..) with KUSD and BTC.BTC
+//! 1. Fund `--accounts` fresh keys (seeds 10_000..) with USDT and BTC.BTC
 //!    from the devnet seed accounts (0..3), waiting for receipts.
 //! 2. Pre-sign `--per-account` limit orders per key (alternating sides at
 //!    prices that cross), then submit them from `--threads` workers,
@@ -115,7 +115,7 @@ pub fn run(args: &Args, rpc: &str, chain_id: u32) -> anyhow::Result<()> {
     let mut rpcs: Vec<Arc<Http>> = vec![Arc::new(Http::new(rpc))];
     rpcs.extend(args.extra_rpc.iter().map(|u| Arc::new(Http::new(u))));
     let main = rpcs[0].clone();
-    let usds = Asset::new("KUSD");
+    let usds = Asset::new("USDT");
     let btc = Asset::new("BTC.BTC");
 
     // 1. Fund.
@@ -134,7 +134,7 @@ pub fn run(args: &Args, rpc: &str, chain_id: u32) -> anyhow::Result<()> {
     );
     let t = Instant::now();
     let mut last_ids = Vec::new();
-    // Devnet genesis funds each seed with 1,000,000 KUSD and 100 BTC; split
+    // Devnet genesis funds each seed with 1,000,000 USDT and 100 BTC; split
     // 80% of that evenly across this funder's share of the accounts.
     let share = keys.len().div_ceil(funders.len()).max(1) as u128;
     let usds_each = 800_000_000_000u128 / share;
@@ -186,7 +186,7 @@ pub fn run(args: &Args, rpc: &str, chain_id: u32) -> anyhow::Result<()> {
                 round,
                 chain_id,
                 Action::PlaceOrder(PlaceOrder {
-                    pair: "BTC-KUSD".into(),
+                    pair: "BTC-USDT".into(),
                     side: if sell { Side::Sell } else { Side::Buy },
                     order_type: OrderType::Limit,
                     price: Some(price),

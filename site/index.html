@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Keelchain — settlement for peer-to-peer trading</title>
-<meta name="description" content="Keelchain is a settlement chain for peer-to-peer trading: on-chain escrow with arbitration, threshold-signed vaults for Bitcoin, Ethereum and Tron, the KUSD stablecoin, and free signed actions instead of gas. Public testnet, explorer, wallet and API.">
+<meta name="description" content="Keelchain is a settlement chain for peer-to-peer trading: on-chain escrow with arbitration, threshold-signed vaults for Bitcoin, Ethereum and Tron, the USDT stablecoin, and free signed actions instead of gas. Public testnet, explorer, wallet and API.">
 <meta property="og:title" content="Keelchain"><meta property="og:description" content="A settlement chain for peer-to-peer trading. Public testnet live."><meta property="og:image" content="https://keelchain.com/keel-mark.svg">
 <link rel="icon" href="keel-mark.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -64,7 +64,7 @@
   <div class="cards">
     <div class="card"><div class="ic">⚖</div><h3>P2P escrow with arbitration</h3><p>Offers, trades, payment windows and disputes are chain actions. Arbitrators are elected by governance and rule on evidence, on chain.</p></div>
     <div class="card"><div class="ic">⛓</div><h3>Vaults, not bridges</h3><p>Bitcoin, Ethereum and Tron enter through observer-attested vaults with CGGMP21 threshold-signed keys. Light clients verify deposits against checkpoints.</p></div>
-    <div class="card"><div class="ic">$</div><h3>KUSD, backed one to one</h3><p>A USD stablecoin minted only against vaulted USDT. Trades and fees are quoted in it, so nobody carries an unpriced token risk.</p></div>
+    <div class="card"><div class="ic">$</div><h3>USDT, one balance on every network</h3><p>USDT sent on Ethereum, Tron or BNB Smart Chain is one USDT balance on Keel, backed one to one by the USDT the vaults hold, and leaves as USDT on the network you choose. Every market quotes in it.</p></div>
     <div class="card"><div class="ic">∞</div><h3>No gas</h3><p>Every account gets a free action budget that regenerates daily. Lock <code>KEEL</code> for more capacity, get it back in full on unlock.</p></div>
   </div>
 </div></section>
@@ -98,7 +98,7 @@ import { Keypair, RpcClient } from "@keelchain/sdk";
 const rpc = new RpcClient("https://testnet.keelchain.com/rpc");
 const me  = Keypair.fromSecret(process.env.KEEL_SECRET);
 const tx  = await rpc.send(me, { PlaceOrder: {
-  pair: "BTC-KUSD", side: "buy", order_type: "limit",
+  pair: "BTC-USDT", side: "buy", order_type: "limit",
   price: 60_000n * 1_000_000n, quantity: 100_000_000n,
 }});
 console.log((await rpc.waitReceipt(tx)).events);</code></pre>
@@ -111,7 +111,7 @@ console.log((await rpc.waitReceipt(tx)).events);</code></pre>
     <div class="eyebrow">Keel Wallet</div>
     <h2>Keys on your device. Every signature approved by you.</h2>
     <p class="muted">A browser extension that creates a 24-word wallet, signs you in to Keelchain clients without a password, and shows you exactly what you are signing before it leaves the page. No server, no telemetry.</p>
-    <div class="cta"><a class="btn gold" href="wallet/">Get Keel Wallet</a><a class="btn" href="wallet/privacy.html">Privacy policy</a></div>
+    <div class="cta"><a class="btn gold" href="wallet/">Get Keel Wallet</a><a class="btn" href="policy/">Policy and terms</a></div>
   </div>
   <div class="shots" style="margin-top:0;grid-template-columns:1fr 1fr">
     <figure class="shot" style="margin:0"><img src="wallet/shots/home.png" alt="Keel Wallet account screen"></figure>
@@ -138,6 +138,8 @@ console.log((await rpc.waitReceipt(tx)).events);</code></pre>
     <li><a href="docs/rpc/">Node RPC</a></li>
     <li><a href="wallet/">Keel Wallet</a></li>
     <li><a href="https://faucet.keelchain.com/">Testnet faucet</a></li>
+    <li><a href="policy/">Policy and terms</a></li>
+    <li><a href="docs/governance/">What governance can change</a></li>
   </ul></div>
   <div><h4>Contact</h4><ul>
     <li><a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> — partnerships, API access, roles</li>

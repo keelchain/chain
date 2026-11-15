@@ -17,7 +17,7 @@ fn vectors() -> Vec<(&'static str, Action)> {
             "transfer",
             Action::Transfer(Transfer {
                 to: Address::tagged(2),
-                asset: Asset::new("KUSD"),
+                asset: Asset::new("USDT"),
                 amount: 5_000_000,
                 memo: Some("hi".into()),
             }),
@@ -25,7 +25,7 @@ fn vectors() -> Vec<(&'static str, Action)> {
         (
             "place_limit",
             Action::PlaceOrder(PlaceOrder {
-                pair: "BTC-KUSD".into(),
+                pair: "BTC-USDT".into(),
                 side: Side::Sell,
                 order_type: OrderType::Limit,
                 price: Some(60_000_000_000),
@@ -37,7 +37,7 @@ fn vectors() -> Vec<(&'static str, Action)> {
         (
             "place_market_budget",
             Action::PlaceOrder(PlaceOrder {
-                pair: "BTC-KUSD".into(),
+                pair: "BTC-USDT".into(),
                 side: Side::Buy,
                 order_type: OrderType::Market,
                 price: None,
@@ -55,7 +55,7 @@ fn vectors() -> Vec<(&'static str, Action)> {
         (
             "house_quote",
             Action::HouseQuote(HouseQuote {
-                pair: "BTC-KUSD".into(),
+                pair: "BTC-USDT".into(),
                 bid: Some((59_000_000_000, 1_000_000)),
                 ask: None,
                 valid_until: 99,
@@ -392,7 +392,7 @@ fn vectors() -> Vec<(&'static str, Action)> {
         (
             "deposit_liquidity",
             Action::DepositLiquidity {
-                asset: Asset::new("KUSD"),
+                asset: Asset::new("USDT"),
                 amount: 250_000_000,
             },
         ),
@@ -423,6 +423,14 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 external_height: 70_000_000,
                 tip_height: 70_000_020,
                 success: true,
+            }),
+        ),
+        (
+            "withdraw_stable",
+            Action::WithdrawStable(keel_actions::WithdrawStable {
+                via: Asset::new("TRON.USDT"),
+                to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+                amount: 25_000_000,
             }),
         ),
     ]

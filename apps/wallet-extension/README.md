@@ -115,7 +115,7 @@ Behaviour:
 - Every other call opens the approval window. If the wallet is locked the
   window first asks for the password, then shows the request.
 - `signAction` shows origin, optional caller context, the decoded action
-  (kind, plain-words summary, fields with asset decimals: KEEL 6, KUSD 6,
+  (kind, plain-words summary, fields with asset decimals: KEEL 6, USDT 6,
   BTC.BTC 8, ETH.ETH 18, ETH.USDT 6, TRON.USDT 6, TRON.TRX 6; pairs are
   `BASE-QUOTE`), a fund-movement warning where relevant, the raw action
   JSON on demand, nonce, signer and network, then Reject / Approve.

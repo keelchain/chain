@@ -49,7 +49,7 @@ fn session_key_trades_as_its_principal_but_cannot_move_funds() {
         .account_ref(&alice.addr())
         .map(|m| m.budget.used)
         .unwrap_or(0);
-    let (r, _) = c.block_at_secs(now + 1, &[sess.act(order("BTC-KUSD"))]);
+    let (r, _) = c.block_at_secs(now + 1, &[sess.act(order("BTC-USDT"))]);
     ok(&r[0]);
     assert!(r[0]
         .events
@@ -97,7 +97,7 @@ fn session_key_trades_as_its_principal_but_cannot_move_funds() {
         &[alice.act(Action::RevokeSessionKey { key: sess.addr() })],
     );
     ok(&r[0]);
-    let (r, _) = c.block_at_secs(now + 4, &[sess.act(order("BTC-KUSD"))]);
+    let (r, _) = c.block_at_secs(now + 4, &[sess.act(order("BTC-USDT"))]);
     // No longer a session key: it acts as itself, an empty account with no funds.
     assert!(!matches!(err(&r[0]), VmError::Unauthorized) || true);
     assert!(!r[0].ok);
@@ -171,9 +171,9 @@ fn session_authorization_is_validated_and_expires() {
     assert!(matches!(err(&r[0]), VmError::Unauthorized));
     assert!(matches!(err(&r[1]), VmError::Unauthorized));
     // In scope until expiry, then refused.
-    let (r, _) = c.block_at_secs(now + 30, &[sess.act(order("BTC-KUSD"))]);
+    let (r, _) = c.block_at_secs(now + 30, &[sess.act(order("BTC-USDT"))]);
     ok(&r[0]);
-    let (r, _) = c.block_at_secs(now + 61, &[sess.act(order("BTC-KUSD"))]);
+    let (r, _) = c.block_at_secs(now + 61, &[sess.act(order("BTC-USDT"))]);
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
     // The key may revoke itself.
     let (r, _) = c.block_at_secs(

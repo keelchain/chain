@@ -319,7 +319,7 @@ user:**
    client's, the client's network float becomes the user's `deposit`
    balance. One ledger posting, no coins move, both reserve checks hold.
 2. The balance is now a `deposit` balance like any wallet user's: the user
-   places an order on `BTC-KUSD`, or posts a P2P offer and the escrow takes
+   places an order on `BTC-USDT`, or posts a P2P offer and the escrow takes
    the coins when a taker starts a trade. The counterparty never learns
    which model the other side is in.
 3. A fill or a release settles on chain with the protocol fee and, on top,
@@ -333,7 +333,7 @@ user:**
    its users' offers; a wallet user who takes the offer accepts that team,
    or filters it out. Offers that name nobody fall to the governance set.
    The custodial client's internal support never touches a chain trade.
-5. The proceeds (KUSD, or BTC bought) sit on the `deposit` side; the user
+5. The proceeds (USDT, or BTC bought) sit on the `deposit` side; the user
    or the client swaps them back with `to: "custody"` when the user is done
    trading, or leaves them to trade again. Nothing moves on Bitcoin.
 

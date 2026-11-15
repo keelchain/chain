@@ -8,10 +8,10 @@
 # for the timelock, execute); funds are plain transfers from the genesis account.
 set -euo pipefail
 ADDR=${1:?address}; shift
-ATTESTER=0; PARAM_ADMIN=0; ARBITRATOR=""; KEEL_AMT=0; KUSD_AMT=0
+ATTESTER=0; PARAM_ADMIN=0; ARBITRATOR=""; KEEL_AMT=0; USDT_AMT=0
 while [ $# -gt 0 ]; do case "$1" in
   --attester) ATTESTER=1;; --param-admin) PARAM_ADMIN=1;; --arbitrator) ARBITRATOR=$2; shift;;
-  --keel) KEEL_AMT=$2; shift;; --kusd) KUSD_AMT=$2; shift;; *) echo "unknown $1"; exit 2;; esac; shift; done
+  --keel) KEEL_AMT=$2; shift;; --kusd) USDT_AMT=$2; shift;; *) echo "unknown $1"; exit 2;; esac; shift; done
 [[ "$ADDR" =~ ^[0-9a-f]{64}$ ]] || { echo "address must be 64 hex"; exit 2; }
 set -a; . <(sudo cat /etc/keelchain/checkpoint.env); set +a
 RPC=http://127.0.0.1:${RPC_PORT:-5100}
@@ -47,7 +47,7 @@ if [ -n "$ARBITRATOR" ]; then
 fi
 for ID in "${IDS[@]}"; do send gov vote "$ID" Yes >/dev/null; echo "proposal $ID voted"; sleep 6; done
 [ "$KEEL_AMT" != 0 ] && { send transfer "$ADDR" KEEL "$((KEEL_AMT*1000000))" >/dev/null; echo "sent $KEEL_AMT KEEL"; sleep 6; }
-[ "$KUSD_AMT" != 0 ] && { send transfer "$ADDR" KUSD "$((KUSD_AMT*1000000))" >/dev/null; echo "sent $KUSD_AMT KUSD"; sleep 6; }
+[ "$USDT_AMT" != 0 ] && { send transfer "$ADDR" USDT "$((USDT_AMT*1000000))" >/dev/null; echo "sent $USDT_AMT USDT"; sleep 6; }
 for ID in "${IDS[@]}"; do
   END=$(curl -s $RPC/v1/gov/proposals/$ID | j 'd["timelock_end"]')
   echo "proposal $ID: waiting for timelock end $END (height $(height))"

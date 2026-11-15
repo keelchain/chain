@@ -298,7 +298,7 @@ fn apply_one(
         | Action::ObserveOutbound(_)
         | Action::ReportNetworkFee { .. }
         | Action::RegisterVault(_) => vaults::apply(state, ctx, signer, &tx_id, action),
-        Action::MintStable { .. } | Action::BurnStable { .. } => {
+        Action::MintStable { .. } | Action::BurnStable { .. } | Action::WithdrawStable(_) => {
             stable::apply(state, ctx, signer, &tx_id, action)
         }
         Action::Bond(_)

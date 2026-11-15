@@ -225,7 +225,7 @@ fn epoch_distributes_rewards_to_observers_validators_and_delegators() {
     ]);
     ok(&r[0]);
     ok(&r[1]);
-    // 1 KUSD of fees accrued to the pool.
+    // 1 USDT of fees accrued to the pool.
     fund_system(
         &mut c.state,
         &usds(),

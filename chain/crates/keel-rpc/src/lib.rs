@@ -225,6 +225,7 @@ pub fn router(node: Node) -> Router {
             get(custody_addresses),
         )
         .route("/v1/treasury", get(treasury))
+        .route("/v1/stable", get(stable_status))
         .route("/v1/liquidity", get(liquidity))
         .route("/v1/liquidity/{addr}", get(liquidity_position))
         .route("/v1/recovery", get(recoveries))
@@ -294,6 +295,7 @@ async fn params(AxumState(node): AxumState<Node>) -> Json<Value> {
         map.insert("recovery".into(), to_json(&s.recovery.params));
         map.insert("emission".into(), to_json(&s.emission.params));
         map.insert("prices".into(), to_json(&s.prices.params));
+        map.insert("stable".into(), to_json(&s.stable_conversion.params));
         // Limits that were constants: already dotted, listed flat.
         for key in keel_vm::modules::limits::PARAM_KEYS {
             if let Some(v) = keel_vm::modules::limits::get_param(&s, key) {
@@ -422,6 +424,42 @@ async fn markets(AxumState(node): AxumState<Node>) -> Json<Value> {
         .map(|m| market_summary(&s, m))
         .collect();
     Json(json!({ "markets": list }))
+}
+
+/// The dollar: supply, the rebalancing pool, and per basket asset its
+/// reserve, cap, target and actual share, and the premium a withdrawal
+/// through it pays now (the rebate a deposit of it earns).
+async fn stable_status(AxumState(node): AxumState<Node>) -> Json<Value> {
+    use keel_vm::modules::stable;
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let basket: Vec<Value> = s
+        .stable
+        .basket
+        .iter()
+        .map(|(asset, e)| {
+            let (target, share) = stable::shares_ppm(&s, asset).unwrap_or((0, 0));
+            json!({
+                "asset": asset.to_string(),
+                "chain": asset.as_str().split_once('.').map(|(c, _)| c),
+                "enabled": e.enabled,
+                "reserve": e.reserve.to_string(),
+                "cap": e.cap.to_string(),
+                "decimals": s.tokens.decimals(asset),
+                "target_ppm": target,
+                "share_ppm": share,
+                "premium_bps": stable::premium_bps(&s, asset),
+            })
+        })
+        .collect();
+    Json(json!({
+        "asset": s.tokens.stable.to_string(),
+        "supply": s.stable.supply.to_string(),
+        "reserves_in_stable": stable::reserves_in_stable(&s).to_string(),
+        "rebalance_pool": stable::rebalance_pool(&s).to_string(),
+        "params": to_json(&s.stable_conversion.params),
+        "basket": basket,
+    }))
 }
 
 fn market_summary(s: &keel_vm::State, m: &keel_vm::modules::markets::Market) -> Value {
@@ -1740,9 +1778,9 @@ mod tests {
             .iter()
             .any(|b| b["asset"] == "KEEL"));
 
-        let (st, v) = get_json(&app, "/v1/markets/BTC-KUSD/book?depth=5").await;
+        let (st, v) = get_json(&app, "/v1/markets/BTC-USDT/book?depth=5").await;
         assert_eq!(st, StatusCode::OK);
-        assert_eq!(v["symbol"], "BTC-KUSD");
+        assert_eq!(v["symbol"], "BTC-USDT");
         let (st, _) = get_json(&app, "/v1/markets/NOPE/book").await;
         assert_eq!(st, StatusCode::NOT_FOUND);
 

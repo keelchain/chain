@@ -11,7 +11,7 @@ Live since 2026-09-24 at keelchain.com, deployed only by GitHub Actions
 | node RPC | https://testnet.keelchain.com/rpc/v1/… (`keel-node`; status, accounts, params, `gov/roles`, `gov/proposals`, receipts, WebSocket at `/rpc/v1/ws`) |
 | chain | id 3, `_KEEL_CHAIN` namespace, external network signet; the validator set is the host set in `DEPLOY_HOSTS` (one host today; consensus is BFT, so four validators tolerate one fault and three tolerate none), 600-block epochs; genesis built by the deploy workflow from every host's public identity plus `infra/testnet/genesis-params.json` (voting 60 blocks, timelock 10, proposal deposit 1000 KEEL) |
 | vaults | BTC (signet, pruned bitcoind on host 0, shared with the other hosts over WireGuard) TRON (Nile), BSC (the BNB Smart Chain testnet, chain id 97, the same address as Ethereum) and SOL (Solana devnet, an Ed25519 vault key signed by FROST); one observer per host, quorum two thirds, the vault key held as CGGMP21 threshold shares created by the `TSS ceremony` workflow (development signer only in single-host `local` mode). Every signer checks each request against the chain's outbound rows before signing. Bitcoin checkpoints go through governance: host 0 proposes daily, every host votes on proposals whose header matches its Bitcoin view |
-| assets | `KEEL` (6), `KUSD` (6), `BTC.BTC`, `ETH.ETH`, `ETH.USDT`, `TRON.TRX`, `TRON.USDT` |
+| assets | `KEEL` (6), `USDT` (6), `BTC.BTC`, `ETH.ETH`, `ETH.USDT`, `TRON.TRX`, `TRON.USDT` |
 | wallet | Keel Wallet 1.2.0, `window.keel` |
 
 The node and the indexer send open CORS headers, so browser clients can call the testnet
@@ -28,7 +28,7 @@ vault asset after that chain's confirmations.
 A client is any service that signs actions for its users or holds a role.
 Run the `Onboard client` workflow with the client's account address: it adds
 the account to the attester set (and, if asked, makes it the param admin) and
-sends it starting KEEL and KUSD. The first client is a marketplace sandbox that
+sends it starting KEEL and USDT. The first client is a marketplace sandbox that
 signs up users with Keel Wallet and settles trades on the chain.
 
 ## Running a follower
@@ -56,7 +56,7 @@ chain state itself.
 
 ## Faucet
 
-`faucet.keelchain.com` sends 100 KEEL and 100 KUSD to any account address,
+`faucet.keelchain.com` sends 100 KEEL and 100 USDT to any account address,
 once per address a day and a few times per network address. It is an
 ordinary account that each deploy tops up from the genesis account; its
 sends are plain transfers on the explorer. Scripted: `POST https://testnet.keelchain.com/api/v1/faucet` with

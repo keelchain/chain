@@ -91,11 +91,11 @@ pub async fn stats(State(app): State<App>) -> ApiResult {
         .map(jrow)
         .collect();
     // TVL: vault reserves (system vault_asset accounts) valued at the last
-    // price of the asset's KUSD market, plus the stablecoin itself.
+    // price of the asset's USDT market, plus the stablecoin itself.
     let tvl = sqlx::query(
         "SELECT COALESCE(SUM(usd), 0)::text AS tvl FROM (
            SELECT b.asset, CASE WHEN a.kind = 'stable' THEN SUM(b.balance)
-                                ELSE SUM(b.balance) * COALESCE((SELECT m.last_price FROM markets m WHERE m.base = b.asset AND m.quote = 'KUSD' LIMIT 1), 0) / power(10, a.decimals) END AS usd
+                                ELSE SUM(b.balance) * COALESCE((SELECT m.last_price FROM markets m WHERE m.base = b.asset AND m.quote = 'USDT' LIMIT 1), 0) / power(10, a.decimals) END AS usd
            FROM balances b JOIN assets a ON a.asset = b.asset
            WHERE b.address = $1 AND b.account_type IN ('vault_asset', 'stable_reserve')
            GROUP BY b.asset, a.kind, a.decimals) x",

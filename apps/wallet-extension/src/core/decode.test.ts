@@ -68,14 +68,14 @@ describe('decodeAction', () => {
   });
 
   it('PlaceOrder uses base decimals for quantity and quote decimals for price', () => {
-    const d = decodeAction({ PlaceOrder: { pair: 'BTC-KUSD', side: 'buy', order_type: 'limit', price: 65000_000000, quantity: 5_000_000, quote_budget: null, client_id: 7 } });
-    expect(d.summary).toBe('Buy 0.05 BTC at 65,000 KUSD on BTC-KUSD');
-    expect(field(d, 'Price')).toMatchObject({ k: 'price', formatted: '65,000 KUSD', pair: 'BTC-KUSD' });
+    const d = decodeAction({ PlaceOrder: { pair: 'BTC-USDT', side: 'buy', order_type: 'limit', price: 65000_000000, quantity: 5_000_000, quote_budget: null, client_id: 7 } });
+    expect(d.summary).toBe('Buy 0.05 BTC at 65,000 USDT on BTC-USDT');
+    expect(field(d, 'Price')).toMatchObject({ k: 'price', formatted: '65,000 USDT', pair: 'BTC-USDT' });
     expect(field(d, 'Quantity')).toMatchObject({ formatted: '0.05 BTC', asset: 'BTC', value: '5000000' });
     expect(field(d, 'Side')).toMatchObject({ k: 'badge', value: 'Buy', tone: 'good' });
     expect(field(d, 'Client id')).toEqual({ k: 'number', value: '7' });
-    const m = decodeAction({ PlaceOrder: { pair: 'BTC-KUSD', side: 'sell', order_type: 'market', quantity: '100000000' } });
-    expect(m.summary).toBe('Sell 1 BTC at market on BTC-KUSD');
+    const m = decodeAction({ PlaceOrder: { pair: 'BTC-USDT', side: 'sell', order_type: 'market', quantity: '100000000' } });
+    expect(m.summary).toBe('Sell 1 BTC at market on BTC-USDT');
   });
 
   it('ReleaseTrade', () => {

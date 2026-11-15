@@ -3,8 +3,8 @@
 //! Client → server (JSON text frames):
 //!
 //! ```json
-//! {"op":"subscribe","channels":["blocks","account:<hex>","pair:BTC-KUSD","deposits:BTC:<hex>","book:BTC-KUSD?depth=20"],"from_height":120}
-//! {"op":"unsubscribe","channels":["pair:BTC-KUSD"]}
+//! {"op":"subscribe","channels":["blocks","account:<hex>","pair:BTC-USDT","deposits:BTC:<hex>","book:BTC-USDT?depth=20"],"from_height":120}
+//! {"op":"unsubscribe","channels":["pair:BTC-USDT"]}
 //! {"op":"ping"}
 //! ```
 //!
@@ -572,8 +572,8 @@ mod tests {
             Channel::Account(a)
         );
         assert_eq!(
-            Channel::parse("pair:BTC-KUSD").unwrap(),
-            Channel::Pair("BTC-KUSD".into())
+            Channel::parse("pair:BTC-USDT").unwrap(),
+            Channel::Pair("BTC-USDT".into())
         );
         assert_eq!(
             Channel::parse(&format!("deposits:btc:{hex}")).unwrap(),
@@ -583,15 +583,15 @@ mod tests {
             }
         );
         assert_eq!(
-            Channel::parse("book:BTC-KUSD?depth=5").unwrap(),
+            Channel::parse("book:BTC-USDT?depth=5").unwrap(),
             Channel::Book {
-                pair: "BTC-KUSD".into(),
+                pair: "BTC-USDT".into(),
                 depth: 5
             }
         );
         assert_eq!(
-            Channel::parse("book:BTC-KUSD").unwrap().name(),
-            "book:BTC-KUSD?depth=20"
+            Channel::parse("book:BTC-USDT").unwrap().name(),
+            "book:BTC-USDT?depth=20"
         );
         assert!(Channel::parse("account:zz").is_err());
         assert!(Channel::parse("deposits:BTC").is_err());
@@ -612,10 +612,10 @@ mod tests {
         let o = Event::OrderAccepted {
             order_id: 1,
             owner: a,
-            pair: "BTC-KUSD".into(),
+            pair: "BTC-USDT".into(),
             resting: 0,
         };
-        assert_eq!(event_pair(&o), Some("BTC-KUSD"));
+        assert_eq!(event_pair(&o), Some("BTC-USDT"));
         let d = Event::DepositCredited {
             owner: a,
             asset: Asset::vault("BTC", "BTC"),

@@ -19,7 +19,7 @@ export function MarketsPage() {
     <div className="stack">
       <div className="page-head">
         <h1>Markets</h1>
-        <span className="sub">On-chain order books matched deterministically in every block; KUSD quotes every pair</span>
+        <span className="sub">On-chain order books matched deterministically in every block; USDT quotes every pair</span>
       </div>
       <Card flush>
         <div className="table-wrap">

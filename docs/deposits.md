@@ -4,10 +4,12 @@ Keelchain accounts hold assets from other chains through **vaults**: a
 threshold-signed key per chain whose child addresses are handed out to
 accounts. You send coins to your child address on the external chain, the
 observers watch it, and after that chain's confirmation depth the amount is
-credited to your Keelchain account as a vault asset (`BTC.BTC`, `TRON.USDT`,
-`TRON.TRX`, `BSC.USDT`, `BSC.BNB`, `SOL.SOL`, `SOL.USDC`, `ETH.ETH`,
-`ETH.USDT`). `KEEL` and `KUSD` never leave the chain: `KUSD` is minted only
-against vaulted USDT, `KEEL` is transferred.
+credited to your Keelchain account as a vault asset (`BTC.BTC`, `TRON.TRX`,
+`BSC.BNB`, `SOL.SOL`, `SOL.USDC`, `ETH.ETH`). **USDT is the exception: USDT
+sent on Ethereum, Tron or BNB Smart Chain is credited as one `USDT`
+balance**, backed one to one by the USDT the vaults hold on every network,
+and withdrawn as USDT on the network you choose ("Withdrawing" below).
+`KEEL` never leaves the chain.
 
 On the public testnet the external chains are **Bitcoin signet**, **Tron
 Nile**, the **BNB Smart Chain testnet** and **Solana devnet**. Mainnet coins
@@ -23,7 +25,7 @@ A fresh address cannot act until it holds `budget.activation_keel` KEEL
 (0.1 KEEL on the testnet; `GET /v1/params`), the floor that keeps the free
 action budget from being a free budget per keypair (`governance.md`). The
 request for a deposit address is an action like any other, so do this
-first: on the testnet, `faucet.keelchain.com` sends 100 KEEL and 100 KUSD
+first: on the testnet, `faucet.keelchain.com` sends 100 KEEL and 100 USDT
 to any address; a client's user gets the dust from the client with its
 attestation; anyone else receives a transfer. Until then the chain answers
 `NOT_ACTIVATED`, and the wallet says so with the amount.
@@ -66,10 +68,11 @@ changes (`models.md`, "Rotating to a fresh pool").
   faucet"; the Bitcoin Core project lists current ones) and send them to the
   `tb1…` address. Credited after **2 confirmations** (`confirmations_btc`),
   about 20 minutes on signet.
-- **KEEL and KUSD:** `faucet.keelchain.com` sends both to any account address.
+- **KEEL and USDT:** `faucet.keelchain.com` sends both to any account address.
 - **Tron Nile:** get test TRX and USDT from the Nile faucet
   (nileex.io) and send to the `T…` address. Credited after **19
-  confirmations**, about one minute.
+  confirmations**, about one minute. The USDT is credited as `USDT`, your
+  one dollar balance, not as a Tron-specific asset (`policy`).
 - **BNB Smart Chain testnet:** get test BNB from the BNB Chain faucet and
   USDT (the testnet BEP-20 at `0x3376…4dDd`) and send to the `0x…` address.
   Credited after **12 confirmations** (`confirmations_eth`, shared with
@@ -173,3 +176,16 @@ What stays impossible: coins sent to a Bitcoin address on another chain
 BTC.BTC <address> <sats>`) queues a payout; the observers batch, sign with the
 vault key and broadcast. The flat withdrawal fee comes from
 `withdraw_flat_fee_usd_micro`.
+
+**USDT** is withdrawn with `WithdrawStable { via, to, amount }` (wallet:
+*Send*, asset USDT, then pick the network): `via` is the network's USDT to
+pay out in (`TRON.USDT`, `BSC.USDT`, `ETH.USDT`), `amount` is in USDT. The
+chain redeems the balance into that network's reserve and queues the payout
+in one step; you never hold the per-network asset. A network can pay out
+only what its reserve holds, so pick one that has it (`GET /v1/stable`
+lists each network's reserve). A network below its target share of the
+reserve charges a premium of up to `stable.rebalance_max_premium_bps` (1%),
+scaled by the shortfall, which the wallet shows before you confirm; a
+deposit of USDT on that network earns the same rate back as a rebate. That
+premium is how the reserve rebalances without anyone at Keel moving coins
+(`how-it-works.md` §3.2, keelchain.com/policy).

@@ -13,7 +13,7 @@ keel-node --me 1@3001 --participants 0,1,2,3 --devnet --bootstrappers 0@127.0.0.
 
 `--devnet` builds a genesis where every participant seed is a validator,
 observer, arbitrator and attester and its account key
-(`keel keygen --seed N`) is funded with KEEL, KUSD and BTC.BTC. The genesis
+(`keel keygen --seed N`) is funded with KEEL, USDT and BTC.BTC. The genesis
 JSON is written to `<storage-dir>/genesis.json`; pass it to other nodes
 with `--genesis` for a reproducible chain.
 

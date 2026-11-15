@@ -79,8 +79,8 @@ const rpc = new RpcClient("https://testnet.keelchain.com/rpc");
 const acct = await rpc.account(account.address);
 const { signed, tx_id } = await provider.signAction({
   envelope: { signer: account.address, nonce: acct.nonce, chain_id: account.chainId,
-              action: { Transfer: { to, asset: "KUSD", amount: 25_000_000n, memo: "invoice 42" } } },
-  context: { title: "Pay invoice 42", description: "25 KUSD to the merchant" },
+              action: { Transfer: { to, asset: "USDT", amount: 25_000_000n, memo: "invoice 42" } } },
+  context: { title: "Pay invoice 42", description: "25 USDT to the merchant" },
 });
 await rpc.submit(signed);
 ```
@@ -95,7 +95,7 @@ cannot transfer, withdraw or release escrow; those still go to the wallet.
 ```ts
 const { key, expiresAt } = await requestSession(provider, { scopes: ["markets"], nonce: acct.nonce, chainId: account.chainId });
 // later, server side:
-await rpc.send(key, { PlaceOrder: { pair: "BTC-KUSD", side: "buy", order_type: "limit", price, quantity } }, chainId);
+await rpc.send(key, { PlaceOrder: { pair: "BTC-USDT", side: "buy", order_type: "limit", price, quantity } }, chainId);
 ```
 
 ## 5. Mobile apps

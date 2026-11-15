@@ -51,7 +51,7 @@ enum Cmd {
     DepositAddress { chain: String, address: String },
     /// Order book levels.
     Book {
-        #[arg(default_value = "BTC-KUSD")]
+        #[arg(default_value = "BTC-USDT")]
         pair: String,
         #[arg(long, default_value_t = 10)]
         depth: usize,

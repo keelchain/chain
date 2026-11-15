@@ -13,11 +13,11 @@ use keel_vm::{
 };
 
 const KEEL: u128 = 1_000_000;
-const KUSD: u128 = 1_000_000;
+const USDT: u128 = 1_000_000;
 
 fn sell(price: u128, qty: u128) -> Action {
     Action::PlaceOrder(PlaceOrder {
-        pair: "KEEL-KUSD".into(),
+        pair: "KEEL-USDT".into(),
         side: Side::Sell,
         order_type: OrderType::Limit,
         price: Some(price),
@@ -29,7 +29,7 @@ fn sell(price: u128, qty: u128) -> Action {
 
 fn buy(qty: u128) -> Action {
     Action::PlaceOrder(PlaceOrder {
-        pair: "KEEL-KUSD".into(),
+        pair: "KEEL-USDT".into(),
         side: Side::Buy,
         order_type: OrderType::Market,
         price: None,
@@ -47,48 +47,48 @@ fn settlement_reads_a_time_weighted_price_not_the_last_print() {
     let mut c = Chain::new(state);
     let t0 = 10_000;
 
-    // A fill at 1 KUSD: last price and reference agree.
-    let (r, _) = c.block_at_secs(t0, &[bob.act(sell(KUSD, 10 * KEEL)), alice.act(buy(KEEL))]);
+    // A fill at 1 USDT: last price and reference agree.
+    let (r, _) = c.block_at_secs(t0, &[bob.act(sell(USDT, 10 * KEEL)), alice.act(buy(KEEL))]);
     ok(&r[0]);
     ok(&r[1]);
-    assert_eq!(c.state.markets.price_of("KEEL-KUSD"), Some(KUSD));
-    assert_eq!(prices::reference(&c.state, "KEEL-KUSD"), Some(KUSD));
+    assert_eq!(c.state.markets.price_of("KEEL-USDT"), Some(USDT));
+    assert_eq!(prices::reference(&c.state, "KEEL-USDT"), Some(USDT));
 
-    // Five minutes later the book is swept and the last fill prints 2 KUSD
+    // Five minutes later the book is swept and the last fill prints 2 USDT
     // (9 KEEL rest at 1, one more at 2; a 10 KEEL market buy takes both).
     // The book shows 2; the reference has seen 1 for 300 s and 2 for 0 s:
     // still 1.
     let (r, _) = c.block_at_secs(
         t0 + 300,
-        &[bob.act(sell(2 * KUSD, KEEL)), alice.act(buy(10 * KEEL))],
+        &[bob.act(sell(2 * USDT, KEEL)), alice.act(buy(10 * KEEL))],
     );
     ok(&r[0]);
     ok(&r[1]);
-    assert_eq!(c.state.markets.price_of("KEEL-KUSD"), Some(2 * KUSD));
-    assert_eq!(prices::reference(&c.state, "KEEL-KUSD"), Some(KUSD));
+    assert_eq!(c.state.markets.price_of("KEEL-USDT"), Some(2 * USDT));
+    assert_eq!(prices::reference(&c.state, "KEEL-USDT"), Some(USDT));
 
     // Five more minutes with no fills: 1 for 300 s, 2 for 300 s: 1.5.
     c.block_at_secs(t0 + 600, &[]);
-    assert_eq!(c.state.markets.price_of("KEEL-KUSD"), Some(2 * KUSD));
-    assert_eq!(prices::reference(&c.state, "KEEL-KUSD"), Some(KUSD * 3 / 2));
+    assert_eq!(c.state.markets.price_of("KEEL-USDT"), Some(2 * USDT));
+    assert_eq!(prices::reference(&c.state, "KEEL-USDT"), Some(USDT * 3 / 2));
     // Everything priced in dollars reads the reference.
     assert_eq!(
         tokens::usd_value(&c.state, &keel(), KEEL),
-        Some(KUSD * 3 / 2)
+        Some(USDT * 3 / 2)
     );
 
     // Once the window has passed the old print entirely, the new level is
     // the reference; samples before the window are dropped as fills arrive
     // (the sample current when the window opens is kept).
     c.block_at_secs(t0 + 300 + 600, &[]);
-    assert_eq!(prices::reference(&c.state, "KEEL-KUSD"), Some(2 * KUSD));
+    assert_eq!(prices::reference(&c.state, "KEEL-USDT"), Some(2 * USDT));
     let (r, _) = c.block_at_secs(
         t0 + 300 + 600,
-        &[bob.act(sell(2 * KUSD, 5 * KEEL)), alice.act(buy(KEEL))],
+        &[bob.act(sell(2 * USDT, 5 * KEEL)), alice.act(buy(KEEL))],
     );
     ok(&r[0]);
     ok(&r[1]);
-    assert_eq!(c.state.prices.samples["KEEL-KUSD"].len(), 2);
+    assert_eq!(c.state.prices.samples["KEEL-USDT"].len(), 2);
 
     // The window is a governance parameter; 0 turns the reference off and
     // settlement falls back to the last fill; a week is the ceiling.
@@ -107,8 +107,8 @@ fn settlement_reads_a_time_weighted_price_not_the_last_print() {
     );
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
     ok(&r[1]);
-    assert_eq!(prices::reference(&c.state, "KEEL-KUSD"), None);
-    assert_eq!(tokens::usd_value(&c.state, &keel(), KEEL), Some(2 * KUSD));
+    assert_eq!(prices::reference(&c.state, "KEEL-USDT"), None);
+    assert_eq!(tokens::usd_value(&c.state, &keel(), KEEL), Some(2 * USDT));
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }
 

@@ -27,7 +27,7 @@ keelchain.com/docs, and `@keelchain/sdk` on npm tracks them.
   it: **attester** (it stamps a KYC tier on its users' accounts with
   `Attest`, which the chain reads for limits) and, when it runs its own
   vault, the **vault owner**. The `Onboard client` workflow gives a testnet
-  client its roles and a starting balance of KEEL and KUSD; on mainnet the
+  client its roles and a starting balance of KEEL and USDT; on mainnet the
   same goes through a governance proposal. `GET /v1/gov/roles` shows the
   current sets.
 - **Budget, not gas.** Every account gets a free action budget to onboard
@@ -189,7 +189,7 @@ replays from the last height. Details in the `ws` reference.
 ## Pricing
 
 Everything Keel charges is paid in KEEL, bought on the chain's own order
-book with KUSD, USDT, BTC or TRX; there is no invoice.
+book with USDT, BTC or TRX; there is no invoice.
 
 - **Custodial clients** pay usage: per deposit address issued in their
   vault, per outbound batch built and broadcast, per network watched, plus

@@ -63,7 +63,11 @@ fn setup() -> (State, Actor, Actor, Vec<Actor>) {
         })
         .collect();
     let g = Genesis::devnet(CHAIN_ID_DEVNET, &[alice.addr(), bob.addr()], validators);
-    (g.build(), alice, bob, observers)
+    let mut state = g.build();
+    // These tests exercise raw vault crediting; the USDT conversion on
+    // arrival has its own tests (tests/stable.rs).
+    state.stable_conversion.params.auto_convert = 0;
+    (state, alice, bob, observers)
 }
 
 fn ctx(height: u64) -> BlockContext {
@@ -610,8 +614,8 @@ fn bitcoin_deposit_requires_valid_spv_proof() {
 #[test]
 fn large_deposits_are_held_then_released() {
     let (mut state, mut alice, _bob, mut obs) = setup();
-    // Give BTC a price: 60,000 KUSD per BTC, so 1 BTC is a large deposit.
-    state.markets.pairs.get_mut("BTC-KUSD").unwrap().last_price = Some(60_000_000_000);
+    // Give BTC a price: 60,000 USDT per BTC, so 1 BTC is a large deposit.
+    state.markets.pairs.get_mut("BTC-USDT").unwrap().last_price = Some(60_000_000_000);
     assert_eq!(
         tokens::usd_value(&state, &btc(), 100_000_000),
         Some(60_000_000_000)
@@ -626,9 +630,9 @@ fn large_deposits_are_held_then_released() {
     // deposit of a priced asset is impossible; instead price TRON.USDT.
     keel_vm::modules::markets::list_pair(
         &mut state,
-        keel_vm::modules::markets::default_pair("USDT-KUSD", tron_usdt(), Asset::new("KUSD"), 6, 6),
+        keel_vm::modules::markets::default_pair("USDT-USDT", tron_usdt(), Asset::new("USDT"), 6, 6),
     );
-    state.markets.pairs.get_mut("USDT-KUSD").unwrap().last_price = Some(1_000_000);
+    state.markets.pairs.get_mut("USDT-USDT").unwrap().last_price = Some(1_000_000);
     let before = tokens::balance(&state, alice.addr(), &tron_usdt());
     let big = 60_000_000_000u128; // 60,000 USDT
     let r = ok(
@@ -752,7 +756,7 @@ fn withdraw_locks_escrow_validates_address_and_fee() {
                 amount: 0,
             })),
             alice.act(Action::Withdraw(Withdraw {
-                asset: Asset::new("KUSD"),
+                asset: Asset::new("USDT"),
                 to: good_addr.clone(),
                 amount: 5,
             })),

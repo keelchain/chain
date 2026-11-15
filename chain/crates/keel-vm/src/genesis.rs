@@ -151,11 +151,11 @@ pub fn convert_decimals(amount: Amount, from: u32, to: u32) -> Amount {
 }
 
 impl Genesis {
-    /// A devnet genesis: KEEL + KUSD + vault assets, a KUSD book for KEEL
-    /// and for every non-dollar vault asset, funded accounts.
+    /// A devnet genesis: KEEL, the unified `USDT`, the vault assets, a USDT
+    /// book for KEEL and for every non-USDT vault asset, funded accounts.
     pub fn devnet(chain_id: u32, funded: &[Address], validators: Vec<GenesisValidator>) -> Self {
         let keel = Asset::new("KEEL");
-        let usds = Asset::new("KUSD");
+        let usds = Asset::new("USDT");
         let btc = Asset::vault(Chain::Bitcoin.as_str(), "BTC");
         let eth_usdt = Asset::vault(Chain::Ethereum.as_str(), "USDT");
         let tron_usdt = Asset::vault(Chain::Tron.as_str(), "USDT");
@@ -242,25 +242,25 @@ impl Genesis {
                 ),
             ],
             accounts,
-            // One KUSD-quoted book per asset the chain can hold (the pair
-            // symbol is `<asset symbol>-KUSD`, which is what `usd_value`
+            // One USDT-quoted book per asset the chain can hold (the pair
+            // symbol is `<asset symbol>-USDT`, which is what `usd_value`
             // looks up). The dollar stablecoins are not listed: USDT enters
-            // and leaves through the KUSD basket at par, and three chains'
+            // and leaves through the USDT basket at par, and three chains'
             // USDT share one symbol. Tick sizes follow the asset's price
             // scale so the book can quote a cent on BTC and a hundredth of
             // a cent on TRX; governance lists, delists and retunes pairs.
             pairs: vec![
-                markets::default_pair("BTC-KUSD", btc, usds.clone(), 8, 6),
-                markets::default_pair("KEEL-KUSD", keel, usds.clone(), 6, 6),
+                markets::default_pair("BTC-USDT", btc, usds.clone(), 8, 6),
+                markets::default_pair("KEEL-USDT", keel, usds.clone(), 6, 6),
                 markets::default_pair(
-                    "ETH-KUSD",
+                    "ETH-USDT",
                     Asset::vault(Chain::Ethereum.as_str(), "ETH"),
                     usds.clone(),
                     18,
                     6,
                 ),
                 markets::pair_with_tick(
-                    "TRX-KUSD",
+                    "TRX-USDT",
                     Asset::vault(Chain::Tron.as_str(), "TRX"),
                     usds.clone(),
                     6,
@@ -268,14 +268,14 @@ impl Genesis {
                     100,
                 ),
                 markets::default_pair(
-                    "BNB-KUSD",
+                    "BNB-USDT",
                     Asset::vault(Chain::Bsc.as_str(), "BNB"),
                     usds.clone(),
                     18,
                     6,
                 ),
                 markets::pair_with_tick(
-                    "SOL-KUSD",
+                    "SOL-USDT",
                     Asset::vault(Chain::Solana.as_str(), "SOL"),
                     usds.clone(),
                     9,
@@ -283,7 +283,7 @@ impl Genesis {
                     1_000,
                 ),
                 markets::pair_with_tick(
-                    "USDC-KUSD",
+                    "USDC-USDT",
                     Asset::vault(Chain::Solana.as_str(), "USDC"),
                     usds,
                     6,
@@ -296,6 +296,10 @@ impl Genesis {
             arbitrators: validators.iter().map(|v| v.address).collect(),
             attesters: validators.iter().map(|v| v.address).collect(),
             validators,
+            // One USDT: every chain's USDT backs the unified `USDT`
+            // balance, each chain capped at 100M USD so no single network
+            // can be more than its share of the reserve. USDC is not a
+            // backing asset: it stays USDC (`SOL.USDC`, its own book).
             stable_basket: vec![
                 (eth_usdt, 100_000_000_000_000),
                 (tron_usdt, 100_000_000_000_000),
@@ -490,7 +494,7 @@ impl Genesis {
             .fold(0, Amount::saturating_add);
         // Stable credited at genesis counts toward supply only when the
         // genesis declares reserves for it (a migration). A devnet genesis
-        // funds test accounts with unbacked KUSD and declares none; that
+        // funds test accounts with unbacked USDT and declares none; that
         // supply is outside the reserve invariant by construction.
         if !self.stable_reserves.is_empty() {
             assert!(

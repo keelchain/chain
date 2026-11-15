@@ -12,13 +12,13 @@ use keel_ledger::{AccountKey, Record, TxType};
 use keel_types::{Address, Asset, OrderType, Side};
 use keel_vm::{modules::liquidity, Event, VmError};
 
-const KUSD: u128 = 1_000_000;
+const USDT: u128 = 1_000_000;
 const KEEL: u128 = 1_000_000;
 const SAT: u128 = 1;
 const BTC: u128 = 100_000_000;
 
 fn px(usd: u128) -> u128 {
-    usd * KUSD
+    usd * USDT
 }
 
 /// A real fill on `pair` so the pool can mark `base` at `price`: `maker`
@@ -98,7 +98,7 @@ fn quote(
 ) -> keel_vm::Receipt {
     let valid_until = c.height + 20;
     let (r, _) = c.block(&[op.act(Action::HouseQuote(HouseQuote {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         bid,
         ask,
         valid_until,
@@ -119,37 +119,37 @@ fn first_deposit_prices_the_pool_and_mints_protocol_shares() {
     let mut c = Chain::new(state);
 
     // The pool holds KEEL without a price: nobody can be priced in fairly.
-    let r = deposit(&mut c, &mut alice, usds(), 100 * KUSD);
+    let r = deposit(&mut c, &mut alice, usds(), 100 * USDT);
     assert!(matches!(err(&r), VmError::Invalid(m) if m.contains("unpriced")));
-    set_price(&mut c, &mut alice, &mut bob, "KEEL-KUSD", KEEL, KUSD);
+    set_price(&mut c, &mut alice, &mut bob, "KEEL-USDT", KEEL, USDT);
     // Below the minimum.
-    let r = deposit(&mut c, &mut alice, usds(), 5 * KUSD);
+    let r = deposit(&mut c, &mut alice, usds(), 5 * USDT);
     assert!(matches!(err(&r), VmError::Invalid(_)));
     // An unpriced asset cannot be deposited either.
     let r = deposit(&mut c, &mut alice, btc(), BTC);
     assert!(matches!(err(&r), VmError::Invalid(m) if m.contains("no price")));
 
-    let r = deposit(&mut c, &mut alice, usds(), 100 * KUSD);
+    let r = deposit(&mut c, &mut alice, usds(), 100 * USDT);
     ok(&r);
     assert!(r.events.contains(&Event::LiquidityDeposited {
         owner: alice.addr(),
         asset: usds(),
-        amount: 100 * KUSD,
-        usd_value: 100 * KUSD,
-        shares: 100 * KUSD,
+        amount: 100 * USDT,
+        usd_value: 100 * USDT,
+        shares: 100 * USDT,
     }));
     // The protocol owns the 1,000 KEEL (worth 1,000 USD) that was there.
-    assert_eq!(shares_of(&c, Address::SYSTEM), 1_000 * KUSD);
-    assert_eq!(shares_of(&c, alice.addr()), 100 * KUSD);
+    assert_eq!(shares_of(&c, Address::SYSTEM), 1_000 * USDT);
+    assert_eq!(shares_of(&c, alice.addr()), 100 * USDT);
     let pool = &c.state.liquidity.pools[liquidity::SWAP_POOL];
-    assert_eq!(pool.total_shares, 1_100 * KUSD);
+    assert_eq!(pool.total_shares, 1_100 * USDT);
     assert_eq!(pool.hwm, liquidity::VPS_SCALE);
-    assert_eq!(sys(&c.state, &usds(), "swap_pool"), (100 * KUSD) as i128);
+    assert_eq!(sys(&c.state, &usds(), "swap_pool"), (100 * USDT) as i128);
     // A second depositor at the same mark gets shares pro rata.
-    let r = deposit(&mut c, &mut bob, usds(), 50 * KUSD);
+    let r = deposit(&mut c, &mut bob, usds(), 50 * USDT);
     ok(&r);
-    assert_eq!(shares_of(&c, bob.addr()), 50 * KUSD);
-    assert_eq!(liquidity::pool_value_usd(&c.state), Some(1_150 * KUSD));
+    assert_eq!(shares_of(&c, bob.addr()), 50 * USDT);
+    assert_eq!(liquidity::pool_value_usd(&c.state), Some(1_150 * USDT));
     audit_clean(&c.state);
 }
 
@@ -164,34 +164,34 @@ fn house_fill_grows_the_pool_and_the_epoch_takes_the_protocol_share() {
         &mut c,
         &mut alice,
         &mut bob,
-        "BTC-KUSD",
+        "BTC-USDT",
         1_000_000 * SAT,
         px(60_000),
     );
-    // A resting KEEL ask so the buyback can sweep the KUSD fee leg.
+    // A resting KEEL ask so the buyback can sweep the USDT fee leg.
     let (r, _) = c.block(&[alice.act(Action::PlaceOrder(PlaceOrder {
-        pair: "KEEL-KUSD".into(),
+        pair: "KEEL-USDT".into(),
         side: Side::Sell,
         order_type: OrderType::Limit,
-        price: Some(KUSD),
+        price: Some(USDT),
         quantity: Some(100_000 * KEEL),
         quote_budget: None,
         client_id: None,
     }))]);
     ok(&r[0]);
-    set_price(&mut c, &mut alice, &mut bob, "KEEL-KUSD", KEEL, KUSD);
+    set_price(&mut c, &mut alice, &mut bob, "KEEL-USDT", KEEL, USDT);
 
-    let r = deposit(&mut c, &mut bob, usds(), 1_000 * KUSD);
+    let r = deposit(&mut c, &mut bob, usds(), 1_000 * USDT);
     ok(&r);
-    // Pool: 1 BTC at 60,000 plus 1,000 KUSD; the protocol holds 60,000 shares.
-    assert_eq!(shares_of(&c, Address::SYSTEM), 60_000 * KUSD);
-    assert_eq!(shares_of(&c, bob.addr()), 1_000 * KUSD);
+    // Pool: 1 BTC at 60,000 plus 1,000 USDT; the protocol holds 60,000 shares.
+    assert_eq!(shares_of(&c, Address::SYSTEM), 60_000 * USDT);
+    assert_eq!(shares_of(&c, bob.addr()), 1_000 * USDT);
 
     // The house asks 61,000; bob lifts 0.1 BTC: the pool holds 0.9 BTC and
-    // 7,100 KUSD, and the last fill marks BTC at 61,000.
+    // 7,100 USDT, and the last fill marks BTC at 61,000.
     ok(&quote(&mut c, &mut alice, None, Some((px(61_000), BTC))));
     let (r, _) = c.block(&[bob.act(Action::PlaceOrder(PlaceOrder {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         side: Side::Buy,
         order_type: OrderType::Market,
         price: None,
@@ -201,10 +201,10 @@ fn house_fill_grows_the_pool_and_the_epoch_takes_the_protocol_share() {
     }))]);
     ok(&r[0]);
     assert_eq!(sys(&c.state, &btc(), "swap_pool"), 90_000_000);
-    assert_eq!(sys(&c.state, &usds(), "swap_pool"), (7_100 * KUSD) as i128);
+    assert_eq!(sys(&c.state, &usds(), "swap_pool"), (7_100 * USDT) as i128);
     let value = liquidity::pool_value_usd(&c.state).unwrap();
-    assert_eq!(value, 62_000 * KUSD);
-    let hwm_value = 61_000 * KUSD;
+    assert_eq!(value, 62_000 * USDT);
+    let hwm_value = 61_000 * USDT;
 
     let events = c.advance_to(30);
     let fee_taken = events
@@ -219,14 +219,14 @@ fn house_fill_grows_the_pool_and_the_epoch_takes_the_protocol_share() {
     assert_eq!(fee_taken.0, value - hwm_value);
     let half = (value - hwm_value) / 2;
     assert!(
-        fee_taken.1 <= half && fee_taken.1 >= half - 2 * KUSD,
+        fee_taken.1 <= half && fee_taken.1 >= half - 2 * USDT,
         "{fee_taken:?}"
     );
     // In kind: both pool assets paid their share into the split.
     assert!(sys(&c.state, &btc(), "treasury") > 0);
     assert!(sys(&c.state, &btc(), "validator_rewards") > 0);
     assert!(sys(&c.state, &btc(), "burn") > 0);
-    // The KUSD legs were swept into KEEL by the buyback in the same block,
+    // The USDT legs were swept into KEEL by the buyback in the same block,
     // after the pool's fee.
     let fee_at = events
         .iter()
@@ -235,7 +235,7 @@ fn house_fill_grows_the_pool_and_the_epoch_takes_the_protocol_share() {
     let sweep_at = events
         .iter()
         .position(|e| matches!(e, Event::TreasurySwept { .. }))
-        .expect("buyback swept the KUSD fee");
+        .expect("buyback swept the USDT fee");
     assert!(fee_at < sweep_at);
     assert!(sys(&c.state, &keel(), "treasury") > 0);
     let pool = &c.state.liquidity.pools[liquidity::SWAP_POOL];
@@ -248,7 +248,7 @@ fn house_fill_grows_the_pool_and_the_epoch_takes_the_protocol_share() {
         &mut c,
         &mut alice,
         &mut bob,
-        "BTC-KUSD",
+        "BTC-USDT",
         1_000_000 * SAT,
         px(50_000),
     );
@@ -275,25 +275,25 @@ fn withdrawal_is_pro_rata_in_kind_after_the_delay_and_crystallises_gains() {
         &mut c,
         &mut alice,
         &mut bob,
-        "BTC-KUSD",
+        "BTC-USDT",
         1_000_000 * SAT,
         px(60_000),
     );
-    ok(&deposit(&mut c, &mut bob, usds(), 6_000 * KUSD));
+    ok(&deposit(&mut c, &mut bob, usds(), 6_000 * USDT));
     // bob holds 6,000 of 66,000 shares: a tenth of the pool.
     let total = c.state.liquidity.pools[liquidity::SWAP_POOL].total_shares;
-    assert_eq!(total, 66_000 * KUSD);
+    assert_eq!(total, 66_000 * USDT);
 
     // More than held is refused.
     let (r, _) = c.block(&[bob.act(Action::WithdrawLiquidity {
-        shares: 7_000 * KUSD,
+        shares: 7_000 * USDT,
     })]);
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
 
     // A gain first: the house sells 0.1 BTC at 61,000.
     ok(&quote(&mut c, &mut alice, None, Some((px(61_000), BTC))));
     let (r, _) = c.block(&[alice.act(Action::PlaceOrder(PlaceOrder {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         side: Side::Buy,
         order_type: OrderType::Market,
         price: None,
@@ -310,7 +310,7 @@ fn withdrawal_is_pro_rata_in_kind_after_the_delay_and_crystallises_gains() {
     // is settled on the way out, then a twentieth of each asset moves to
     // his unlocking account.
     let (r, _) = c.block(&[bob.act(Action::WithdrawLiquidity {
-        shares: 3_000 * KUSD,
+        shares: 3_000 * USDT,
     })]);
     ok(&r[0]);
     let release = c.height + 3;
@@ -338,7 +338,7 @@ fn withdrawal_is_pro_rata_in_kind_after_the_delay_and_crystallises_gains() {
     // the (small) fee legs.
     assert!(unlocking_btc <= pool_btc / 22 && unlocking_btc >= pool_btc / 22 - pool_btc / 400);
     assert!(unlocking_usd <= pool_usd / 22 && unlocking_usd >= pool_usd / 22 - pool_usd / 400);
-    assert_eq!(shares_of(&c, bob.addr()), 3_000 * KUSD);
+    assert_eq!(shares_of(&c, bob.addr()), 3_000 * USDT);
     let bob_btc_before = acct(&c.state, bob.addr(), &btc(), "deposit");
 
     // Not released before the delay, released at it.
@@ -395,7 +395,7 @@ fn quote_limits_bound_the_inventory_and_the_spread() {
     // on the table: a 0.5 BTC market buy fills 0.25.
     let bob_before = acct(&c.state, bob.addr(), &btc(), "deposit");
     let (r, _) = c.block(&[bob.act(Action::PlaceOrder(PlaceOrder {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         side: Side::Buy,
         order_type: OrderType::Market,
         price: None,
@@ -420,7 +420,7 @@ fn reserve_invariant_counts_depositors_share_of_pool_vault_assets() {
         &mut c,
         &mut alice,
         &mut bob,
-        "BTC-KUSD",
+        "BTC-USDT",
         1_000_000 * SAT,
         px(60_000),
     );
@@ -493,17 +493,17 @@ fn nothing_happens_below_the_activation_height() {
         &mut c,
         &mut alice,
         &mut bob,
-        "BTC-KUSD",
+        "BTC-USDT",
         1_000_000 * SAT,
         px(60_000),
     );
     // Height 3: refused; the clamp is the pre-activation whole balance.
-    let r = deposit(&mut c, &mut alice, usds(), 100 * KUSD);
+    let r = deposit(&mut c, &mut alice, usds(), 100 * USDT);
     assert!(matches!(err(&r), VmError::Invalid(m) if m.contains("not active")));
     ok(&quote(&mut c, &mut alice, None, Some((px(61_000), BTC))));
     let bob_before = acct(&c.state, bob.addr(), &btc(), "deposit");
     let (r, _) = c.block(&[bob.act(Action::PlaceOrder(PlaceOrder {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         side: Side::Buy,
         order_type: OrderType::Market,
         price: None,
@@ -518,7 +518,7 @@ fn nothing_happens_below_the_activation_height() {
     );
     assert_eq!(c.height, 5);
     // Height 6: active.
-    let r = deposit(&mut c, &mut alice, usds(), 100 * KUSD);
+    let r = deposit(&mut c, &mut alice, usds(), 100 * USDT);
     ok(&r);
     assert!(liquidity::active(&c.state, c.height));
     audit_clean(&c.state);
@@ -587,11 +587,11 @@ fn the_pool_is_deterministic() {
             &mut c,
             &mut alice,
             &mut bob,
-            "BTC-KUSD",
+            "BTC-USDT",
             1_000_000 * SAT,
             px(60_000),
         );
-        ok(&deposit(&mut c, &mut bob, usds(), 2_000 * KUSD));
+        ok(&deposit(&mut c, &mut bob, usds(), 2_000 * USDT));
         ok(&quote(
             &mut c,
             &mut alice,
@@ -599,7 +599,7 @@ fn the_pool_is_deterministic() {
             Some((px(61_000), BTC)),
         ));
         let (r, _) = c.block(&[bob.act(Action::PlaceOrder(PlaceOrder {
-            pair: "BTC-KUSD".into(),
+            pair: "BTC-USDT".into(),
             side: Side::Buy,
             order_type: OrderType::Market,
             price: None,
@@ -610,7 +610,7 @@ fn the_pool_is_deterministic() {
         ok(&r[0]);
         c.advance_to(12);
         let (r, _) = c.block(&[bob.act(Action::WithdrawLiquidity {
-            shares: 1_000 * KUSD,
+            shares: 1_000 * USDT,
         })]);
         ok(&r[0]);
         c.advance_to(24);

@@ -161,7 +161,7 @@ interface AssetDef {
 
 const ASSETS: AssetDef[] = [
   { asset: 'KEEL', decimals: 6, kind: 'native', usd: 0.42 },
-  { asset: 'KUSD', decimals: 6, kind: 'stable', usd: 1 },
+  { asset: 'USDT', decimals: 6, kind: 'stable', usd: 1 },
   { asset: 'BTC.BTC', decimals: 8, kind: 'vault', chain: 'BTC', usd: 62_400 },
   { asset: 'ETH.ETH', decimals: 18, kind: 'vault', chain: 'ETH', usd: 3_120 },
   { asset: 'ETH.USDT', decimals: 6, kind: 'vault', chain: 'ETH', usd: 1 },
@@ -186,10 +186,10 @@ interface MarketDef {
 }
 
 const MARKETS: MarketDef[] = [
-  { pair: 'BTC-KUSD', base: 'BTC.BTC', quote: 'KUSD', price: 62_400, tick: 1, vol: 0.012 },
-  { pair: 'ETH-KUSD', base: 'ETH.ETH', quote: 'KUSD', price: 3_120, tick: 0.1, vol: 0.016 },
-  { pair: 'KEEL-KUSD', base: 'KEEL', quote: 'KUSD', price: 0.42, tick: 0.0001, vol: 0.03 },
-  { pair: 'TRX-KUSD', base: 'TRON.TRX', quote: 'KUSD', price: 0.118, tick: 0.00001, vol: 0.02 },
+  { pair: 'BTC-USDT', base: 'BTC.BTC', quote: 'USDT', price: 62_400, tick: 1, vol: 0.012 },
+  { pair: 'ETH-USDT', base: 'ETH.ETH', quote: 'USDT', price: 3_120, tick: 0.1, vol: 0.016 },
+  { pair: 'KEEL-USDT', base: 'KEEL', quote: 'USDT', price: 0.42, tick: 0.0001, vol: 0.03 },
+  { pair: 'TRX-USDT', base: 'TRON.TRX', quote: 'USDT', price: 0.118, tick: 0.00001, vol: 0.02 },
 ];
 
 const CHAINS = ['BTC', 'ETH', 'TRON', 'BSC', 'SOL'] as const;
@@ -701,16 +701,16 @@ export class MockExplorerApi implements ExplorerApi {
     const rng = new Rng(seedOf(this.seed, 'gov'));
     const dayMs = 86_400_000;
     const kinds: { title: string; description: string; kind: Record<string, unknown> | string; status: string; key?: string; value?: string }[] = [
-      { title: 'Lower taker fee to 8 bps on BTC-KUSD', description: 'Competitive pressure from centralized venues; maker stays at 0. Revenue impact modelled at -12% with expected +25% volume.', kind: { ParamChange: { key: 'taker_fee_bps', value: 8 } }, status: 'voting' },
-      { title: 'List USDC-KUSD', description: 'Adds a second stable-to-stable pair for reserve rebalancing.', kind: { ListPair: { symbol: 'USDC-KUSD', base_asset: 'ETH.USDC', quote_asset: 'KUSD', base_decimals: 6, quote_decimals: 6, tick_size: '100', lot_size: '1000000', min_notional: '1000000', max_notional: '100000000000000', taker_fee_bps: 2, maker_fee_bps: 0, enabled: true, house_maker_enabled: false } }, status: 'passed' },
+      { title: 'Lower taker fee to 8 bps on BTC-USDT', description: 'Competitive pressure from centralized venues; maker stays at 0. Revenue impact modelled at -12% with expected +25% volume.', kind: { ParamChange: { key: 'taker_fee_bps', value: 8 } }, status: 'voting' },
+      { title: 'List USDC-USDT', description: 'Adds a second stable-to-stable pair for reserve rebalancing.', kind: { ListPair: { symbol: 'USDC-USDT', base_asset: 'ETH.USDC', quote_asset: 'USDT', base_decimals: 6, quote_decimals: 6, tick_size: '100', lot_size: '1000000', min_notional: '1000000', max_notional: '100000000000000', taker_fee_bps: 2, maker_fee_bps: 0, enabled: true, house_maker_enabled: false } }, status: 'passed' },
       { title: 'Raise Bitcoin confirmation depth to 3', description: 'Post-incident hardening following the 2-block reorg observed on the observer set on 2026-08-30.', kind: { ParamChange: { key: 'confirmations_btc', value: 3 } }, status: 'executed', key: 'confirmations_btc', value: '3' },
-      { title: 'Treasury grant: explorer and SDK maintenance (Q4)', description: 'Fund 6 months of maintenance for the explorer, TS SDK and indexer from treasury.', kind: { TreasurySpend: { to: this.accounts[40], asset: 'KUSD', amount: units(48_000, 6) } }, status: 'executed' },
+      { title: 'Treasury grant: explorer and SDK maintenance (Q4)', description: 'Fund 6 months of maintenance for the explorer, TS SDK and indexer from treasury.', kind: { TreasurySpend: { to: this.accounts[40], asset: 'USDT', amount: units(48_000, 6) } }, status: 'executed' },
       { title: 'Software upgrade v0.9.0 at height 1,900,000', description: 'Alpenglow-style fast path for the consensus adapter; unupgraded nodes halt at the named height.', kind: { SoftwareUpgrade: { version: 'v0.9.0', height: 1_900_000 } }, status: 'voting' },
       { title: 'Add TRON.USDT to the stablecoin basket with a 2M cap', description: 'Diversifies reserve issuers; cap keeps Tron below 25% of the basket.', kind: { SetStableBasket: { asset: 'TRON.USDT', cap: units(2_000_000, 6), enabled: true } }, status: 'executed' },
       { title: 'Set observer set to 7 with threshold 5', description: 'Rotate in two new observer-signers next epoch.', kind: { SetObservers: { members: this.observers, threshold: 5 } }, status: 'executed' },
       { title: 'Increase proposal deposit to 2,000,000 KEEL', description: 'Spam proposals during the last voting period.', kind: { ParamChange: { key: 'proposal_deposit', value: '2000000000000' } }, status: 'rejected' },
       { title: 'Pause TRON vault for 24h', description: 'Emergency pause after observer disagreement on a TRON block; superseded by validator emergency pause.', kind: { PauseModule: { module: 'vaults.TRON', until_height: 1_700_000 } }, status: 'vetoed' },
-      { title: 'Signal: adopt KUSD as the unit of account for offers', description: 'Text proposal signalling the migration off USDT-denominated offers.', kind: 'Text', status: 'executed' },
+      { title: 'Signal: adopt USDT as the unit of account for offers', description: 'Text proposal signalling the migration off USDT-denominated offers.', kind: 'Text', status: 'executed' },
       { title: 'Raise treasury fee split to 55%', description: 'Failed at execution: would leave BTC.BTC reserves below liabilities after the pending treasury spend.', kind: { ParamChange: { key: 'fee_split_treasury_bps', value: 5500 } }, status: 'failed' },
       { title: 'Revoke the parameter admin', description: 'Hand all parameter changes to governance; the platform super admin key is revoked.', kind: { SetParamAdmin: { admin: null } }, status: 'voting' },
     ];
@@ -1091,7 +1091,7 @@ export class MockExplorerApi implements ExplorerApi {
       const k = rng.next();
       if (k < 0.45) return fail({ signer, kind: 'Delegate', module: 'staking', action: { Delegate: { validator, amount } }, events: [{ type: 'Transferred', from: signer, to: `stake:${validator.slice(0, 8)}`, asset: 'KEEL', amount }, { type: 'Delegated', owner: signer, validator, amount }], ok: true });
       if (k < 0.65) return fail({ signer, kind: 'Undelegate', module: 'staking', action: { Undelegate: { validator, amount } }, events: [{ type: 'Undelegated', owner: signer, validator, amount, at_height: height + 100_000 }], ok: true });
-      if (k < 0.85) return fail({ signer, kind: 'ClaimRewards', module: 'staking', action: 'ClaimRewards', events: [{ type: 'RewardsClaimed', owner: signer, asset: 'KUSD', amount: units(rng.int(1, 400) / 7, 6) }, { type: 'RewardsClaimed', owner: signer, asset: 'KEEL', amount: units(rng.int(1, 900), 6) }], ok: true });
+      if (k < 0.85) return fail({ signer, kind: 'ClaimRewards', module: 'staking', action: 'ClaimRewards', events: [{ type: 'RewardsClaimed', owner: signer, asset: 'USDT', amount: units(rng.int(1, 400) / 7, 6) }, { type: 'RewardsClaimed', owner: signer, asset: 'KEEL', amount: units(rng.int(1, 900), 6) }], ok: true });
       const v = rng.pick(this.validatorsList);
       return fail({ signer: v.address, kind: 'Bond', module: 'staking', action: { Bond: { role: 'Validator', amount, consensus_key: v.consensus_key } }, events: [{ type: 'Bonded', owner: v.address, role: 'validator', amount }], ok: true });
     }
@@ -1119,7 +1119,7 @@ export class MockExplorerApi implements ExplorerApi {
     const specs: ActionSpec[] = [...pinned];
     for (let i = 0; i < n; i++) specs.push(this.randomAction(rng, height));
     if (height % 10_000 === 0) {
-      specs.push({ signer: this.validatorsList[0]!.address, kind: 'EpochBoundary', module: 'staking', action: 'EpochBoundary', events: [{ type: 'EpochAdvanced', epoch: height / 10_000, validators: 8 }, { type: 'RewardsDistributed', epoch: height / 10_000, asset: 'KUSD', amount: units(12_480.5, 6) }, { type: 'RewardsDistributed', epoch: height / 10_000, asset: 'KEEL', amount: units(64_000, 6) }], ok: true });
+      specs.push({ signer: this.validatorsList[0]!.address, kind: 'EpochBoundary', module: 'staking', action: 'EpochBoundary', events: [{ type: 'EpochAdvanced', epoch: height / 10_000, validators: 8 }, { type: 'RewardsDistributed', epoch: height / 10_000, asset: 'USDT', amount: units(12_480.5, 6) }, { type: 'RewardsDistributed', epoch: height / 10_000, asset: 'KEEL', amount: units(64_000, 6) }], ok: true });
     }
     if (this.actionsCache.size > 4000) this.actionsCache.clear();
     this.actionsCache.set(height, specs);
@@ -1220,7 +1220,7 @@ export class MockExplorerApi implements ExplorerApi {
         tvl_usd: units(tvl, 6),
         assets,
         fees_24h: [
-          { asset: 'KUSD', amount: units(4_812.33, 6) },
+          { asset: 'USDT', amount: units(4_812.33, 6) },
           { asset: 'BTC.BTC', amount: units(0.0412, 8) },
           { asset: 'ETH.ETH', amount: units(0.91, 18) },
           { asset: 'KEEL', amount: units(9_120, 6) },
@@ -1231,7 +1231,7 @@ export class MockExplorerApi implements ExplorerApi {
 
   private supplyOf(a: AssetDef): string {
     if (a.asset === 'KEEL') return units(4_200_000_000, 6);
-    if (a.asset === 'KUSD') return units(7_350_000, 6);
+    if (a.asset === 'USDT') return units(7_350_000, 6);
     const v = this.vaultsList.find((x) => x.chain === a.chain);
     return v?.liabilities.find((l) => l.asset === a.asset)?.amount ?? '0';
   }

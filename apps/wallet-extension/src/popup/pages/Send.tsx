@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import { call, fetchAccount, type AccountResponse, type UiState } from '../ui';
 import type { SelfAddresses } from '../../background/wallet';
 import { decimalsOf, formatAmount } from '../../core/format';
-import { BRIDGED_ASSETS, externalName, toUnits } from '../external';
+import { BRIDGED_ASSETS, externalName, toUnits, DOLLAR_RAILS } from '../external';
 import { Address } from '../components/Address';
 import { explorerTxUrl } from '../../core/networks';
 
@@ -28,6 +28,7 @@ export function Send({ state }: { state: UiState }) {
   const [pool, setPool] = useState<Pool>('deposit');
   const [custodian, setCustodian] = useState<string | null>(null);
   const [to, setTo] = useState('');
+  const [via, setVia] = useState(DOLLAR_RAILS[0]!.via);
   const [amount, setAmount] = useState('');
   const [max, setMax] = useState(false);
   const [memo, setMemo] = useState('');
@@ -63,11 +64,16 @@ export function Send({ state }: { state: UiState }) {
       ? [...spendable.entries()].map(([a, balance]) => ({ asset: a, balance }))
       : kind === 'swap'
         ? [...(from === 'custody' ? inCustody : spendable).entries()].filter(([a]) => a.includes('.')).map(([a, balance]) => ({ asset: a, balance }))
-        : BRIDGED_ASSETS.map((b) => ({ asset: b.asset, balance: (from === 'custody' ? inCustody : spendable).get(b.asset) ?? '0' }));
+        : [
+            // The unified USDT leaves as the chosen network's USDT (one-step redeem and withdraw).
+            ...(kind === 'withdraw' && from !== 'custody' ? [{ asset: 'USDT', balance: spendable.get('USDT') ?? '0' }] : []),
+            ...BRIDGED_ASSETS.map((b) => ({ asset: b.asset, balance: (from === 'custody' ? inCustody : spendable).get(b.asset) ?? '0' })),
+          ];
   const chosen = options.some((o) => o.asset === asset) ? asset : (options[0]?.asset ?? '');
   const balance = options.find((o) => o.asset === chosen)?.balance ?? '0';
   const decimals = chosen ? decimalsOf(chosen) : 0;
-  const chain = BRIDGED_ASSETS.find((b) => b.asset === chosen)?.chain;
+  const rail = chosen === 'USDT' ? DOLLAR_RAILS.find((r) => r.via === via) : undefined;
+  const chain = rail?.chain ?? BRIDGED_ASSETS.find((b) => b.asset === chosen)?.chain;
   const own = kind === 'wallet' && (chain === 'BTC' || chain === 'TRON') ? ownAddrs?.addresses[chain] : undefined;
   const destination = kind === 'wallet' ? (own?.address ?? '') : kind === 'swap' ? (from === 'custody' ? 'the market' : 'custody') : to;
   const amountUnits = max ? balance : toUnits(amount, decimals);
@@ -82,7 +88,7 @@ export function Send({ state }: { state: UiState }) {
     setBusy(true);
     try {
       if (!amountUnits) throw new Error(`Amount must be a number with at most ${decimals} decimals.`);
-      const r = await call<{ txId: string; ok: boolean; error: string | null }>('send', { kind: sendKind, asset: chosen, to: kind === 'swap' ? '' : destination, amount: amountUnits, memo });
+      const r = await call<{ txId: string; ok: boolean; error: string | null }>('send', { kind: sendKind, asset: chosen, to: kind === 'swap' ? '' : destination, amount: amountUnits, memo, via: chosen === 'USDT' ? via : undefined });
       setResult(r.ok ? { txId: r.txId, ok: true, text: kind === 'transfer' ? 'Transferred.' : kind === 'swap' ? (from === 'custody' ? 'Moved to the market: the balance now trades on the book and in escrow.' : 'Moved back into your exchange\'s custody.') : kind === 'wallet' ? 'Withdrawal submitted. The observers pay it out in the next batch; the Wallet tab shows it when it lands.' : from === 'custody' ? 'Withdrawal submitted from your exchange\'s vault; its signer pays it out in the next batch.' : 'Withdrawal submitted. The observers pay it out in the next batch.' } : { txId: r.txId, ok: false, text: `Rejected: ${r.error ?? 'unknown'}` });
       setConfirm(false);
       setAmount('');
@@ -126,6 +132,14 @@ export function Send({ state }: { state: UiState }) {
           </p>
         )}
         {kind === 'transfer' && <input value={to} placeholder="Recipient Keel address (64 hex)" onChange={(e) => setTo(e.target.value.trim())} />}
+        {kind === 'withdraw' && chosen === 'USDT' && (
+          <>
+            <select value={via} onChange={(e) => { setVia(e.target.value); setConfirm(false); }} title="Network">
+              {DOLLAR_RAILS.map((r) => <option key={r.via} value={r.via}>{externalName(network.id, r.chain)} · paid as {r.coin}</option>)}
+            </select>
+            <p className="muted small">Your USDT on Keel is one balance, backed by USDT held on every supported network. It is paid out as {rail?.coin ?? 'USDT'} on {chain ? externalName(network.id, chain) : 'that network'} in one step. A network whose reserve is running low charges a small premium, shown before you confirm; one with plenty charges none.</p>
+          </>
+        )}
         {kind === 'withdraw' && <input value={to} placeholder={chain ? `Destination address on ${externalName(network.id, chain)}` : 'Destination address on that chain'} onChange={(e) => setTo(e.target.value.trim())} />}
         {kind === 'swap' && (
           <p className="muted small">

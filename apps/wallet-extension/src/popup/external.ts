@@ -3,6 +3,14 @@ import { externalNetworks, type ExternalChain } from '@keelchain/sdk';
 
 export const DEPOSIT_CHAINS: ExternalChain[] = ['BTC', 'TRON', 'BSC', 'SOL'];
 
+/** The networks a USDT balance can be withdrawn to. `USDT` on Keel is one
+ *  balance backed by USDT held on every one of them; a withdrawal redeems
+ *  it into that network's USDT and sends it in one step. */
+export const DOLLAR_RAILS: { via: string; chain: ExternalChain; coin: string }[] = [
+  { via: 'TRON.USDT', chain: 'TRON', coin: 'USDT' },
+  { via: 'BSC.USDT', chain: 'BSC', coin: 'USDT' },
+];
+
 /** The bridged assets a user can hold in Keel, by chain. */
 export const BRIDGED_ASSETS: { asset: string; chain: ExternalChain }[] = [
   { asset: 'BTC.BTC', chain: 'BTC' },

@@ -304,7 +304,7 @@ pub fn parse_status(v: &Value) -> Option<NodeStatus> {
 /// proposal says otherwise.
 pub const GENESIS_ASSETS: &[(&str, u32, &str)] = &[
     ("KEEL", 6, "native"),
-    ("KUSD", 6, "stable"),
+    ("USDT", 6, "stable"),
     ("BTC.BTC", 8, "vault"),
     ("ETH.ETH", 18, "vault"),
     ("ETH.USDT", 6, "vault"),

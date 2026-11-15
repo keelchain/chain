@@ -41,7 +41,7 @@ change. The other budget knobs stay in effect in both modes:
 
 | Key | Default | What it does |
 |---|---|---|
-| `budget.per_usd_filled` | 1 | Actions earned per whole USD an address fills on a KUSD-quoted pair, taker or maker. |
+| `budget.per_usd_filled` | 1 | Actions earned per whole USD an address fills on a USDT-quoted pair, taker or maker. |
 | `budget.cancel_bonus` | 100,000 | Cancels draw on `min(limit + cancel_bonus, 2 × limit)`, so a capped address can always unwind. |
 | `budget.max_per_block` | 200 | Most actions one address may put in one block (`BLOCK_CAP`). |
 | `budget.price_per_action` | 1,000 | Price of one action under `BuyBudget` (adds to `earned`). |
@@ -155,6 +155,19 @@ rotation, `recovery.fee_keel` (0) per recovery request.
 | `observer_reward_bps` | 2,500 | Share of validator rewards paid to observers before stake weighting. |
 | `slash_double_sign_bps` | 500 | Slash for a double sign (routine exists, not yet called). |
 | `slash_false_observation_bps` | 10,000 | Slash for a false observation (same). |
+
+## The dollar: conversion and rebalancing
+
+| Key | Default | Bounds | What it does |
+|---|---|---|---|
+| `stable.auto_convert` | 1 | 0 or 1 | 1: a credited USDT deposit on any network becomes the unified `USDT` balance at once; 0: deposits stay per-network and users mint by hand. |
+| `stable.rebalance_max_premium_bps` | 100 (1%) | 0..=10,000 | Premium a `WithdrawStable` pays when the chosen network's reserve share is zero, scaled linearly down to nothing at its target share; the same rate is the rebate a USDT deposit on that network earns from the pool. 0 = off. |
+
+Basket membership and the per-network caps are proposals
+(`SetStableBasket { asset, cap, enabled }`), not parameters. The target
+share of each network is its cap's share of the enabled caps; `GET
+/v1/stable` shows reserve, cap, target, share and the live premium per
+network.
 
 ## Reference prices
 

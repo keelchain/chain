@@ -1,6 +1,6 @@
 //! The epoch buyback: every payment to Keel ends up as KEEL.
 //!
-//! Fees are collected in the asset of the flow (KUSD, BTC, USDT, ...) and
+//! Fees are collected in the asset of the flow (USDT, BTC, USDT, ...) and
 //! split into the `treasury`, `validator_rewards` and `burn` system accounts.
 //! At each epoch boundary this module sweeps those balances: for each
 //! non-KEEL asset with a `KEEL-<asset>` pair it moves the balance to the

@@ -44,6 +44,8 @@ export interface OutboundObservation {
   external_tx?: string | null;
 }
 export interface Withdraw { asset: string; to: string; amount: Amount }
+/** Redeem USDT into one chain's dollar stablecoin (`via`: ETH.USDT, TRON.USDT, BSC.USDT, SOL.USDC) and withdraw it in one step. The chain's rebalancing premium for `via`, if any, is charged on top (`GET /v1/stable`). */
+export interface WithdrawStable { via: string; to: string; amount: Amount }
 export interface VaultRegistration {
   chain: Chain; epoch: Amount; public_key: number[] | Uint8Array | string; chain_code?: Hash32 | null;
   signers: Address[]; threshold: number;
@@ -145,7 +147,8 @@ export type Action =
   /** Move coins that landed at the account's deposit address on an unserved network or in an
    *  unlisted token to `to` (docs/deposits.md, "Sent on the wrong network"). */
   | { RequestRecovery: RecoveryRequest }
-  | { ObserveRecovery: RecoveryObservation };
+  | { ObserveRecovery: RecoveryObservation }
+  | { WithdrawStable: WithdrawStable };
 
 export interface RecoveryRequest {
   /** The address family (the chain whose deposit index the address is). */
@@ -215,6 +218,7 @@ const ACTION_VARIANTS = [
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "ObserveCustodySweep", "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
+  "WithdrawStable",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -407,6 +411,7 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
       w.option(b.custodian, (a) => address(w, a)); w.option(b.owner, (a) => address(w, a)); break;
     case "ObserveRecovery":
       w.u64(b.id); hash(w, b.tx_hash); w.option(b.external_tx, (s) => w.string(s)); w.u128(b.amount); w.u64(b.external_height); w.u64(b.tip_height); w.bool(b.success); break;
+    case "WithdrawStable": w.string(b.via); w.string(b.to); w.u128(b.amount); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

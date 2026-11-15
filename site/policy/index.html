@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keelchain policy and terms</title>
+<meta name="description" content="How Keelchain holds and credits deposits, why USDT on any network is one balance and what backs it, how withdrawals and the rebalancing premium work, and what the chain never does.">
+<link rel="icon" href="../keel-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../keel.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a href="../"><img src="../keel-logo-dark.svg" alt="Keelchain"></a>
+  <nav><a href="../wallet/">Keel Wallet</a><a href="https://testnet.keelchain.com/" class="hide-sm">Explorer</a><a href="../docs/governance/" class="hide-sm">Governance</a></nav>
+</div></header>
+<section><div class="wrap prose">
+  <div class="eyebrow">Keelchain</div>
+  <h1 style="font-size:2.2rem">Policy and terms</h1>
+  <p class="muted">Last updated 15 November 2026. Keelchain is a public testnet; no real funds are involved. Every rule below is enforced by the chain's code, and every number in it is a governance parameter anyone can read at <code>/v1/params</code> and that only a vote or the parameter admin can change (<a href="../docs/governance/">what governance can change</a>).</p>
+
+  <h2>Deposits</h2>
+  <p>You deposit by sending coins on a supported network (Bitcoin, Ethereum, Tron, BNB Smart Chain, Solana) to a deposit address the chain assigns to your account. The address belongs to a vault key held in threshold shares by the observers, or to your exchange's own vault when you use a custodial client. The chain credits your account after that network's confirmation depth. Coins sent on an unsupported network or in an unlisted token are not credited, and you alone can recover them through the self-service recovery flow.</p>
+
+  <h2>USDT on any network is one USDT balance</h2>
+  <p><b>When you deposit USDT on Ethereum, Tron or BNB Smart Chain into the Keelchain vault, you are credited in USDT, as one balance that does not remember which network it came from.</b> This is what every exchange does when it shows you a single USDT balance. Here it is on chain: one USDT on Keel is backed by one USDT held in the chain's reserve on one of those networks, and the reserve, its backing and the rules are visible at every block at <code>/v1/stable</code>. Converting in or out charges no fee.</p>
+  <p>What this means for you:</p>
+  <ul>
+    <li>Your balance reads <b>USDT</b>, with the USDT you know, and every market on Keel quotes in it.</li>
+    <li>You withdraw USDT by choosing the network you want to receive it on, among those the reserve holds. The chain pays you out on that network in one step.</li>
+    <li>A network's reserve can only pay out what it holds. If the network you choose is short of USDT, the withdrawal is refused on that network and you may choose another; nobody at Keelchain moves coins between networks.</li>
+    <li>Your USDT is only as good as its backing. If the issuer freezes or USDT loses its peg on one network, every USDT holder on Keel shares that loss in proportion. The reserve is capped per network (<code>SetStableBasket</code>) to bound how much any one network can be.</li>
+    <li>USDC is not USDT and is never mixed with it: USDC you deposit stays USDC, with its own market.</li>
+    <li>Coins held in an exchange's custody vault are not converted; they stay the coin you deposited and leave on the same network.</li>
+  </ul>
+  <p>Governance can turn automatic conversion off (<code>stable.auto_convert</code>), in which case USDT deposits stay tagged with their network and you convert by hand.</p>
+
+  <h2>The rebalancing premium</h2>
+  <p>Each network's reserve has a target share of the USDT Keel holds. Withdrawing through a network whose reserve is <em>below</em> its target pays a premium of up to <code>stable.rebalance_max_premium_bps</code> (1% by default) of the amount, in proportion to how far below target it is; a network at or above target charges nothing. Premiums go into a pool, and a USDT deposit that refills a short network earns the same rate back out of that pool as a rebate. The premium is shown in the wallet before you confirm, is recorded on chain, and goes to the users who rebalance the reserve, never to Keelchain.</p>
+
+  <h2>Withdrawals</h2>
+  <p>A withdrawal pays the network fee of the actual outbound transaction, passed through at cost with any overpayment refunded, plus a flat fee (<code>withdraw_flat_fee_usd_micro</code>, one dollar by default) that is waived for users of a live client. Withdrawals are batched and paid by the observers' threshold signer, or by your exchange's signer from its own vault; the chain refuses a payout whenever a vault's reserves would fall below what its users are owed.</p>
+
+  <h2>Action budget and KEEL</h2>
+  <p>There is no gas. Every address has a free action budget (<code>budget.base</code>, 500 actions by default) and may lock KEEL for more capacity. An address must hold a small amount of KEEL (<code>budget.activation_keel</code>, 0.1 KEEL by default) before its first action is accepted; the testnet faucet provides it. Governance can replace the free budget with a per-action fee in KEEL.</p>
+
+  <h2>What Keelchain never does</h2>
+  <ul>
+    <li>Freeze, seize or edit a balance. There is no such action in the protocol.</li>
+    <li>Move your coins between networks or between vault keys; a withdrawal always pays out of the vault that holds the deposit.</li>
+    <li>Hold your private keys. Keel Wallet keeps them on your device; a custodial client keeps its own.</li>
+    <li>Change a rule silently. Every parameter change is a transaction shown in the explorer under Governance.</li>
+  </ul>
+
+  <h2>Contact</h2>
+  <p><a href="mailto:support@keelchain.com">support@keelchain.com</a> for questions about these terms; <a href="../wallet/privacy.html">Keel Wallet privacy policy</a> for what the extension stores.</p>
+</div></section>
+<footer><div class="wrap"><div><p>Keelchain · <a href="../">keelchain.com</a> · <a href="../wallet/privacy.html">Privacy</a></p></div></div></footer>
+</body>
+</html>

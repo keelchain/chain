@@ -64,7 +64,7 @@ impl Default for TokensState {
         Self {
             assets: BTreeMap::new(),
             native: Asset::new("KEEL"),
-            stable: Asset::new("KUSD"),
+            stable: Asset::new("USDT"),
             vesting: BTreeMap::new(),
         }
     }
@@ -114,6 +114,16 @@ pub fn usd_value(state: &State, asset: &Asset, amount: Amount) -> Option<Amount>
         return Some(amount);
     }
     let decimals = state.tokens.decimals(asset)?;
+    // A chain's USDT is a dollar at par: it is what the unified USDT is
+    // redeemed into, one for one, so it needs no book.
+    if state.stable.basket.get(asset).is_some_and(|e| e.enabled) {
+        let sd = state.tokens.decimals(&state.tokens.stable)?;
+        return Some(if decimals >= sd {
+            amount / pow10(decimals - sd)
+        } else {
+            amount.saturating_mul(pow10(sd - decimals))
+        });
+    }
     let symbol = format!("{}-{}", asset.symbol(), state.tokens.stable);
     // The time-weighted reference when the window is on; the book's own
     // price (last fill, house mid, book mid) otherwise.

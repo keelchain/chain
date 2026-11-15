@@ -122,7 +122,7 @@ fn faucet_from_env() -> Option<keel_indexer::FaucetConfig> {
     Some(keel_indexer::FaucetConfig {
         secret,
         keel: num("KEEL_FAUCET_KEEL", 100) as u64,
-        kusd: num("KEEL_FAUCET_KUSD", 100) as u64,
+        kusd: num("KEEL_FAUCET_USDT", 100) as u64,
         cooldown_secs: num("KEEL_FAUCET_COOLDOWN_SECS", 86_400),
         ip_per_day: num("KEEL_FAUCET_IP_PER_DAY", 5),
         explorer_url: std::env::var("KEEL_EXPLORER_URL")

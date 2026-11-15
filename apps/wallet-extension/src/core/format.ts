@@ -2,7 +2,7 @@
 
 export const KNOWN_DECIMALS: Record<string, number> = {
   KEEL: 6,
-  KUSD: 6,
+  USDT: 6,
   'BTC.BTC': 8,
   'ETH.ETH': 18,
   'ETH.USDT': 6,
@@ -53,7 +53,7 @@ export function formatAsset(raw: string | number | bigint | null | undefined, as
   return `${formatAmount(raw, decimalsOf(asset))} ${asset}`;
 }
 
-/** Pair symbols are `BASE-QUOTE` (`BTC-KUSD`); `BASE/QUOTE` is accepted too. Asset ids never contain a dash. */
+/** Pair symbols are `BASE-QUOTE` (`BTC-USDT`); `BASE/QUOTE` is accepted too. Asset ids never contain a dash. */
 export function splitPair(pair: string): { base: string; quote: string } {
   if (pair.includes('/')) {
     const [base = pair, quote = ''] = pair.split('/');

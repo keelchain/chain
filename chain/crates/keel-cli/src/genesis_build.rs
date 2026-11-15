@@ -13,7 +13,7 @@
 //!   --validator <consensus hex>:<address hex>:<bond> [--validator ...] \
 //!   --observer <address> [--observer ...] --observer-threshold 2 \
 //!   --arbitrator <address> --attester <address> --param-admin <address> \
-//!   --fund <address>:KEEL:1000000000000 --fund <address>:KUSD:1000000000000 \
+//!   --fund <address>:KEEL:1000000000000 --fund <address>:USDT:1000000000000 \
 //!   --params-json infra/testnet/genesis-params.json --out genesis.json
 //! ```
 

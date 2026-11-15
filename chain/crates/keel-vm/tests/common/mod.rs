@@ -107,7 +107,7 @@ pub fn keel() -> Asset {
     Asset::new("KEEL")
 }
 pub fn usds() -> Asset {
-    Asset::new("KUSD")
+    Asset::new("USDT")
 }
 pub fn btc() -> Asset {
     Asset::new("BTC.BTC")

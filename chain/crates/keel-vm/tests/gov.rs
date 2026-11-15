@@ -506,21 +506,21 @@ fn membership_basket_pause_upgrade_and_listing_kinds() {
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
 
     let cfg =
-        keel_vm::modules::markets::default_pair("USDC-KUSD", Asset::new("ETH.USDC"), usds(), 6, 6);
+        keel_vm::modules::markets::default_pair("USDC-USDT", Asset::new("ETH.USDC"), usds(), 6, 6);
     let (_, r) = run(&mut c, &mut actors, ALICE, ProposalKind::ListPair(cfg), YES);
     ok(&r);
-    assert!(c.state.markets.pairs.contains_key("USDC-KUSD"));
+    assert!(c.state.markets.pairs.contains_key("USDC-USDT"));
     let (_, r) = run(
         &mut c,
         &mut actors,
         ALICE,
         ProposalKind::DelistPair {
-            symbol: "USDC-KUSD".into(),
+            symbol: "USDC-USDT".into(),
         },
         YES,
     );
     ok(&r);
-    assert!(!c.state.markets.pairs["USDC-KUSD"].cfg.enabled);
+    assert!(!c.state.markets.pairs["USDC-USDT"].cfg.enabled);
 
     let (_, r) = run(
         &mut c,
@@ -560,7 +560,7 @@ fn membership_basket_pause_upgrade_and_listing_kinds() {
     ok(&r);
     let alice = &mut actors[ALICE];
     let order = Action::PlaceOrder(PlaceOrder {
-        pair: "BTC-KUSD".into(),
+        pair: "BTC-USDT".into(),
         side: Side::Sell,
         order_type: OrderType::Limit,
         price: Some(60_000_000_000),

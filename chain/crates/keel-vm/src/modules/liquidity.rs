@@ -6,8 +6,8 @@
 //! anyone can fund:
 //!
 //! - `DepositLiquidity` moves an asset into `swap_pool` and mints shares on
-//!   its USD value (KUSD at par, anything else at the last fill on its
-//!   `<ASSET>-KUSD` book). The protocol itself holds shares for whatever the
+//!   its USD value (USDT at par, anything else at the last fill on its
+//!   `<ASSET>-USDT` book). The protocol itself holds shares for whatever the
 //!   pool already held when the first depositor arrived (the genesis KEEL
 //!   bucket).
 //! - House fills grow the pool by the spread they capture. At every epoch
@@ -213,7 +213,7 @@ pub fn holdings(state: &State) -> Vec<(Asset, Amount)> {
 }
 
 /// USD micro value of `amount` of `asset` for the pool: the stable at par,
-/// anything else at the last fill on `<ASSET>-KUSD`. Never the house mid,
+/// anything else at the last fill on `<ASSET>-USDT`. Never the house mid,
 /// which the house operator sets. `None` without a price.
 pub fn price_usd(state: &State, asset: &Asset, amount: Amount) -> Option<Amount> {
     if *asset == state.tokens.stable {
