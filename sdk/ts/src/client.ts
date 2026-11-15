@@ -38,7 +38,7 @@ class IndexerLookup {
   private readonly fetchImpl: typeof fetch;
   constructor(base: string, fetchImpl: typeof fetch) {
     this.base = base;
-    this.fetchImpl = fetchImpl;
+    this.fetchImpl = (...args) => fetchImpl(...args);
   }
   async tx(id: string): Promise<any> {
     const res = await this.fetchImpl(`${this.base.replace(/\/$/, "")}/v1/txs/${id}`);
@@ -56,7 +56,9 @@ export class RpcClient {
 
   constructor(base = "http://127.0.0.1:5000", fetchImpl: typeof fetch = fetch) {
     this.base = base;
-    this.fetchImpl = fetchImpl;
+    // Called as a plain function: in a browser `fetch` refuses to run as a
+    // method of this object ("Illegal invocation").
+    this.fetchImpl = (...args) => fetchImpl(...args);
   }
 
   private async req(method: string, path: string, body?: unknown): Promise<any> {

@@ -11,7 +11,8 @@ export class IndexerClient {
 
   constructor(base = "https://testnet.keelchain.com/api", fetchImpl: typeof fetch = fetch) {
     this.base = base.replace(/\/$/, "");
-    this.fetchImpl = fetchImpl;
+    // Detached: a browser's `fetch` must not run as a method of this object.
+    this.fetchImpl = (...args) => fetchImpl(...args);
   }
 
   private async get(path: string, query: Record<string, string | number | bigint | boolean | undefined> = {}): Promise<any> {
