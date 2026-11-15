@@ -1,71 +1,39 @@
 /*
- * Keel Wallet popup. Tokens first: the site's palette (deep sea, teal, gold)
- * in a light theme by default and a dark theme when the browser asks for it.
+ * Keel Wallet popup. Tokens first: the site's palette (deep sea, teal, gold),
+ * one theme, the same as keelchain.com and the explorer.
  * No external fonts: the extension's CSP keeps everything local.
  */
 :root {
-  --bg: #f3f6fb;
-  --bg-2: #e9eef7;
-  --card: #ffffff;
-  --card-2: #f7f9fd;
-  --text: #0f1b2d;
-  --text-2: #3b4a63;
-  --muted: #6b7a94;
-  --line: #dde4f0;
-  --line-2: #c9d3e4;
-  --primary: #0f2f5b;
-  --primary-2: #143a6b;
-  --primary-text: #ffffff;
-  --accent: #1aa592;
-  --accent-2: #2dd4bf;
-  --accent-bg: #e3f7f3;
-  --gold: #b8860b;
-  --gold-bg: #fff6dc;
-  --danger: #b3261e;
-  --danger-bg: #fdecea;
-  --warn: #8a5a00;
-  --warn-bg: #fff4dc;
-  --good: #1b7f3b;
-  --good-bg: #e3f6e8;
-  --bad: #b3261e;
-  --bad-bg: #fde8e6;
-  --shadow: 0 1px 2px rgba(15, 27, 45, 0.05), 0 6px 18px -10px rgba(15, 27, 45, 0.18);
+  --bg: #081c36;
+  --bg-2: #0c2444;
+  --card: #0f2f5b;
+  --card-2: #133565;
+  --text: #e8eff8;
+  --text-2: #c3d1e6;
+  --muted: #9db1cb;
+  --line: rgba(157, 177, 203, 0.2);
+  --line-2: rgba(157, 177, 203, 0.35);
+  --primary: #2dd4bf;
+  --primary-2: #1aa592;
+  --primary-text: #06192f;
+  --accent: #2dd4bf;
+  --accent-2: #5eead4;
+  --accent-bg: rgba(45, 212, 191, 0.14);
+  --gold: #f5c451;
+  --gold-bg: rgba(245, 196, 81, 0.14);
+  --danger: #ff7b72;
+  --danger-bg: rgba(255, 123, 114, 0.14);
+  --warn: #f5c451;
+  --warn-bg: rgba(245, 196, 81, 0.14);
+  --good: #4ade80;
+  --good-bg: rgba(74, 222, 128, 0.14);
+  --bad: #ff7b72;
+  --bad-bg: rgba(255, 123, 114, 0.14);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
   --radius: 14px;
   --radius-s: 9px;
-  --focus: 0 0 0 3px rgba(45, 212, 191, 0.35);
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #081c36;
-    --bg-2: #0c2444;
-    --card: #0f2f5b;
-    --card-2: #133565;
-    --text: #e8eff8;
-    --text-2: #c3d1e6;
-    --muted: #9db1cb;
-    --line: rgba(157, 177, 203, 0.2);
-    --line-2: rgba(157, 177, 203, 0.35);
-    --primary: #2dd4bf;
-    --primary-2: #1aa592;
-    --primary-text: #06192f;
-    --accent: #2dd4bf;
-    --accent-2: #5eead4;
-    --accent-bg: rgba(45, 212, 191, 0.14);
-    --gold: #f5c451;
-    --gold-bg: rgba(245, 196, 81, 0.14);
-    --danger: #ff7b72;
-    --danger-bg: rgba(255, 123, 114, 0.14);
-    --warn: #f5c451;
-    --warn-bg: rgba(245, 196, 81, 0.14);
-    --good: #4ade80;
-    --good-bg: rgba(74, 222, 128, 0.14);
-    --bad: #ff7b72;
-    --bad-bg: rgba(255, 123, 114, 0.14);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
-    --focus: 0 0 0 3px rgba(45, 212, 191, 0.4);
-    color-scheme: dark;
-  }
+  --focus: 0 0 0 3px rgba(45, 212, 191, 0.4);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }

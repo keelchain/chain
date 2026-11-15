@@ -1,100 +1,46 @@
-/* Keel Explorer — theme tokens. Light on bare :root, dark under the system
-   media query (unless a light toggle is stamped) and under data-theme=dark. */
+/* Keel Explorer — theme tokens. One theme: the site's (site/keel.css,
+   brand/README.md): deep sea backgrounds, teal accent, gold warnings, Inter. */
 
 :root {
-  color-scheme: light;
-  --bg: #f9f9f7;
-  --surface: #fcfcfb;
-  --surface-2: #f2f2ef;
-  --border: rgba(11, 11, 11, 0.1);
-  --border-strong: rgba(11, 11, 11, 0.18);
-  --grid: #e1e0d9;
-  --text: #0b0b0b;
-  --text-2: #52514e;
-  --muted: #898781;
-  --accent: #2a78d6;
-  --accent-bg: rgba(42, 120, 214, 0.1);
-  --good: #0ca30c;
-  --good-text: #006300;
-  --warn: #fab219;
-  --warn-text: #7a5200;
-  --serious: #ec835a;
-  --bad: #d03b3b;
-  --bad-text: #a82727;
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
-  --series-4: #eda100;
-  --series-5: #e87ba4;
-  --series-6: #008300;
-  --series-7: #4a3aa7;
-  --series-8: #e34948;
-  --up: #1baf7a;
-  --down: #e34948;
-  --shadow: 0 1px 2px rgba(11, 11, 11, 0.06), 0 4px 16px rgba(11, 11, 11, 0.04);
-  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  --radius: 10px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --bg: #0d0d0d;
-    --surface: #1a1a19;
-    --surface-2: #232322;
-    --border: rgba(255, 255, 255, 0.1);
-    --border-strong: rgba(255, 255, 255, 0.18);
-    --grid: #2c2c2a;
-    --text: #ffffff;
-    --text-2: #c3c2b7;
-    --muted: #898781;
-    --accent: #3987e5;
-    --accent-bg: rgba(57, 135, 229, 0.16);
-    --good-text: #3fcb3f;
-    --warn-text: #ffd06a;
-    --bad-text: #ff7a7a;
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --series-6: #008300;
-    --series-7: #9085e9;
-    --series-8: #e66767;
-    --up: #199e70;
-    --down: #e66767;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
-  }
-}
-
-:root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0d0d0d;
-  --surface: #1a1a19;
-  --surface-2: #232322;
-  --border: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.18);
-  --grid: #2c2c2a;
-  --text: #ffffff;
-  --text-2: #c3c2b7;
-  --muted: #898781;
-  --accent: #3987e5;
-  --accent-bg: rgba(57, 135, 229, 0.16);
-  --good-text: #3fcb3f;
-  --warn-text: #ffd06a;
-  --bad-text: #ff7a7a;
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --series-4: #c98500;
-  --series-5: #d55181;
-  --series-6: #008300;
-  --series-7: #9085e9;
-  --series-8: #e66767;
-  --up: #199e70;
-  --down: #e66767;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+  --sea-1: #081c36;
+  --sea-2: #0f2f5b;
+  --sea-3: #143a6b;
+  --teal: #2dd4bf;
+  --teal-dim: #1aa592;
+  --gold: #f5c451;
+  --bg: var(--sea-1);
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --border: rgba(157, 177, 203, 0.18);
+  --border-strong: rgba(157, 177, 203, 0.36);
+  --grid: rgba(157, 177, 203, 0.14);
+  --text: #e8eff8;
+  --text-2: #c3d1e6;
+  --muted: #9db1cb;
+  --accent: var(--teal);
+  --accent-bg: rgba(45, 212, 191, 0.14);
+  --good: #4ade80;
+  --good-text: #6ee7a0;
+  --warn: var(--gold);
+  --warn-text: #f8d47a;
+  --serious: #f59e6b;
+  --bad: #ff7b72;
+  --bad-text: #ff9a93;
+  --series-1: var(--teal);
+  --series-2: var(--gold);
+  --series-3: #6ea8ff;
+  --series-4: #f59e6b;
+  --series-5: #e87ba4;
+  --series-6: #4ade80;
+  --series-7: #a78bfa;
+  --series-8: #ff7b72;
+  --up: var(--teal);
+  --down: #ff7b72;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --radius: 14px;
 }
 
 * {
@@ -111,6 +57,11 @@ body,
 
 body {
   background: var(--bg);
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(45, 212, 191, 0.16), transparent 60%),
+    radial-gradient(900px 500px at -10% 30%, rgba(245, 196, 81, 0.1), transparent 60%),
+    linear-gradient(180deg, var(--sea-2) 0%, var(--sea-1) 60%);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--sans);
   font-size: 14px;
@@ -273,7 +224,7 @@ button {
 }
 .btn.primary {
   background: var(--accent);
-  color: #fff;
+  color: #05202b;
   border-color: transparent;
 }
 .btn.small {

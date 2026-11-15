@@ -1,8 +1,7 @@
-import { Component, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Component, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useHealth } from '../api/hooks';
 import { resolveSearch } from '../lib/search';
-import { applyTheme, nextTheme, readTheme, type ThemeChoice } from '../lib/theme';
 import { useHref, useNetwork } from '../network/NetworkContext';
 import { isMockEnabled } from '../network/networks';
 import { ConnectControl } from './Connect';
@@ -85,18 +84,6 @@ export function SearchBox({ autoFocus = false }: { autoFocus?: boolean }) {
   );
 }
 
-function ThemeToggle() {
-  const [choice, setChoice] = useState<ThemeChoice>(() => (typeof window === 'undefined' ? 'system' : readTheme()));
-  useEffect(() => {
-    applyTheme(choice);
-  }, [choice]);
-  const label = choice === 'system' ? 'Theme: system' : choice === 'dark' ? 'Theme: dark' : 'Theme: light';
-  return (
-    <button type="button" className="btn" onClick={() => setChoice(nextTheme(choice))} title={label} aria-label={label}>
-      {choice === 'system' ? 'Auto' : choice === 'dark' ? 'Dark' : 'Light'}
-    </button>
-  );
-}
 
 export function Header() {
   const href = useHref();
@@ -117,7 +104,6 @@ export function Header() {
         <div className="header-right">
           <SearchBox />
           <NetworkSwitcher />
-          <ThemeToggle />
           <ConnectControl />
         </div>
       </div>

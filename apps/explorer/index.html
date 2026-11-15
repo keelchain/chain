@@ -6,16 +6,9 @@
     <title>Keel Explorer</title>
     <meta name="description" content="Block explorer for the Keelchain: blocks, actions, accounts, markets, P2P offers, vaults and governance on testnet and mainnet." />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <script>
-      (function () {
-        try {
-          var theme = localStorage.getItem('keel-explorer-theme');
-          if (theme === 'light' || theme === 'dark') {
-            document.documentElement.dataset.theme = theme;
-          }
-        } catch (e) {}
-      })();
-    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
