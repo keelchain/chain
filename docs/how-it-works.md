@@ -647,7 +647,11 @@ notional, at most 500 open orders per owner. One `PlaceOrder` action locks
 funds, matches against the book, settles every fill through the ledger
 (base, quote, fee, release legs) and rests the remainder. A fill on an
 KUSD-quoted pair also earns both sides budget. Pairs are listed and
-delisted by governance; the devnet lists `BTC-KUSD`. The VM settles
+delisted by governance. Genesis lists one KUSD book for KEEL and for every
+non-dollar asset the chain holds: `BTC-KUSD`, `KEEL-KUSD`, `ETH-KUSD`,
+`TRX-KUSD`, `BNB-KUSD`, `SOL-KUSD` and `USDC-KUSD`, each with a tick suited
+to the asset's price scale. USDT has no book: it enters and leaves through
+the KUSD basket at par. The VM settles
 roughly 156,000 orders per second on one core.
 
 **House maker.** A pair may have a house party (by default the system

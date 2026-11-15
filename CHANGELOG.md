@@ -5,6 +5,11 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: genesis lists a KUSD book for every non-dollar vault asset, not
+  only BTC and KEEL: `ETH-KUSD`, `TRX-KUSD`, `BNB-KUSD`, `SOL-KUSD`,
+  `USDC-KUSD`, with ticks suited to each price scale (`pair_with_tick`).
+  USDT stays unlisted: it moves through the KUSD basket at par. Genesis
+  changes; the testnet deploy needs `reset_chain`.
 - Chain: **time-weighted reference price.** Settlement (surcharge
   thresholds, the withdrawal flat fee, budget earned per dollar, the
   liquidity pool's mark, the buyback) reads a time-weighted average of each

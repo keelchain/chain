@@ -151,7 +151,8 @@ pub fn convert_decimals(amount: Amount, from: u32, to: u32) -> Amount {
 }
 
 impl Genesis {
-    /// A devnet genesis: KEEL + KUSD + vault assets, one pair, funded accounts.
+    /// A devnet genesis: KEEL + KUSD + vault assets, a KUSD book for KEEL
+    /// and for every non-dollar vault asset, funded accounts.
     pub fn devnet(chain_id: u32, funded: &[Address], validators: Vec<GenesisValidator>) -> Self {
         let keel = Asset::new("KEEL");
         let usds = Asset::new("KUSD");
@@ -241,9 +242,54 @@ impl Genesis {
                 ),
             ],
             accounts,
+            // One KUSD-quoted book per asset the chain can hold (the pair
+            // symbol is `<asset symbol>-KUSD`, which is what `usd_value`
+            // looks up). The dollar stablecoins are not listed: USDT enters
+            // and leaves through the KUSD basket at par, and three chains'
+            // USDT share one symbol. Tick sizes follow the asset's price
+            // scale so the book can quote a cent on BTC and a hundredth of
+            // a cent on TRX; governance lists, delists and retunes pairs.
             pairs: vec![
                 markets::default_pair("BTC-KUSD", btc, usds.clone(), 8, 6),
-                markets::default_pair("KEEL-KUSD", keel, usds, 6, 6),
+                markets::default_pair("KEEL-KUSD", keel, usds.clone(), 6, 6),
+                markets::default_pair(
+                    "ETH-KUSD",
+                    Asset::vault(Chain::Ethereum.as_str(), "ETH"),
+                    usds.clone(),
+                    18,
+                    6,
+                ),
+                markets::pair_with_tick(
+                    "TRX-KUSD",
+                    Asset::vault(Chain::Tron.as_str(), "TRX"),
+                    usds.clone(),
+                    6,
+                    6,
+                    100,
+                ),
+                markets::default_pair(
+                    "BNB-KUSD",
+                    Asset::vault(Chain::Bsc.as_str(), "BNB"),
+                    usds.clone(),
+                    18,
+                    6,
+                ),
+                markets::pair_with_tick(
+                    "SOL-KUSD",
+                    Asset::vault(Chain::Solana.as_str(), "SOL"),
+                    usds.clone(),
+                    9,
+                    6,
+                    1_000,
+                ),
+                markets::pair_with_tick(
+                    "USDC-KUSD",
+                    Asset::vault(Chain::Solana.as_str(), "USDC"),
+                    usds,
+                    6,
+                    6,
+                    100,
+                ),
             ],
             observers: validators.iter().map(|v| v.address).collect(),
             observer_threshold: (validators.len() as u32 * 2).div_ceil(3).max(1),
