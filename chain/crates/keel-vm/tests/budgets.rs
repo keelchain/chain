@@ -1,10 +1,16 @@
-//! Action capacity by locking KEEL (2026-09-08, the Tron energy model).
+//! Action capacity by locking KEEL (2026-09-08, the Tron energy model),
+//! the activation floor a fresh key must meet before its budget counts
+//! (2026-11-15), and fee mode: no free budget, pay per action.
 
 mod common;
 
 use common::*;
-use keel_actions::Action;
-use keel_vm::{Event, VmError};
+use keel_actions::{Action, Transfer};
+use keel_vm::{
+    apply::check_admission,
+    modules::{budgets, limits},
+    Event, VmError,
+};
 
 const KEEL: u128 = 1_000_000;
 
@@ -205,4 +211,205 @@ fn buying_budget_costs_keel_and_adds_capacity() {
         })],
     );
     assert!(r[0].error.is_some());
+}
+
+fn transfer(to: keel_types::Address, amount: u128) -> Action {
+    Action::Transfer(Transfer {
+        to,
+        asset: keel(),
+        amount,
+        memo: None,
+    })
+}
+
+#[test]
+fn a_fresh_key_needs_the_activation_floor_before_its_budget_counts() {
+    let (state, mut alice, _bob, _v) = setup(0);
+    assert_eq!(
+        state.limits.activation_keel,
+        limits::DEFAULT_ACTIVATION_KEEL,
+        "genesis turns the floor on"
+    );
+    let mut c = Chain::new(state);
+    let mut carol = Actor::new(31);
+    let floor = c.state.limits.activation_keel;
+
+    // Nothing in hand: refused at admission and in the block, and the
+    // refusal costs the nonce like any other failure.
+    let sa = carol.act(Action::BuyBudget { actions: 1 });
+    assert!(matches!(
+        check_admission(&c.state, &sa),
+        Err(VmError::NotActivated { need }) if need == floor
+    ));
+    let (r, _) = c.block(&[sa]);
+    assert!(matches!(err(&r[0]), VmError::NotActivated { .. }));
+    assert_eq!(c.state.account_ref(&carol.addr()).expect("carol").nonce, 1);
+    assert!(!budgets::is_activated(&c.state, carol.addr()));
+
+    // Just under the floor is still refused; the floor itself is enough.
+    let (r, _) = c.block(&[alice.act(transfer(carol.addr(), floor - 1))]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[carol.act(Action::BuyBudget { actions: 1 })]);
+    assert!(matches!(err(&r[0]), VmError::NotActivated { .. }));
+    let (r, _) = c.block(&[alice.act(transfer(carol.addr(), 1))]);
+    ok(&r[0]);
+    assert!(budgets::is_activated(&c.state, carol.addr()));
+    let (r, _) = c.block(&[carol.act(Action::BuyBudget { actions: 1 })]);
+    ok(&r[0]);
+
+    // Locked KEEL counts towards the floor: lock everything, still active.
+    let (r, _) = c.block(&[alice.act(transfer(carol.addr(), 5 * KEEL))]);
+    ok(&r[0]);
+    let spendable = acct(&c.state, carol.addr(), &keel(), "deposit") as u128;
+    let (r, _) = c.block_at_secs(
+        2_000,
+        &[carol.act(Action::LockBudget { amount: spendable })],
+    );
+    ok(&r[0]);
+    assert_eq!(acct(&c.state, carol.addr(), &keel(), "deposit"), 0);
+    assert!(budgets::is_activated(&c.state, carol.addr()));
+
+    // A cancel never needs the floor (it only unwinds), so a key that
+    // spent its KEEL can still cancel: here it fails on the missing order,
+    // not on activation.
+    let mut dave = Actor::new(32);
+    let (r, _) = c.block(&[dave.act(Action::CancelOrder {
+        order_id: keel_types::OrderId(7),
+    })]);
+    assert!(matches!(err(&r[0]), VmError::NotFound(_)));
+
+    // The floor is a governance parameter; 0 turns it off.
+    c.state.gov.param_admin = Some(alice.addr());
+    let (r, _) = c.block(&[alice.act(Action::SetParam {
+        key: "budget.activation_keel".into(),
+        value: 0,
+    })]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[dave.act(Action::BuyBudget { actions: 1 })]);
+    assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
+    assert!(c.state.ledger.audit().mismatches.is_empty());
+}
+
+#[test]
+fn fee_mode_charges_keel_per_action_once_the_free_budget_is_zero() {
+    let (mut state, mut alice, mut bob, _v) = setup(0);
+    state.gov.param_admin = Some(alice.addr());
+    let mut c = Chain::new(state);
+    let fee = c.state.limits.action_fee_keel;
+    assert_eq!(fee, limits::DEFAULT_ACTION_FEE_KEEL);
+    assert!(!limits::fee_mode(&c.state));
+
+    // Governance removes the free budget: fee mode.
+    let (r, _) = c.block(&[alice.act(Action::SetParam {
+        key: "budget.base".into(),
+        value: 0,
+    })]);
+    ok(&r[0]);
+    assert!(limits::fee_mode(&c.state));
+
+    // bob has no earned capacity: every action now costs the fee, routed
+    // through the split, and shows as an event ahead of the action's own.
+    let before = acct(&c.state, bob.addr(), &keel(), "deposit");
+    let treasury_before = acct(&c.state, keel_types::Address::SYSTEM, &keel(), "treasury");
+    let sa = bob.act(transfer(alice.addr(), KEEL));
+    check_admission(&c.state, &sa).expect("admitted in fee mode");
+    let (r, _) = c.block(&[sa]);
+    ok(&r[0]);
+    assert_eq!(
+        r[0].events[0],
+        Event::ActionFeePaid {
+            owner: bob.addr(),
+            amount: fee
+        }
+    );
+    assert_eq!(
+        acct(&c.state, bob.addr(), &keel(), "deposit"),
+        before - KEEL as i128 - fee as i128
+    );
+    assert!(acct(&c.state, keel_types::Address::SYSTEM, &keel(), "treasury") > treasury_before);
+
+    // A refused action still paid: the fee is taken before the module runs.
+    let before = acct(&c.state, bob.addr(), &keel(), "deposit");
+    let (r, _) = c.block(&[bob.act(Action::CancelOrder {
+        order_id: keel_types::OrderId(99),
+    })]);
+    assert!(matches!(err(&r[0]), VmError::NotFound(_)));
+    assert_eq!(
+        acct(&c.state, bob.addr(), &keel(), "deposit"),
+        before - fee as i128
+    );
+
+    // Earned capacity is spent first; the fee only when it is gone.
+    c.state.account(bob.addr()).budget.purchase(1);
+    let before = acct(&c.state, bob.addr(), &keel(), "deposit");
+    let (r, _) = c.block(&[bob.act(transfer(alice.addr(), 1))]);
+    ok(&r[0]);
+    assert!(!r[0]
+        .events
+        .iter()
+        .any(|e| matches!(e, Event::ActionFeePaid { .. })));
+    assert_eq!(acct(&c.state, bob.addr(), &keel(), "deposit"), before - 1);
+
+    // The fee is a governance parameter; a key that cannot pay it is
+    // refused as exhausted, at admission and in the block.
+    let (r, _) = c.block(&[alice.act(Action::SetParam {
+        key: "budget.action_fee_keel".into(),
+        value: 10 * KEEL,
+    })]);
+    ok(&r[0]);
+    let mut poor = Actor::new(41);
+    let (r, _) = c.block(&[alice.act(transfer(poor.addr(), c.state.limits.activation_keel))]);
+    ok(&r[0]);
+    let sa = poor.act(transfer(alice.addr(), 1));
+    assert!(matches!(
+        check_admission(&c.state, &sa),
+        Err(VmError::BudgetExhausted)
+    ));
+    let (r, _) = c.block(&[sa]);
+    assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
+    // A fee of zero in fee mode means: earned or locked capacity only.
+    let (r, _) = c.block(&[alice.act(Action::SetParam {
+        key: "budget.action_fee_keel".into(),
+        value: 0,
+    })]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[poor.act(transfer(alice.addr(), 1))]);
+    assert!(matches!(err(&r[0]), VmError::BudgetExhausted));
+    assert!(c.state.ledger.audit().mismatches.is_empty());
+}
+
+#[test]
+fn every_former_constant_is_a_governance_parameter() {
+    let (mut state, mut alice, _bob, _v) = setup(0);
+    state.gov.param_admin = Some(alice.addr());
+    let mut c = Chain::new(state);
+    for key in limits::PARAM_KEYS {
+        let before = limits::get_param(&c.state, key).expect(key);
+        let value = before + 1;
+        let (r, _) = c.block(&[alice.act(Action::SetParam {
+            key: key.to_string(),
+            value,
+        })]);
+        ok(&r[0]);
+        assert_eq!(limits::get_param(&c.state, key), Some(value), "{key}");
+    }
+    // Out-of-range values are refused, so a cap of zero cannot lock the
+    // chain out of offers or proposals.
+    let (r, _) = c.block(&[alice.act(Action::SetParam {
+        key: "gov.max_title_chars".into(),
+        value: 0,
+    })]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    // The proposal text limit is applied from the parameter.
+    let (r, _) = c.block(&[alice.act(Action::SetParam {
+        key: "gov.max_title_chars".into(),
+        value: 3,
+    })]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[alice.act(Action::Propose(keel_actions::Proposal {
+        title: "four".into(),
+        description: String::new(),
+        kind: keel_actions::ProposalKind::Text,
+    }))]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("length")));
 }

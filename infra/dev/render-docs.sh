@@ -25,6 +25,7 @@ PAGES=(
   "connect-keel-wallet|docs/connect-keel-wallet.md|Connect Keel Wallet|Adding a Connect button to a site or app: the provider, login challenges, signing, session keys, mobile."
   "explorer-api|docs/explorer-api.md|Explorer API|Alias of the read API page."
   "how-it-works|docs/how-it-works.md|How the chain works|Consensus, issuance, governance, fees, wallets, custody, markets, P2P trading and the resilience scenarios."
+  "governance|docs/governance.md|What governance can change|Every parameter a vote or the parameter admin can move, with defaults and bounds; the fee switch and the activation floor; what is fixed by the protocol."
   "tokenomics|docs/tokenomics.md|Tokenomics|KEEL supply, allocation and the fee model."
   "testnet|docs/testnet.md|The public testnet|What runs where, how to fund an account and how clients are onboarded."
   "lightning|docs/lightning.md|Lightning|Bitcoin Lightning deposits and payouts through observer pools."

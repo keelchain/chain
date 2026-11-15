@@ -1,8 +1,10 @@
 //! Fresh-pool rotation for client-owned custody vaults (docs/models.md,
-//! "Rotating to a fresh pool"). A custodial client that is labelled,
-//! sanctioned or rebranding moves its whole platform to a new vault key of
-//! its own: every account gets new deposit addresses on the bridged chain,
-//! while its Keel accounts, balances and integration stay as they are.
+//! "Rotating to a fresh pool"). A custodial client rotates its vault key
+//! for security (a scheduled rekey, a signer migration, a suspected
+//! compromise, a change of custody provider): the whole platform moves to
+//! a new vault key of its own, every account gets new deposit addresses on
+//! the bridged chain, while its Keel accounts, balances and integration
+//! stay as they are.
 //!
 //! A pool is the client's vault on one chain; a *generation* is one key of
 //! it. Exactly one generation is `Active` (the key `custody.vaults` points

@@ -23,7 +23,7 @@ use crate::state::State;
 use borsh::BorshDeserialize;
 
 /// Current snapshot schema.
-pub const SCHEMA: u32 = 8;
+pub const SCHEMA: u32 = 9;
 
 /// Magic prefix of a versioned snapshot.
 pub const MAGIC: &[u8; 4] = b"KEEL";
@@ -57,7 +57,8 @@ pub fn upgrade(schema: u32, payload: &[u8]) -> Option<State> {
         // schema 5 appended `State.pools`, schema 6 appended
         // `State.liquidity` and new fields inside `clients`, schema 7 added
         // `external_tx` inside `vaults`/`custody` (attestations, outbounds),
-        // schema 8 appended `State.recovery`.
+        // schema 8 appended `State.recovery`, schema 9 appended
+        // `State.limits`.
         0 | 1 => StateV1::try_from_slice(payload).ok().map(State::from),
         2 => StateV2::try_from_slice(payload).ok().map(State::from),
         3 => StateV3::try_from_slice(payload).ok().map(State::from),
@@ -65,7 +66,8 @@ pub fn upgrade(schema: u32, payload: &[u8]) -> Option<State> {
         5 => StateV5::try_from_slice(payload).ok().map(State::from),
         6 => StateV6::try_from_slice(payload).ok().map(State::from),
         7 => StateV7::try_from_slice(payload).ok().map(State::from),
-        8 => State::try_from_slice(payload).ok(),
+        8 => StateV8::try_from_slice(payload).ok().map(State::from),
+        9 => State::try_from_slice(payload).ok(),
         _ => None,
     }
 }
@@ -243,6 +245,7 @@ impl From<StateV5> for State {
             pools: v.pools,
             liquidity: Default::default(),
             recovery: Default::default(),
+            limits: crate::modules::limits::LimitsState::migrated(),
         }
     }
 }
@@ -277,6 +280,7 @@ impl From<StateV4> for State {
             pools: Default::default(),
             liquidity: Default::default(),
             recovery: Default::default(),
+            limits: crate::modules::limits::LimitsState::migrated(),
         }
     }
 }
@@ -311,6 +315,7 @@ impl From<StateV3> for State {
             pools: Default::default(),
             liquidity: Default::default(),
             recovery: Default::default(),
+            limits: crate::modules::limits::LimitsState::migrated(),
         }
     }
 }
@@ -345,6 +350,7 @@ impl From<StateV2> for State {
             pools: Default::default(),
             liquidity: Default::default(),
             recovery: Default::default(),
+            limits: crate::modules::limits::LimitsState::migrated(),
         }
     }
 }
@@ -379,6 +385,7 @@ impl From<StateV1> for State {
             pools: Default::default(),
             liquidity: Default::default(),
             recovery: Default::default(),
+            limits: crate::modules::limits::LimitsState::migrated(),
         }
     }
 }
@@ -445,6 +452,7 @@ impl From<StateV6> for State {
             pools: v.pools,
             liquidity: v.liquidity,
             recovery: Default::default(),
+            limits: crate::modules::limits::LimitsState::migrated(),
         }
     }
 }
@@ -636,7 +644,7 @@ impl From<CustodyStateV6> for crate::modules::custody::CustodyState {
     }
 }
 
-/// Schema 7: everything of the current layout but `recovery`.
+/// Schema 7: schema 8 without `recovery`.
 #[derive(BorshDeserialize)]
 pub struct StateV7 {
     pub chain_id: u32,
@@ -697,6 +705,76 @@ impl From<StateV7> for State {
             pools: v.pools,
             liquidity: v.liquidity,
             recovery: Default::default(),
+            limits: crate::modules::limits::LimitsState::migrated(),
+        }
+    }
+}
+
+/// Schema 8: everything of the current layout but `limits`.
+#[derive(BorshDeserialize)]
+pub struct StateV8 {
+    pub chain_id: u32,
+    pub height: u64,
+    pub timestamp: u64,
+    pub params: crate::params::Params,
+    pub accounts: std::collections::BTreeMap<keel_types::Address, crate::state::AccountMeta>,
+    pub ledger: keel_ledger::Ledger,
+    pub tokens: crate::modules::tokens::TokensState,
+    pub markets: crate::modules::markets::MarketsState,
+    pub p2p: crate::modules::p2p::P2pState,
+    pub disputes: crate::modules::disputes::DisputesState,
+    pub vaults: crate::modules::vaults::VaultsState,
+    pub stable: crate::modules::stable::StableState,
+    pub staking: crate::modules::staking::StakingState,
+    pub gov: crate::modules::gov::GovState,
+    pub attest: crate::modules::attest::AttestState,
+    pub budgets: crate::modules::budgets::BudgetsState,
+    pub sessions: crate::modules::sessions::SessionsState,
+    pub lightning: crate::modules::lightning::LightningState,
+    pub paused: std::collections::BTreeMap<String, u64>,
+    pub gov_house_operator: Option<keel_types::Address>,
+    pub last_hash: keel_crypto::Hash32,
+    pub clients: crate::modules::clients::ClientsState,
+    pub custody: crate::modules::custody::CustodyState,
+    pub arbitration: crate::modules::arbitration::ArbitrationState,
+    pub pools: crate::modules::pools::PoolsState,
+    pub liquidity: crate::modules::liquidity::LiquidityState,
+    pub recovery: crate::modules::recovery::RecoveryState,
+}
+
+impl From<StateV8> for State {
+    fn from(v: StateV8) -> Self {
+        State {
+            chain_id: v.chain_id,
+            height: v.height,
+            timestamp: v.timestamp,
+            params: v.params,
+            accounts: v.accounts,
+            ledger: v.ledger,
+            tokens: v.tokens,
+            markets: v.markets,
+            p2p: v.p2p,
+            disputes: v.disputes,
+            vaults: v.vaults,
+            stable: v.stable,
+            staking: v.staking,
+            gov: v.gov,
+            attest: v.attest,
+            budgets: v.budgets,
+            sessions: v.sessions,
+            lightning: v.lightning,
+            paused: v.paused,
+            gov_house_operator: v.gov_house_operator,
+            last_hash: v.last_hash,
+            clients: v.clients,
+            custody: v.custody,
+            arbitration: v.arbitration,
+            pools: v.pools,
+            liquidity: v.liquidity,
+            recovery: v.recovery,
+            // The behaviour the chain had: no activation floor until
+            // governance sets `budget.activation_keel`.
+            limits: crate::modules::limits::LimitsState::migrated(),
         }
     }
 }

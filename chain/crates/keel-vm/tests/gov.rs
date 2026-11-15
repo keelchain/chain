@@ -107,7 +107,28 @@ fn param_change_lifecycle_with_deposit_timelock_and_events() {
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
 
     // Voting: weight is bonded KEEL; unbonded accounts cannot vote; re-vote replaces.
+    // The stranger holds the activation dust (so the refusal is about
+    // voting, not about activation) but no bond.
     let mut stranger = Actor::new(33);
+    c.state
+        .ledger
+        .post(
+            "fund:stranger",
+            keel_ledger::TxType::SystemFundsDeposit,
+            None,
+            None,
+            vec![
+                keel_ledger::Record::debit(
+                    keel_ledger::AccountKey::new(Address::SYSTEM, keel(), "issuance").unwrap(),
+                    c.state.limits.activation_keel,
+                ),
+                keel_ledger::Record::credit(
+                    keel_ledger::AccountKey::new(stranger.addr(), keel(), "deposit").unwrap(),
+                    c.state.limits.activation_keel,
+                ),
+            ],
+        )
+        .unwrap();
     let (r, _) = c.block(&[
         alice.act(Action::Vote {
             proposal_id: 0,

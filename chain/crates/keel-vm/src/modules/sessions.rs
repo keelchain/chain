@@ -14,8 +14,8 @@ use keel_types::Address;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const MAX_SESSIONS_PER_PRINCIPAL: usize = 16;
-pub const MAX_SESSION_SECS: u64 = 30 * 86_400;
+// The caps (`sessions.max_per_principal`, `sessions.max_secs`) are
+// governance parameters in `state.limits`.
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Session {
@@ -71,7 +71,7 @@ pub fn authorize(
         return Err(VmError::Invalid("unknown session scope bits".into()));
     }
     let now = ctx.seconds();
-    if expires_at <= now || expires_at > now.saturating_add(MAX_SESSION_SECS) {
+    if expires_at <= now || expires_at > now.saturating_add(state.limits.max_session_secs) {
         return Err(VmError::Invalid(
             "expires_at must be in the future, at most 30 days ahead".into(),
         ));
@@ -97,7 +97,9 @@ pub fn authorize(
         .values()
         .filter(|s| s.principal == principal && s.expires_at > now)
         .count();
-    if live >= MAX_SESSIONS_PER_PRINCIPAL && !state.sessions.by_key.contains_key(&key) {
+    if live >= state.limits.max_sessions_per_principal as usize
+        && !state.sessions.by_key.contains_key(&key)
+    {
         return Err(VmError::Invalid("too many live session keys".into()));
     }
     state.sessions.by_key.insert(

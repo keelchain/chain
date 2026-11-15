@@ -25,9 +25,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{attest, fees, tokens};
 
-pub const MAX_MARGIN_BPS: i32 = 5_000;
-pub const MIN_PAYMENT_WINDOW_SECS: u32 = 300;
-pub const MAX_TERMS_CHARS: usize = 2_000;
+// The offer caps (`p2p.max_margin_bps`, `p2p.min_payment_window_secs`,
+// `p2p.max_terms_chars`) are governance parameters in `state.limits`.
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Offer {
@@ -157,13 +156,13 @@ fn validate_spec(state: &State, owner: Address, spec: &OfferSpec) -> Result<(), 
     if spec.min_amount > spec.max_amount {
         return Err(VmError::Invalid("min_amount above max_amount".into()));
     }
-    if spec.payment_window_secs < MIN_PAYMENT_WINDOW_SECS {
+    if spec.payment_window_secs < state.limits.min_payment_window_secs {
         return Err(VmError::Invalid("payment window too short".into()));
     }
-    if spec.margin_bps.abs() > MAX_MARGIN_BPS {
+    if spec.margin_bps.unsigned_abs() > state.limits.max_margin_bps {
         return Err(VmError::Invalid("margin out of bounds".into()));
     }
-    if spec.terms.chars().count() > MAX_TERMS_CHARS {
+    if spec.terms.chars().count() > state.limits.max_terms_chars as usize {
         return Err(VmError::Invalid("terms too long".into()));
     }
     if spec.fiat_currency.is_empty() || spec.payment_method.is_empty() {

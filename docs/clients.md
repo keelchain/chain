@@ -30,10 +30,19 @@ keelchain.com/docs, and `@keelchain/sdk` on npm tracks them.
   client its roles and a starting balance of KEEL and KUSD; on mainnet the
   same goes through a governance proposal. `GET /v1/gov/roles` shows the
   current sets.
-- **Budget, not gas.** Every account gets a free daily action budget; an
-  operator account that signs at volume locks KEEL for capacity
-  (`LockBudget`) or buys it (`BuyBudget`). `GET /v1/accounts/{addr}` shows
-  the budget left.
+- **Budget, not gas.** Every account gets a free action budget
+  (`budget.base`, 10,000 actions by default, for life); an operator account
+  that signs at volume locks KEEL for capacity (`LockBudget`) or buys it
+  (`BuyBudget`). `GET /v1/accounts/{addr}` shows the budget left and whether
+  the account is `activated`.
+- **Activation dust.** An account's budget counts only once it holds
+  `budget.activation_keel` KEEL (0.1 KEEL by default; `GET /v1/params`),
+  which keeps the free budget from being a free budget per keypair. Send
+  that amount to each account you attest, in the same onboarding step as
+  `Attest`; until then every action from it but a cancel is refused with
+  `NOT_ACTIVATED`. Governance can change the floor, the budget, and can
+  switch the chain to a per-action fee (`docs/governance.md`); read the
+  three values at startup rather than hard-coding them.
 
 ## The per-network switch
 
@@ -94,7 +103,8 @@ what your reconciliation ingests. Rebalance the floats with an ordinary
 `WithdrawCustody` to your own network deposit address, or a `Withdraw` to
 your vault's index-0 address.
 
-To move your platform to a fresh vault (a labelled pool, a rebrand), start a
+To rotate your vault key for security (a scheduled rekey, a signer
+migration, a suspected compromise, a new custody provider), start a
 second signer for a new key and `RotateCustodyVault` (`models.md`,
 "Rotating to a fresh pool", and "What changes and what does not" there
 for the two meanings of "address": your Keel accounts, revenue and treasury

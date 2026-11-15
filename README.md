@@ -55,6 +55,7 @@ the box. Secrets and settings live in the `testnet` GitHub environment;
 - `docs/models.md`: the two ways to run an exchange on Keel, and where funds sit in each.
 - `docs/clients.md`: the integration contract for a client: roles, the per-network switch, reconciliation.
 - `docs/how-it-works.md`: the chain end to end, module by module.
+- `docs/governance.md`: every parameter governance can change, with defaults and bounds, and what it cannot.
 - `docs/whitepaper.md` and `docs/tokenomics.md`: why, and the KEEL model.
 - `docs/deposits.md`: funding an account with Bitcoin or Tron, and withdrawing.
 - `docs/explorer-api.md`: the read API third parties build on.

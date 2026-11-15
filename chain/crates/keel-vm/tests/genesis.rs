@@ -118,10 +118,19 @@ fn awards_above_the_community_bucket_are_refused() {
 
 #[test]
 fn super_admin_sets_params_directly_until_governance_revokes() {
-    let (g, admin_key) = genesis_with_allocation(vec![], 0);
-    let mut c = Chain::new(g.build());
+    let (mut g, admin_key) = genesis_with_allocation(vec![], 0);
     let mut admin = Actor::from_keypair(admin_key);
     let mut bob = Actor::new(2);
+    // The admin and bob are ordinary accounts: they need the activation
+    // dust before any action of theirs is looked at.
+    for who in [admin.addr(), bob.addr()] {
+        g.accounts.push(keel_vm::GenesisAccount {
+            address: who,
+            asset: keel(),
+            amount: 1_000_000,
+        });
+    }
+    let mut c = Chain::new(g.build());
     assert_eq!(c.state.params.taker_fee_bps, 10);
     let (r, _) = c.block(&[admin.act(Action::SetParam {
         key: "taker_fee_bps".into(),

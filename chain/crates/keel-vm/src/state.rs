@@ -62,6 +62,10 @@ pub struct State {
     /// Self-service recovery of coins sent to a deposit address on a
     /// network or in a token the chain does not credit (schema 8).
     pub recovery: recovery::RecoveryState,
+    /// Governance-owned limits that were constants: the budget activation
+    /// floor and fee, session, offer, dispute, proposal and memo caps
+    /// (schema 9).
+    pub limits: limits::LimitsState,
 }
 
 impl State {

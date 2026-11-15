@@ -257,6 +257,8 @@ tx_types! {
     LiquidityWithdraw => "liquidity_withdraw",
     LiquidityRelease => "liquidity_release",
     LiquidityFee => "liquidity_fee",
+    // fee mode (budget.base = 0): what an action costs
+    ActionFee => "action_fee",
 }
 
 #[cfg(test)]

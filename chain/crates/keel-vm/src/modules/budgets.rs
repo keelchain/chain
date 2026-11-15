@@ -60,6 +60,65 @@ pub struct BudgetsState {
     pub unlocking: BTreeMap<u64, Vec<(Address, Amount)>>,
 }
 
+/// KEEL that counts towards activation: everything the address owns in
+/// KEEL that is not someone else's claim: spendable, locked for capacity,
+/// unlocking, bonded in any role, and the refundable offer and proposal
+/// deposits. Trade escrow is excluded (it is the counterparty's on
+/// release). A bonded validator, observer or arbitrator is therefore
+/// always activated, as is a client with a live offer.
+pub fn activation_balance(state: &State, owner: Address) -> Amount {
+    let native = &state.tokens.native;
+    let read = |key: AccountKey| state.ledger.balance(&key).max(0) as Amount;
+    let restricted = |t: &str| {
+        AccountKey::new(owner, native.clone(), t)
+            .map(&read)
+            .unwrap_or(0)
+    };
+    [
+        read(tokens::deposit_key(owner, native)),
+        read(lock_key(owner, native)),
+        read(unlocking_key(owner, native)),
+        read(super::staking::bond_key(
+            owner,
+            native,
+            keel_actions::Role::Validator,
+        )),
+        read(super::staking::bond_key(
+            owner,
+            native,
+            keel_actions::Role::Observer,
+        )),
+        read(super::staking::bond_key(
+            owner,
+            native,
+            keel_actions::Role::Arbitrator,
+        )),
+        restricted("offer_deposit"),
+        restricted("proposal_deposit"),
+    ]
+    .into_iter()
+    .fold(0, Amount::saturating_add)
+}
+
+/// Whether `owner` may spend budget: it holds at least
+/// `budget.activation_keel` (`state.limits`), or the floor is off.
+pub fn is_activated(state: &State, owner: Address) -> bool {
+    state.limits.activation_keel == 0
+        || activation_balance(state, owner) >= state.limits.activation_keel
+}
+
+/// Refuse a budget-spending action from an address below the activation
+/// floor.
+pub fn require_activated(state: &State, owner: Address) -> Result<(), VmError> {
+    if is_activated(state, owner) {
+        Ok(())
+    } else {
+        Err(VmError::NotActivated {
+            need: state.limits.activation_keel,
+        })
+    }
+}
+
 fn lock_key(owner: Address, native: &keel_types::Asset) -> AccountKey {
     AccountKey::new(owner, native.clone(), "budget_lock").expect("catalog type")
 }

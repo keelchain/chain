@@ -586,8 +586,28 @@ fn dispute_opens_after_grace_and_non_arbitrators_cannot_rule() {
     assert_eq!(state.p2p.trades[&0].status, TradeStatus::Disputed);
     let escrowed = escrow(&state, alice.addr(), &btc());
     assert!(escrowed > 0);
-    // Evidence from both parties, not from a stranger.
+    // Evidence from both parties, not from a stranger (who holds the
+    // activation dust, so the refusal is about the trade, not the floor).
     let mut carol = Actor::new(13);
+    state
+        .ledger
+        .post(
+            "fund:carol",
+            keel_ledger::TxType::SystemFundsDeposit,
+            None,
+            None,
+            vec![
+                keel_ledger::Record::debit(
+                    AccountKey::new(Address::SYSTEM, keel(), "issuance").unwrap(),
+                    state.limits.activation_keel,
+                ),
+                keel_ledger::Record::credit(
+                    AccountKey::new(carol.addr(), keel(), "deposit").unwrap(),
+                    state.limits.activation_keel,
+                ),
+            ],
+        )
+        .unwrap();
     let (r, _) = apply_block(
         &mut state,
         &at(7, 31 + grace),

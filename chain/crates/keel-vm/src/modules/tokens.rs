@@ -140,7 +140,10 @@ pub fn apply_transfer(
             "cannot transfer to the system address".into(),
         ));
     }
-    if t.memo.as_ref().is_some_and(|m| m.len() > 256) {
+    if t.memo
+        .as_ref()
+        .is_some_and(|m| m.len() > state.limits.max_memo_bytes as usize)
+    {
         return Err(VmError::Invalid("memo too long".into()));
     }
     let _ = ctx;

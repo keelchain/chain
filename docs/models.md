@@ -89,9 +89,11 @@ when the client's float on the far side is short.
 
 ### Rotating to a fresh pool
 
-A custodial client that is labelled, sanctioned or rebranding can move its
-whole platform to a fresh vault on a chain without touching a single Keel
-account: `RotateCustodyVault { chain, public_key, chain_code, signer_url,
+A custodial client rotates its vault key on a chain for security: a
+scheduled rekey, a signer migration (a new `keel-tss` set, a new KMS), a
+suspected compromise of the old key or of its signer, or a change of
+custody provider. The rotation moves its whole platform to a fresh vault
+on that chain without touching a single Keel account: `RotateCustodyVault { chain, public_key, chain_code, signer_url,
 sweep: false, activate_at }`. The client makes the new key on a signer of
 its own (a second `keel-tss serve`, or its KMS behind a second `POST /sign`
 URL; the old signer keeps serving the old key), and registers its public
@@ -122,11 +124,14 @@ points at it and through nothing else. The reasons:
   of addresses and one set of coins. What one generation holds is exactly
   what its own deposits brought minus its own payouts; the accounting of
   each key can be audited on the external chain on its own.
-- *No link on the external chain.* The usual reason to rotate is that the
-  old addresses are a problem (a label, a sanction, a leaked list). A
-  transfer from the old key to the new one would put the new addresses
-  one hop from the old ones for every chain-analysis tool. Draining by
-  payouts to users' own destinations leaves no such hop.
+- *No link on the external chain, and no exposure of the new key to the
+  old.* A security rotation assumes the old key, its signer or its address
+  list may be compromised. A transfer from the old key to the new one would
+  make the new key's addresses depend on a transaction built and signed by
+  the very signer being retired, and would put the new addresses one hop
+  from the old ones for anyone watching the external chain. Draining by
+  payouts to users' own destinations does neither: the new key's history
+  starts clean, from its own deposits.
 - *Nothing to attest.* A move between two keys of the same custodian
   changes no balance on Keel, so it would be an on-chain transaction the
   observers must build, sign, watch and vote on for no ledger effect, and

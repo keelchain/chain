@@ -203,6 +203,7 @@ const COUNTRIES = ['US', 'DE', 'GB', 'NG', 'EG', 'IN', 'BR', 'TR', 'FR', 'ES'];
 const ERRORS: { code: string; message: string }[] = [
   { code: 'NOT_ENOUGH_FUNDS', message: 'insufficient available balance' },
   { code: 'BUDGET_EXHAUSTED', message: 'address action budget exhausted; fill volume or buy budget' },
+  { code: 'NOT_ACTIVATED', message: 'address holds less than the activation floor of 100000 KEEL units' },
   { code: 'INVALID', message: 'price not a multiple of tick size' },
   { code: 'NOT_FOUND', message: 'order not found or already closed' },
   { code: 'BAD_NONCE', message: 'expected nonce 1842, got 1841' },

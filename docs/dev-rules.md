@@ -30,8 +30,9 @@ Read `plan.md` first. These rules keep parallel work from colliding.
   `State.custody`, 4 appended `State.arbitration`, 5 appended `State.pools`,
   6 appended `State.liquidity` and new fields inside `State.clients`, 7 added
   `external_tx` inside `State.vaults` and `State.custody` (attestations and
-  outbounds), 8 appended `State.recovery`; every older layout is a frozen
-  `StateVn` in `migrate.rs`.
+  outbounds), 8 appended `State.recovery`, 9 appended `State.limits` (the
+  caps that used to be constants); every older layout is a frozen `StateVn`
+  in `migrate.rs`.
   Changing the layout of `State` or anything inside it means: bump `SCHEMA`,
   keep a frozen copy of the old struct in `migrate.rs`, add the upgrade step,
   and add a fixture of the old schema under `keel-vm/tests/fixtures/` with a
@@ -58,6 +59,12 @@ Read `plan.md` first. These rules keep parallel work from colliding.
   `SetParam` / `ParamChange` with a dotted key (`clients.usage_address_keel`),
   routed in `gov::set_param`. New module states are appended at the end of
   `State`, which is a schema bump (see above).
+- No numeric limit is a constant in a module. A cap, a floor, a window or a
+  price that an action is checked against lives in `state.limits` (or the
+  module's own params) with a key in `limits::PARAM_KEYS`, bounds in
+  `limits::set_param`, and a row in `docs/governance.md`. The only literals
+  left are protocol constants (block capacity, unit scales) and node-local
+  tuning in `keel-node`.
 
 ## Build and test
 - Use your own target dir: `CARGO_TARGET_DIR=$PWD/target-<name> cargo test -p <crate>`.

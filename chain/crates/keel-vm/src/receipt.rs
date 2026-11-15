@@ -40,6 +40,10 @@ pub enum VmError {
     Ledger(String),
     #[error("unimplemented: {0}")]
     Unimplemented(String),
+    /// The address holds less KEEL than `budget.activation_keel`, so its
+    /// free budget is not usable yet (appended 2026-11-15).
+    #[error("address holds less than the activation floor of {need} KEEL units")]
+    NotActivated { need: u128 },
 }
 
 impl From<LedgerError> for VmError {
@@ -66,6 +70,7 @@ impl VmError {
             VmError::NotEnoughFunds => "NOT_ENOUGH_FUNDS",
             VmError::Ledger(_) => "LEDGER",
             VmError::Unimplemented(_) => "UNIMPLEMENTED",
+            VmError::NotActivated { .. } => "NOT_ACTIVATED",
         }
     }
 }
@@ -563,6 +568,13 @@ pub enum Event {
     },
     RecoveryExpired {
         id: u64,
+    },
+    /// Fee mode (`budget.base` = 0): the action was paid for in KEEL
+    /// (`budget.action_fee_keel`) because the address had no earned or
+    /// locked capacity left. Routed through the fee split.
+    ActionFeePaid {
+        owner: Address,
+        amount: Amount,
     },
 }
 

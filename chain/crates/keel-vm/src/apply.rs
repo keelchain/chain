@@ -1,13 +1,21 @@
 //! Admission and dispatch. Per action: signature, chain id, nonce, pause,
-//! budget (or observer authorization), then the module. Nonce and budget
-//! are consumed even when the module refuses the action, so a failed
-//! action can neither be replayed nor spam for free.
+//! activation (the signer holds `budget.activation_keel`), budget (or
+//! observer authorization), then the module. Nonce and budget are consumed
+//! even when the module refuses the action, so a failed action can neither
+//! be replayed nor spam for free; and because a key needs KEEL before its
+//! budget counts, a flood of fresh keys costs KEEL per key.
+//!
+//! Fee mode: when governance sets `budget.base` to 0 there is no free
+//! budget, and an address that has no earned or locked capacity left pays
+//! `budget.action_fee_keel` per action instead, through the fee split. The
+//! fee is taken before the module runs and stays taken if it refuses.
 
 use crate::{
     context::BlockContext,
     modules::{
-        arbitration, attest, budgets, clients, custody, disputes, gov, lightning, liquidity,
-        markets, p2p, pools, recovery, sessions, stable, staking, tokens, treasury, vaults,
+        arbitration, attest, budgets, clients, custody, disputes, fees, gov, lightning, limits,
+        liquidity, markets, p2p, pools, recovery, sessions, stable, staking, tokens, treasury,
+        vaults,
     },
     receipt::{Event, Receipt, VmError},
     state::State,
@@ -17,6 +25,13 @@ use keel_crypto::sha256;
 use rayon::prelude::*;
 
 pub use keel_actions::budget::BudgetError as AdmissionBudgetError;
+
+/// Actions that only unwind state need no activation KEEL: cancels, and a
+/// session key revoking itself (its principal's KEEL is what paid for it;
+/// the key itself may hold none).
+fn exempt_from_activation(action: &Action, signer: keel_types::Address) -> bool {
+    action.is_cancel() || matches!(action, Action::RevokeSessionKey { key } if *key == signer)
+}
 
 /// Cheap checks a mempool runs before gossiping an action. Does not mutate.
 pub fn check_admission(state: &State, sa: &SignedAction) -> Result<(), VmError> {
@@ -54,13 +69,33 @@ pub fn check_admission(state: &State, sa: &SignedAction) -> Result<(), VmError> 
         }
         return Ok(());
     }
+    if !exempt_from_activation(&sa.envelope.action, sa.envelope.signer) {
+        // A session key acts for its principal: the principal's KEEL counts.
+        let principal = sessions::principal_of(
+            state,
+            sa.envelope.signer,
+            &sa.envelope.action,
+            state.timestamp / 1000,
+        )
+        .unwrap_or(None)
+        .unwrap_or(sa.envelope.signer);
+        budgets::require_activated(state, principal)?;
+    }
     let p = &state.params.budget;
     let limit = if sa.envelope.action.is_cancel() {
         meta.budget.cancel_limit(p)
     } else {
         meta.budget.limit(p)
     };
-    if meta.budget.used >= limit {
+    if meta.budget.used >= limit && meta.budget.lock_pool == 0 {
+        // Fee mode: the action is admitted if the signer can pay for it.
+        let fee = state.limits.action_fee_keel;
+        if limits::fee_mode(state)
+            && fee > 0
+            && tokens::balance(state, sa.envelope.signer, &state.tokens.native) >= fee
+        {
+            return Ok(());
+        }
         return Err(VmError::BudgetExhausted);
     }
     Ok(())
@@ -169,6 +204,7 @@ fn apply_one(
     // A live session key acts as its principal for in-scope actions
     // (2026-09-09); everything below sees the principal.
     let signer = sessions::principal_of(state, key, action, ctx.seconds())?.unwrap_or(key);
+    let mut fee_paid: Option<Event> = None;
     if state.is_paused(action.module()) {
         return Err(VmError::Paused(action.module().into()));
     }
@@ -177,14 +213,50 @@ fn apply_one(
             return Err(VmError::Unauthorized);
         }
     } else {
+        if !exempt_from_activation(action, signer) {
+            budgets::require_activated(state, signer)?;
+        }
         let p = state.params.budget.clone();
-        let meta = state.account(signer);
-        meta.budget
-            .spend(&p, ctx.height, ctx.timestamp, action.is_cancel())
-            .map_err(|e| match e {
-                BudgetError::Exhausted => VmError::BudgetExhausted,
-                BudgetError::BlockCap => VmError::BlockCap,
-            })?;
+        let map = |e| match e {
+            BudgetError::Exhausted => VmError::BudgetExhausted,
+            BudgetError::BlockCap => VmError::BlockCap,
+        };
+        let spent =
+            state
+                .account(signer)
+                .budget
+                .spend(&p, ctx.height, ctx.timestamp, action.is_cancel());
+        match spent {
+            Ok(()) => {}
+            Err(BudgetError::Exhausted) if limits::fee_mode(state) => {
+                // Fee mode: pay for the action instead. Taken before the
+                // savepoint below, so a refused action still paid.
+                let fee = state.limits.action_fee_keel;
+                if fee == 0 {
+                    return Err(VmError::BudgetExhausted);
+                }
+                state
+                    .account(signer)
+                    .budget
+                    .take_block_slot(&p, ctx.height)
+                    .map_err(map)?;
+                let native = state.tokens.native.clone();
+                fees::collect(
+                    state,
+                    &format!("action-fee:{}", tokens::hex(&sa.id())),
+                    keel_ledger::TxType::ActionFee,
+                    None,
+                    tokens::deposit_key(signer, &native),
+                    &native,
+                    fee,
+                )?;
+                fee_paid = Some(Event::ActionFeePaid {
+                    owner: signer,
+                    amount: fee,
+                });
+            }
+            Err(e) => return Err(map(e)),
+        }
     }
 
     let tx_id = sa.id();
@@ -304,7 +376,13 @@ fn apply_one(
     if result.is_err() {
         state.ledger.rollback(sp);
     }
-    result
+    match (result, fee_paid) {
+        (Ok(mut events), Some(fee)) => {
+            events.insert(0, fee);
+            Ok(events)
+        }
+        (r, _) => r,
+    }
 }
 
 /// Block-boundary invariants (docs/plan.md §4): per vault asset,

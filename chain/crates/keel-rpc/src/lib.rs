@@ -292,6 +292,12 @@ async fn params(AxumState(node): AxumState<Node>) -> Json<Value> {
         map.insert("clients".into(), to_json(&s.clients.params));
         map.insert("liquidity".into(), to_json(&s.liquidity.params));
         map.insert("recovery".into(), to_json(&s.recovery.params));
+        // Limits that were constants: already dotted, listed flat.
+        for key in keel_vm::modules::limits::PARAM_KEYS {
+            if let Some(v) = keel_vm::modules::limits::get_param(&s, key) {
+                map.insert((*key).into(), json!(v.to_string()));
+            }
+        }
     }
     Json(v)
 }
@@ -344,9 +350,14 @@ async fn account(
     Ok(Json(json!({
         "address": addr,
         "nonce": meta.nonce,
+        "activated": keel_vm::modules::budgets::is_activated(&s, address),
         "sessions": sessions,
         "session_of": session_of,
         "budget": {
+            "activation_keel": s.limits.activation_keel.to_string(),
+            "activation_balance": keel_vm::modules::budgets::activation_balance(&s, address).to_string(),
+            "fee_mode": keel_vm::modules::limits::fee_mode(&s),
+            "action_fee_keel": s.limits.action_fee_keel.to_string(),
             "used": meta.budget.used,
             "limit": meta.budget.limit(p),
             "cancel_limit": meta.budget.cancel_limit(p),

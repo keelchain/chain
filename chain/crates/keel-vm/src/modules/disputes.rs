@@ -43,7 +43,7 @@ pub struct DisputesState {
     pub disputes: BTreeMap<TradeId, Dispute>,
 }
 
-pub const MAX_EVIDENCE: usize = 32;
+// `disputes.max_evidence` is a governance parameter in `state.limits`.
 
 fn escrow_key(owner: Address, asset: &Asset) -> AccountKey {
     AccountKey::new(owner, asset.clone(), "marketplace_escrow").expect("catalog type")
@@ -136,6 +136,7 @@ fn submit(
     if signer != t.buyer && signer != t.seller {
         return Err(VmError::Unauthorized);
     }
+    let max_evidence = state.limits.max_evidence as usize;
     let d = state
         .disputes
         .disputes
@@ -144,7 +145,7 @@ fn submit(
     if d.ruling.is_some() {
         return Err(VmError::Invalid("dispute already ruled".into()));
     }
-    if d.evidence.len() >= MAX_EVIDENCE {
+    if d.evidence.len() >= max_evidence {
         return Err(VmError::Invalid("too much evidence".into()));
     }
     d.evidence.push(Evidence {

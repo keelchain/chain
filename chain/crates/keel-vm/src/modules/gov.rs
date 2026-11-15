@@ -116,6 +116,8 @@ fn module_param_get(state: &State, key: &str) -> Option<u128> {
         super::pools::get_param(state, key)
     } else if key.starts_with("recovery.") {
         super::recovery::get_param(state, key)
+    } else if super::limits::PARAM_KEYS.contains(&key) {
+        super::limits::get_param(state, key)
     } else {
         None
     }
@@ -137,6 +139,8 @@ fn module_param_set(
         Some(super::pools::set_param(state, key, value))
     } else if key.starts_with("recovery.") {
         Some(super::recovery::set_param(state, key, value))
+    } else if super::limits::PARAM_KEYS.contains(&key) {
+        Some(super::limits::set_param(state, key, value))
     } else {
         None
     }
@@ -269,7 +273,10 @@ fn propose(
     tx_id: &[u8; 32],
     p: &Proposal,
 ) -> Result<Vec<Event>, VmError> {
-    if p.title.is_empty() || p.title.len() > 200 || p.description.len() > 10_000 {
+    if p.title.is_empty()
+        || p.title.chars().count() > state.limits.max_title_chars as usize
+        || p.description.chars().count() > state.limits.max_description_chars as usize
+    {
         return Err(VmError::Invalid("bad title/description length".into()));
     }
     validate_kind(state, &p.kind)?;

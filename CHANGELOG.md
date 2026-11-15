@@ -5,6 +5,28 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **an address must hold KEEL before its free budget counts.**
+  `budget.activation_keel` (0.1 KEEL by default; spendable, locked,
+  unlocking and bonded KEEL and the offer and proposal deposits count) is
+  required for every budget-spending action, cancels, observer actions and
+  a session key's self-revocation excepted; below it the chain answers
+  `NOT_ACTIVATED`. Without it a budget per address was a budget per
+  keypair. Clients send the dust with the attestation (`docs/clients.md`).
+- Chain: **fee mode.** `budget.base` set to 0 by governance removes the
+  free budget; an address with no earned or locked capacity then pays
+  `budget.action_fee_keel` (0.001 KEEL by default) per action through the
+  fee split, taken before the module runs (`ActionFeePaid`, ledger type
+  `action_fee`). The free budget stays the default.
+- Chain: **every limit that was a constant is a governance parameter**
+  (`state.limits`, snapshot schema 9; schema 8 migrates with the floor off
+  and every cap at its old value): `sessions.max_per_principal`,
+  `sessions.max_secs`, `p2p.min_payment_window_secs`, `p2p.max_terms_chars`,
+  `p2p.max_margin_bps`, `disputes.max_evidence`, `gov.max_title_chars`,
+  `gov.max_description_chars`, `transfer.max_memo_bytes`, each with bounds.
+  `GET /v1/params` lists them; `GET /v1/accounts/{addr}` reports
+  `activated` and the floor. New `docs/governance.md` lists everything
+  governance can change, with defaults, and what it cannot. Testnet: the
+  genesis changes, so the next deploy needs `reset_chain`.
 - Chain: **generations of a custody vault are separate pools; nothing is
   ever moved between them.** `RotateCustodyVault` with `sweep: true` and
   `ObserveCustodySweep` are refused (`INVALID`); the observers no longer

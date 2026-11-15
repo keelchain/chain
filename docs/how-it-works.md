@@ -212,11 +212,16 @@ admin; or a text proposal.
 
 One administrative key exists: `param_admin`, an optional address set at
 genesis and changeable only by a `SetParamAdmin` proposal. It may sign
-`SetParam { key, value }` for any of the roughly fifty scalar parameters,
-the seven `budget.*` keys and the module-owned `clients.*` and
-`liquidity.*` keys (all of which a `ParamChange` proposal can also move
-since 0.2.0), with the same validation a proposal would get (fee split must sum to 100%, block pacing bounds, and so on). It cannot
-move funds, change sets, pause modules or upgrade software.
+`SetParam { key, value }` for every numeric parameter the chain has: the
+scalar `Params`, the `budget.*` keys, the module-owned `clients.*`,
+`liquidity.*`, `arbitration.*`, `pools.*` and `recovery.*` keys, and the
+limits that used to be constants in the code (`sessions.*`, `p2p.*`,
+`disputes.*`, `gov.*`, `transfer.*`; schema 9). All of them a `ParamChange`
+proposal can also move. The full list, with defaults and bounds, is
+`docs/governance.md`. The admin gets the same validation a proposal would
+(fee split must sum to 100%, block pacing bounds, caps that cannot be set
+to zero, and so on). It cannot move funds, change sets, pause modules or
+upgrade software.
 
 At launch this key is the platform super admin's, held by the marketplace as
 `CHAIN_ADMIN_SECRET`, and the backoffice **Chain** page is its user
@@ -325,8 +330,8 @@ for a non-custodial user without a wallet popup per click.
 ## 7. Quota per address: budgets instead of gas
 
 Every address has a **budget**: `limit = base + earned`, with
-`budget.base` = 10,000 free actions. Each action, successful or not,
-spends one unit; observers' attestations spend none. `earned` grows by one
+`budget.base` = 10,000 free actions by default. Each action, successful or
+not, spends one unit; observers' attestations spend none. `earned` grows by one
 action per whole USD the address fills on an KUSD-quoted pair (taker or
 maker) and by purchase (`BuyBudget`, 0.001 KEEL per action, routed through
 the fee split). Cancels (cancel order, close offer, cancel trade) draw on
@@ -347,9 +352,33 @@ Other per-address caps: at most 500 open orders (currently counted across
 pairs, see section 17) and a P2P offer allowance that starts at 2 live
 offers and grows by 2 for every 10 completed trades.
 
+**A key must hold KEEL before its budget counts (2026-11-15).** A free
+budget per address is a free budget per keypair, and keypairs are free, so
+on its own the budget would let anyone fill blocks with failing actions
+from fresh keys. The chain therefore refuses every budget-spending action
+from an address holding less than `budget.activation_keel` (0.1 KEEL by
+default; spendable, locked, unlocking and bonded KEEL and the offer and
+proposal deposits all count) with `NotActivated`. Observer actions,
+cancels and a session key revoking itself are exempt. A real user never
+meets the floor by accident: the faucet hands out whole coins, a deposit
+followed by one trade buys far more, and a client sends the dust to each
+account it attests (`docs/clients.md`). A flood pays it per key.
+
+**No fee by default, a fee by vote.** The free budget is the deliberate
+choice and the default. Governance can change its size (`budget.base`), and
+setting it to 0 puts the chain in *fee mode*: there is no free budget, and
+an address with no earned or locked capacity left pays
+`budget.action_fee_keel` (0.001 KEEL by default) for each action, through
+the fee split, taken before the module runs and kept if the action is
+refused. Both numbers, the activation floor, and every other cap in this
+section are governance parameters (`docs/governance.md`); none is a
+constant in the code.
+
 When a budget is exhausted the chain answers `BudgetExhausted`; when the
-per-block cap is hit, `BlockCap`. The marketplace shows both as "action
-capacity" errors with the lock card as the remedy.
+per-block cap is hit, `BlockCap`; when the activation floor is not met,
+`NotActivated`. The marketplace shows the first two as "action capacity"
+errors with the lock card as the remedy, and the third with the amount to
+top up.
 
 ## 8. Wallets and keys
 
@@ -897,6 +926,8 @@ to its operator keys.
 - Disputes: `ruling_window_secs` unused; no appeal from a named arbitrator
   to the elected set.
 - `max_open_orders_per_pair` is applied per owner across pairs.
+- The mempool has no global size cap and no per-peer cap; the activation
+  floor prices the flood on chain, the node-side bound is still to do.
 - No crypto-collateralized stablecoin path; no on-chain swap/AMM.
 - Network vault rotation and observer-set changes are manual governance
   steps, not an automatic per-epoch rekey (custody vaults rotate on their

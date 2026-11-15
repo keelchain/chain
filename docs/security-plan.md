@@ -94,9 +94,13 @@ that shape, not from any one machine:
   through governance anchor the chain's history in a system I do not
   control, so rewriting the past would show.
 - **Flooding is priced without gas.** Every action spends from a
-  per-address budget earned by locking KEEL (section 7 of
-  `how-it-works.md`). Spam costs capital, and a spammer's own addresses run
-  dry first. Validators and observers post bonds; slashing is specified.
+  per-address budget, and an address must hold `budget.activation_keel`
+  before its budget counts (section 7 of `how-it-works.md`), so a flood
+  costs KEEL per key, not per keypair generation; capacity beyond the free
+  budget comes from locking KEEL, and governance can switch the chain to a
+  per-action fee (`budget.base` = 0, `docs/governance.md`). A spammer's own
+  addresses run dry first. Validators and observers post bonds; slashing is
+  specified.
 - **Custody is threshold.** The vault key exists only as `t`-of-`n` shares
   held by separate signer daemons, each encrypted under its own passphrase;
   `t - 1` compromised shares move nothing. Deposits are credited on light

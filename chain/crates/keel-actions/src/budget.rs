@@ -161,6 +161,20 @@ impl Budget {
         Ok(())
     }
 
+    /// Count a fee-paid action against the per-block cap without spending
+    /// budget (fee mode: `base` is 0 and the address pays per action).
+    pub fn take_block_slot(&mut self, p: &BudgetParams, block: u64) -> Result<(), BudgetError> {
+        if self.last_block != block {
+            self.last_block = block;
+            self.used_in_block = 0;
+        }
+        if self.used_in_block >= p.max_per_block {
+            return Err(BudgetError::BlockCap);
+        }
+        self.used_in_block += 1;
+        Ok(())
+    }
+
     pub fn earn_from_fill(&mut self, p: &BudgetParams, usd_whole: u128) {
         let add = (usd_whole.min(u64::MAX as u128) as u64).saturating_mul(p.per_usd_filled);
         self.earned = self.earned.saturating_add(add);
