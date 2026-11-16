@@ -32,6 +32,8 @@ use std::{
 struct JournalEntry {
     height: u64,
     timestamp: u64,
+    #[allow(dead_code)]
+    proposer: [u8; 32],
     payload: Vec<u8>,
 }
 
@@ -308,6 +310,7 @@ mod tests {
     struct Entry {
         height: u64,
         timestamp: u64,
+        proposer: [u8; 32],
         payload: Vec<u8>,
     }
 
@@ -331,6 +334,7 @@ mod tests {
             let bytes = borsh::to_vec(&Entry {
                 height: h,
                 timestamp: 1_000 * h,
+                proposer: [1u8; 32],
                 payload: Vec::new(),
             })
             .unwrap();

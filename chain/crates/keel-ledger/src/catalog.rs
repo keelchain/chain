@@ -98,10 +98,7 @@ pub const ACCOUNT_TYPES: &[(&str, NormalSide, bool)] = &[
     // Genesis allocation buckets (docs/tokenomics.md). System-owned,
     // restricted: governance spends them with TreasurySpend-style
     // proposals, nothing can overdraw them.
-    ("community_pool", NormalSide::Credit, true),
     ("team_reserve", NormalSide::Credit, true),
-    ("validator_bootstrap", NormalSide::Credit, true),
-    ("strategic_reserve", NormalSide::Credit, true),
     // KEEL locked under a vesting schedule; released to the beneficiary's
     // deposit by the tokens module.
     ("vesting", NormalSide::Credit, true),
@@ -265,8 +262,9 @@ tx_types! {
     // stable rebalancing: premium into the pool, rebate out of it
     StablePremium => "stable_premium",
     StableRebate => "stable_rebate",
-    // staking emission: validator_bootstrap -> validator_rewards each epoch
-    Emission => "emission",
+    // minted after genesis: the block reward and the community reward
+    BlockReward => "block_reward",
+    CommunityReward => "community_reward",
 }
 
 #[cfg(test)]

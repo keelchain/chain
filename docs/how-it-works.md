@@ -128,18 +128,16 @@ membership of those sets is a governance decision (`SetObservers`,
 
 ### 2.4 How validators are paid
 
-There is no inflation: the supply is fixed at genesis. Two things pay
-operators. Every fee the chain collects is split at collection time
-(section 5); the validators' share lands in a system account
-`validator_rewards` **in the asset the fee was paid in** (USDT, BTC.BTC,
-KEEL from client usage). And the genesis validator bucket (10% of the
-supply) is paid out over time as a **staking emission**
-(`emission.validator_bps_per_year`, 10% of what remains per year by
-default; `docs/governance.md`): at each epoch boundary the share earned
-since the last boundary moves into `validator_rewards` in KEEL. Nothing is
-minted; the bucket's coins exist from genesis and the emission decides when
-they reach operators, decaying on its own because it is a share of what is
-left. At each epoch boundary the pool is distributed: observers first take
+Two things pay operators. Every fee the chain collects is split at
+collection time (section 5); the validators' share lands in a system
+account `validator_rewards` **in the asset the fee was paid in** (USDT,
+BTC.BTC, KEEL from client usage). And every block mints a **block reward**
+in KEEL for the time since the previous block, on a schedule that is a
+constant in the code (`modules::rewards`): 262.5 million KEEL in the first
+year, halving every four years, capped at 10% of the supply so the cap
+holds. A tenth of each block's mint goes straight to the validator that
+proposed it, so producing blocks earns more than holding stake; the rest
+joins `validator_rewards`. At each epoch boundary the pool is distributed: observers first take
 `observer_reward_bps` (25%) split equally, then the remainder goes to
 validators pro rata to power, with each validator's delegators receiving
 their pro-rata slice automatically. There is no claim step.
@@ -154,15 +152,18 @@ the address from a set. This is listed in section 17.
 
 ### 3.1 KEEL
 
-- Hard cap **21,000,000,000 KEEL**, six decimals. The whole supply is
-  issued at genesis; nothing mints KEEL afterwards.
+- Hard cap **21,000,000,000 KEEL**, six decimals. 65% is issued at
+  genesis; the other 35% is minted by the chain itself, capped, and only
+  on two schedules that are constants in the code: the block reward to
+  validators (10% of supply, halving every four years) and the community
+  reward to fee payers (25% of supply, 10 KEEL per dollar of protocol
+  fee). No vote can change either; a software upgrade can.
 - Genesis buckets (basis points of supply, must sum to 100%): DAO treasury
-  35%, community rewards 25% (the KEEL awards the platform already promised
-  are paid from here at genesis, line by line), team 15% (vesting with a
-  one-year cliff then linear over four years, released every block; the
-  ungranted part waits in `team_reserve`), validator bootstrap 10%,
-  liquidity 10% (the house maker's inventory account `swap_pool`), strategic
-  reserve 5%.
+  40%, team 15% (vesting with a one-year cliff then linear over four years,
+  released every block; the ungranted part waits in `team_reserve`),
+  liquidity 10% (the house maker's inventory account `swap_pool`); and the
+  two minted shares, community 25% (the KEEL awards the platform already
+  promised are paid from it at genesis, line by line) and validators 10%.
 - Nothing leaves a bucket without a governance proposal, except vesting,
   which the chain releases on schedule.
 - Demand for KEEL comes from bonds (validator, observer, arbitrator),
@@ -172,8 +173,8 @@ the address from a set. This is listed in section 17.
 - Supply shrinks through the burn share of every fee (10% by default),
   vetoed proposal deposits and, once wired, slashed bonds.
 
-I still have to decide the team grant list and the mainnet address
-of the parameter admin; both are genesis inputs.
+The team grant list is the one genesis input still open
+(`docs/tokenomics.md`).
 
 ### 3.2 USDT: one balance on every network
 

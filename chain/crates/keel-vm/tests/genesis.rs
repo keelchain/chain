@@ -45,29 +45,36 @@ fn genesis_with_allocation(team: Vec<(Address, u32)>, awards: u128) -> (Genesis,
 }
 
 #[test]
-fn default_allocation_issues_the_cap_into_dao_buckets() {
+fn default_allocation_issues_what_genesis_owns_and_caps_the_rest() {
     let awards = 5_000_000 * 1_000_000; // already promised to a user
     let (g, _) = genesis_with_allocation(vec![], awards);
     let state = g.build();
     let bucket = |t: &str| sys(&state, &keel(), t) as u128;
-    assert_eq!(bucket("treasury"), KEEL_CAP * 35 / 100);
-    assert_eq!(bucket("community_pool") + awards, KEEL_CAP * 25 / 100);
+    // Issued at genesis: treasury (the former reserve folded in), team,
+    // liquidity, and the awards already promised.
+    assert_eq!(bucket("treasury"), KEEL_CAP * 40 / 100);
     assert_eq!(
         bucket("team_reserve"),
         KEEL_CAP * 15 / 100,
         "no team addresses: whole bucket stays reserved"
     );
     assert_eq!(bucket("vesting"), 0);
-    assert_eq!(bucket("validator_bootstrap"), KEEL_CAP * 10 / 100);
     assert_eq!(bucket("swap_pool"), KEEL_CAP * 10 / 100);
-    assert_eq!(bucket("strategic_reserve"), KEEL_CAP * 5 / 100);
-    // Everything issued equals the cap exactly: `issuance` is debit-normal,
-    // so what it funded reads as a positive balance of the cap.
+    // Minted over time, capped: validators by block, the community by usage
+    // (less what the awards took at genesis).
+    assert_eq!(state.rewards.validator_cap, KEEL_CAP * 10 / 100);
+    assert_eq!(state.rewards.community_cap, KEEL_CAP * 25 / 100 - awards);
+    assert_eq!(state.rewards.validator_minted, 0);
+    // What genesis issued: 65% plus the awards; the rest is minted later,
+    // so issued plus both caps is exactly the cap.
+    let issued = state
+        .ledger
+        .balance(&AccountKey::new(Address::SYSTEM, keel(), "issuance").unwrap())
+        as u128;
+    assert_eq!(issued, KEEL_CAP * 65 / 100 + awards);
     assert_eq!(
-        state
-            .ledger
-            .balance(&AccountKey::new(Address::SYSTEM, keel(), "issuance").unwrap()),
-        KEEL_CAP as i128
+        issued + state.rewards.validator_cap + state.rewards.community_cap,
+        KEEL_CAP
     );
     audit_clean(&state);
 }

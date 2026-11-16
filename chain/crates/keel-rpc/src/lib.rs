@@ -226,6 +226,7 @@ pub fn router(node: Node) -> Router {
         )
         .route("/v1/treasury", get(treasury))
         .route("/v1/stable", get(stable_status))
+        .route("/v1/supply", get(supply))
         .route("/v1/liquidity", get(liquidity))
         .route("/v1/liquidity/{addr}", get(liquidity_position))
         .route("/v1/recovery", get(recoveries))
@@ -293,7 +294,6 @@ async fn params(AxumState(node): AxumState<Node>) -> Json<Value> {
         map.insert("clients".into(), to_json(&s.clients.params));
         map.insert("liquidity".into(), to_json(&s.liquidity.params));
         map.insert("recovery".into(), to_json(&s.recovery.params));
-        map.insert("emission".into(), to_json(&s.emission.params));
         map.insert("prices".into(), to_json(&s.prices.params));
         map.insert("stable".into(), to_json(&s.stable_conversion.params));
         // Limits that were constants: already dotted, listed flat.
@@ -424,6 +424,47 @@ async fn markets(AxumState(node): AxumState<Node>) -> Json<Value> {
         .map(|m| market_summary(&s, m))
         .collect();
     Json(json!({ "markets": list }))
+}
+
+/// KEEL supply: the cap, what genesis issued, what the block and community
+/// rewards have minted and may still mint, the burn, and the block-reward
+/// schedule as it stands now.
+async fn supply(AxumState(node): AxumState<Node>) -> Json<Value> {
+    use keel_vm::modules::rewards;
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let native = &s.tokens.native;
+    let issued = s
+        .ledger
+        .balance(&keel_vm::modules::tokens::system_key(native, "issuance"))
+        .max(0) as u128;
+    let burned = s
+        .ledger
+        .balance(&keel_vm::modules::tokens::system_key(native, "burn"))
+        .max(0) as u128;
+    let r = &s.rewards;
+    Json(json!({
+        "asset": native.to_string(),
+        "cap": rewards::KEEL_CAP.to_string(),
+        "issued": issued.to_string(),
+        "burned": burned.to_string(),
+        "block_reward": {
+            "cap": r.validator_cap.to_string(),
+            "minted": r.validator_minted.to_string(),
+            "remaining": r.validator_remaining().to_string(),
+            "rate_per_year": rewards::rate_per_year(&s, s.timestamp).to_string(),
+            "proposer_bps": rewards::PROPOSER_BPS,
+            "halving_ms": rewards::HALVING_MS,
+            "started_ms": r.start_ms,
+            "next_halving_ms": rewards::next_halving_ms(&s, s.timestamp),
+        },
+        "community_reward": {
+            "cap": r.community_cap.to_string(),
+            "minted": r.community_minted.to_string(),
+            "remaining": r.community_remaining().to_string(),
+            "keel_per_fee_usd": rewards::COMMUNITY_KEEL_PER_USD.to_string(),
+        },
+    }))
 }
 
 /// The dollar: supply, the rebalancing pool, and per basket asset its

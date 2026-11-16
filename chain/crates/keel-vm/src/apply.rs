@@ -14,8 +14,8 @@ use crate::{
     context::BlockContext,
     modules::{
         arbitration, attest, budgets, clients, custody, disputes, fees, gov, lightning, limits,
-        liquidity, markets, p2p, pools, recovery, sessions, stable, staking, tokens, treasury,
-        vaults,
+        liquidity, markets, p2p, pools, recovery, rewards, sessions, stable, staking, tokens,
+        treasury, vaults,
     },
     receipt::{Event, Receipt, VmError},
     state::State,
@@ -123,6 +123,7 @@ pub fn apply_block(
         });
     }
     let mut end = Vec::new();
+    end.extend(rewards::end_block(state, ctx));
     end.extend(tokens::end_block(state, ctx));
     end.extend(budgets::end_block(state, ctx));
     end.extend(lightning::end_block(state, ctx));

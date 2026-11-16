@@ -45,8 +45,16 @@ pub trait StateMachine: Send + 'static {
     fn check(&self, payload: &[u8]) -> bool;
 
     /// Apply a finalized block. Called exactly once per height, in order.
-    /// Returns the state hash after the block.
-    fn apply(&mut self, height: Height, timestamp: u64, payload: &[u8]) -> Digest;
+    /// `proposer` is the consensus key of the validator that built the
+    /// block (the block reward's proposer slice goes to it). Returns the
+    /// state hash after the block.
+    fn apply(
+        &mut self,
+        height: Height,
+        timestamp: u64,
+        proposer: [u8; 32],
+        payload: &[u8],
+    ) -> Digest;
 
     /// Last applied height and state hash (genesis is height 0).
     fn tip(&self) -> (Height, Digest);
@@ -133,7 +141,13 @@ impl StateMachine for HashChain {
         payload.starts_with(b"keel:")
     }
 
-    fn apply(&mut self, height: Height, timestamp: u64, payload: &[u8]) -> Digest {
+    fn apply(
+        &mut self,
+        height: Height,
+        timestamp: u64,
+        _proposer: [u8; 32],
+        payload: &[u8],
+    ) -> Digest {
         let mut h = Hasher::default();
         h.update(self.hash.as_ref());
         h.update(&height.get().to_be_bytes());
@@ -331,7 +345,9 @@ impl<M: StateMachine> Reporter for Application<M> {
                     warn!(%applied, height = %block.height(), "finalized block out of order");
                     return Feedback::Ok;
                 }
-                let hash = machine.apply(block.height(), block.timestamp, &block.payload);
+                let mut proposer = [0u8; 32];
+                proposer.copy_from_slice(block.context.leader.as_ref());
+                let hash = machine.apply(block.height(), block.timestamp, proposer, &block.payload);
                 info!(height = %block.height(), digest = ?block.digest(), state = ?hash, "applied");
             }
             drop(machine);

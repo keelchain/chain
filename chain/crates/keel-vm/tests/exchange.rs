@@ -44,7 +44,10 @@ fn setup() -> (State, Actor, Actor) {
             bond: 0,
         }],
     );
-    (g.build(), alice, bob)
+    let mut state = g.build();
+    state.rewards.validator_cap = 0;
+    state.rewards.community_cap = 0;
+    (state, alice, bob)
 }
 
 fn ctx(height: u64) -> BlockContext {

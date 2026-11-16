@@ -67,6 +67,8 @@ fn setup() -> (State, Actor, Actor, Vec<Actor>) {
     // These tests exercise raw vault crediting; the USDT conversion on
     // arrival has its own tests (tests/stable.rs).
     state.stable_conversion.params.auto_convert = 0;
+    state.rewards.validator_cap = 0;
+    state.rewards.community_cap = 0;
     (state, alice, bob, observers)
 }
 

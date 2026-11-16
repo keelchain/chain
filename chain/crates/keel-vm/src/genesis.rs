@@ -77,18 +77,22 @@ pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct Allocation {
     /// Smallest units (10^-6 KEEL). Default: the 21B hard cap.
     pub total_supply: Amount,
-    /// DAO treasury, spendable only by TreasurySpend proposals.
+    /// DAO treasury, spendable only by TreasurySpend proposals. Issued at
+    /// genesis.
     pub treasury_bps: u32,
-    /// Trading, liquidity and referral rewards; existing awards are paid from here.
+    /// Community rewards: NOT issued at genesis. The awards already promised
+    /// are paid from it at genesis, line by line; the rest is minted over
+    /// time to fee payers (`modules::rewards`, a constant per dollar of
+    /// fee) until this cap is reached.
     pub community_bps: u32,
-    /// Team and early contributors, vested to `team`.
+    /// Team and early contributors, vested to `team`. Issued at genesis.
     pub team_bps: u32,
-    /// Bootstrap bonds and rewards for the first validator/observer sets.
+    /// Validators: NOT issued at genesis. Minted as the block reward on a
+    /// halving schedule (`modules::rewards`) until this cap is reached.
     pub validators_bps: u32,
-    /// House-maker inventory (`swap_pool`) and stablecoin liquidity.
+    /// House-maker inventory (`swap_pool`) and stablecoin liquidity. Issued
+    /// at genesis.
     pub liquidity_bps: u32,
-    /// Strategic reserve.
-    pub reserve_bps: u32,
     /// (address, share of the team bucket in bps). Shares that do not sum
     /// to 10,000 leave the remainder in `team_reserve` for later grants.
     pub team: Vec<(Address, u32)>,
@@ -99,17 +103,18 @@ pub struct Allocation {
 }
 
 impl Default for Allocation {
-    /// Launch proposal: 35% treasury, 25% community, 15% team (1-year cliff,
-    /// 4-year linear), 10% validator bootstrap, 10% liquidity, 5% reserve.
+    /// Decided 2026-11-16: 40% treasury, 15% team (1-year cliff, 4-year
+    /// linear) and 10% liquidity issued at genesis; 25% community and 10%
+    /// validators minted over time by usage and by block. The former 5%
+    /// reserve is folded into the treasury.
     fn default() -> Self {
         Self {
-            total_supply: 21_000_000_000 * 1_000_000,
-            treasury_bps: 3_500,
+            total_supply: crate::modules::rewards::KEEL_CAP,
+            treasury_bps: 4_000,
             community_bps: 2_500,
             team_bps: 1_500,
             validators_bps: 1_000,
             liquidity_bps: 1_000,
-            reserve_bps: 500,
             team: Vec::new(),
             team_cliff_secs: 365 * 86_400,
             team_duration_secs: 4 * 365 * 86_400,
@@ -125,7 +130,6 @@ impl Allocation {
             + self.team_bps
             + self.validators_bps
             + self.liquidity_bps
-            + self.reserve_bps
             == 10_000
     }
 
@@ -355,22 +359,21 @@ impl Genesis {
             team_granted <= team_total,
             "team shares exceed the team bucket"
         );
-        let buckets: [(&str, Amount); 6] = [
+        // Community and validator shares are not issued: they are the caps
+        // of what the chain mints after genesis.
+        state.rewards.community_cap = community - already;
+        state.rewards.validator_cap = alloc.bucket(alloc.validators_bps);
+        let buckets: [(&str, Amount); 4] = [
             ("treasury", alloc.bucket(alloc.treasury_bps)),
-            ("community_pool", community - already),
             ("vesting", team_granted),
             ("team_reserve", team_total - team_granted),
-            ("validator_bootstrap", alloc.bucket(alloc.validators_bps)),
             ("swap_pool", alloc.bucket(alloc.liquidity_bps)),
         ];
         let from =
             AccountKey::new(Address::SYSTEM, keel.clone(), "issuance").expect("catalog type");
         let mut records = vec![];
         let mut total: Amount = 0;
-        for (t, amount) in buckets
-            .iter()
-            .chain([("strategic_reserve", alloc.bucket(alloc.reserve_bps))].iter())
-        {
+        for (t, amount) in buckets.iter() {
             if *amount == 0 {
                 continue;
             }
@@ -434,6 +437,13 @@ impl Genesis {
         state.gov.upgrades = self.upgrades.clone();
         if let Some(alloc) = &self.allocation {
             self.apply_allocation(&mut state, alloc);
+        } else {
+            // No allocation (test networks): nothing is issued into buckets,
+            // but the chain still mints its block and community rewards up
+            // to the default caps.
+            let alloc = Allocation::default();
+            state.rewards.validator_cap = alloc.bucket(alloc.validators_bps);
+            state.rewards.community_cap = alloc.bucket(alloc.community_bps);
         }
         state.attest.attesters = self.attesters.iter().copied().collect();
         for (asset, cap) in &self.stable_basket {

@@ -262,6 +262,9 @@ impl ReceiptIndex {
 struct JournalEntry {
     height: u64,
     timestamp: u64,
+    /// Consensus key of the block's proposer: part of what the block does
+    /// (the block reward's proposer slice), so replay needs it.
+    proposer: [u8; 32],
     payload: Vec<u8>,
 }
 
@@ -664,7 +667,7 @@ impl VmMachine {
             let ctx = BlockContext {
                 height: e.height,
                 timestamp: e.timestamp,
-                proposer: None,
+                proposer: Some(Address(e.proposer)),
             };
             apply_block(&mut state, &ctx, &actions);
             height = e.height;
@@ -736,7 +739,13 @@ impl StateMachine for VmMachine {
         self.mempool.lock().expect("mempool lock").has_selectable()
     }
 
-    fn apply(&mut self, height: Height, timestamp: u64, payload: &[u8]) -> Digest {
+    fn apply(
+        &mut self,
+        height: Height,
+        timestamp: u64,
+        proposer: [u8; 32],
+        payload: &[u8],
+    ) -> Digest {
         if height <= self.tip.0 {
             return self.tip.1;
         }
@@ -754,7 +763,7 @@ impl StateMachine for VmMachine {
         let ctx = BlockContext {
             height: height.get(),
             timestamp,
-            proposer: None,
+            proposer: Some(Address(proposer)),
         };
         let (receipts, events, hash, journal_pos) = {
             let mut state = self.state.lock().expect("state lock");
@@ -764,6 +773,7 @@ impl StateMachine for VmMachine {
             let journal_pos = match self.storage.append(&JournalEntry {
                 height: height.get(),
                 timestamp,
+                proposer,
                 payload: payload.to_vec(),
             }) {
                 Ok(pos) => pos,
@@ -992,7 +1002,7 @@ mod tests {
                 .insert(&shared.state.lock().unwrap(), transfer(&alice, h - 1))
                 .unwrap();
             let payload = m.build(Height::new(h - 1), h);
-            m.apply(Height::new(h), 1_000 + h, &payload);
+            m.apply(Height::new(h), 1_000 + h, [1u8; 32], &payload);
         }
         // Segments start after every snapshot: 1, 3, 5, 7. The snapshot at 6
         // pruned everything whose blocks are all below 6 - 2 = 4: segment 1.
@@ -1047,7 +1057,7 @@ mod tests {
                 .insert(&shared.state.lock().unwrap(), transfer(&alice, h - 1))
                 .unwrap();
             let payload = m.build(Height::new(h - 1), h);
-            m.apply(Height::new(h), 1_000 + h, &payload);
+            m.apply(Height::new(h), 1_000 + h, [1u8; 32], &payload);
         }
         let (tip, hash) = m.tip();
         assert_eq!(tip.get(), 5);

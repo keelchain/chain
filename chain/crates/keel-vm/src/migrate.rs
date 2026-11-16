@@ -11,7 +11,7 @@ use crate::state::State;
 use borsh::BorshDeserialize;
 
 /// Current snapshot schema.
-pub const SCHEMA: u32 = 13;
+pub const SCHEMA: u32 = 14;
 
 /// Magic prefix of a versioned snapshot.
 pub const MAGIC: &[u8; 4] = b"KEEL";

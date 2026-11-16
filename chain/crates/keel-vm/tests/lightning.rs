@@ -61,6 +61,8 @@ fn setup() -> (State, Actor, Vec<Actor>) {
         .collect();
     let g = Genesis::devnet(CHAIN_ID_DEVNET, &[alice.addr()], validators);
     let mut state = g.build();
+    state.rewards.validator_cap = 0;
+    state.rewards.community_cap = 0;
     let signers: Vec<Address> = observers.iter().map(|o| o.addr()).collect();
     let mut obs0 = Actor::new(100);
     ok(

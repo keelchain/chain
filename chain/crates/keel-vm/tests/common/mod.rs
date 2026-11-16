@@ -52,7 +52,12 @@ pub fn setup(validator_bond: u128) -> (State, Actor, Actor, Actor) {
             bond: validator_bond,
         }],
     );
-    (g.build(), alice, bob, validator)
+    let mut state = g.build();
+    // Unit tests of other modules do not want KEEL minted into the reward
+    // pool every block; the rewards tests set the caps themselves.
+    state.rewards.validator_cap = 0;
+    state.rewards.community_cap = 0;
+    (state, alice, bob, validator)
 }
 
 pub fn at(height: u64) -> BlockContext {

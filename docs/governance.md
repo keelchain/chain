@@ -177,18 +177,6 @@ network.
 |---|---|---|---|
 | `prices.twap_window_secs` | 600 (10 minutes) | 0..=7 days | Window of the time-weighted average fill price per pair that settlement reads wherever it needs a dollar value: the small-trade surcharge, the withdrawal flat fee, the budget earned per dollar, the liquidity pool's mark, the buyback. The book trades at the last fill; the reference is what the chain prices with, so one print cannot set it. 0 = off (the last fill is used). |
 
-## Staking emission
-
-| Key | Default | Bounds | What it does |
-|---|---|---|---|
-| `emission.validator_bps_per_year` | 1,000 (10% a year) | 0..=10,000 | Share of the remaining genesis `validator_bootstrap` bucket (10% of the supply by default, 2.1 billion KEEL) paid per year to validators, observers and delegators. Accrued at every epoch boundary for the time elapsed since the last, moved into `validator_rewards`, and paid by the same epoch's pro-rata distribution (`EmissionPaid`). 0 = off. |
-
-Nothing is minted: the bucket exists from genesis and the emission decides
-when its coins reach operators. Because it is a share of what is left, it
-decays on its own and never runs dry abruptly. It needs no price for KEEL:
-a validator with 1% of the stake earns 1% of the emission in the unit it
-bonded. A chain that predates the module migrates with the rate at 0.
-
 ## Governance itself
 
 | Key | Default | What it does |
@@ -248,10 +236,15 @@ Fixed by the protocol (a change is a software upgrade; before mainnet the
 networks simply restart from genesis, from mainnet on it is gated on an
 activation height so old blocks replay unchanged):
 
-- The ledger rules: no action freezes, seizes or edits a balance; KEEL is
-  not minted outside issuance; a vault pays nothing without an observer
-  quorum; the reserve invariant halts an asset whose reserves fall below
-  user liabilities.
+- The ledger rules: no action freezes, seizes or edits a balance; a vault
+  pays nothing without an observer quorum; the reserve invariant halts an
+  asset whose reserves fall below user liabilities.
+- What the chain mints and when: the block reward (10% of supply, 262.5
+  million KEEL in the first year halving every four years, a tenth of each
+  block to its proposer) and the community reward (25% of supply, 10 KEEL
+  per dollar of protocol fee to the payer). Both are constants in
+  `modules::rewards`, deliberately out of governance's reach so a
+  validator's expected income does not depend on who holds the votes.
 - Block capacity, `MAX_ACTIONS_PER_BLOCK` = 50,000 actions, and the
   consensus timings derived from the block intervals.
 - The chain id, the address and signature scheme, the derivation of

@@ -66,8 +66,9 @@ pub struct State {
     /// floor and fee, session, offer, dispute, proposal and memo caps
     /// (schema 9).
     pub limits: limits::LimitsState,
-    /// Staking emission from the genesis validator bucket (schema 10).
-    pub emission: emission::EmissionState,
+    /// What is minted after genesis: the block reward and the community
+    /// reward, both capped (schema 10; reshaped 2026-11-16).
+    pub rewards: rewards::RewardsState,
     /// Time-weighted reference prices per pair (schema 11).
     pub prices: prices::PricesState,
     /// USDT conversion on deposit and the rebalancing premium (schema 12).

@@ -50,8 +50,14 @@ impl StateMachine for JoiningChain {
     fn check(&self, payload: &[u8]) -> bool {
         self.inner.check(payload)
     }
-    fn apply(&mut self, height: Height, timestamp: u64, payload: &[u8]) -> Digest {
-        self.inner.apply(height, timestamp, payload)
+    fn apply(
+        &mut self,
+        height: Height,
+        timestamp: u64,
+        proposer: [u8; 32],
+        payload: &[u8],
+    ) -> Digest {
+        self.inner.apply(height, timestamp, proposer, payload)
     }
     fn tip(&self) -> (Height, Digest) {
         self.inner.tip()
@@ -92,8 +98,14 @@ impl StateMachine for RotatingChain {
     fn check(&self, payload: &[u8]) -> bool {
         self.inner.check(payload)
     }
-    fn apply(&mut self, height: Height, timestamp: u64, payload: &[u8]) -> Digest {
-        self.inner.apply(height, timestamp, payload)
+    fn apply(
+        &mut self,
+        height: Height,
+        timestamp: u64,
+        proposer: [u8; 32],
+        payload: &[u8],
+    ) -> Digest {
+        self.inner.apply(height, timestamp, proposer, payload)
     }
     fn tip(&self) -> (Height, Digest) {
         self.inner.tip()
@@ -249,7 +261,13 @@ impl StateMachine for PacedChain {
     fn check(&self, payload: &[u8]) -> bool {
         self.inner.check(payload)
     }
-    fn apply(&mut self, height: Height, timestamp: u64, payload: &[u8]) -> Digest {
+    fn apply(
+        &mut self,
+        height: Height,
+        timestamp: u64,
+        proposer: [u8; 32],
+        payload: &[u8],
+    ) -> Digest {
         if height.get() > 1 {
             let expected = if self.pending {
                 self.busy_ms
@@ -263,7 +281,7 @@ impl StateMachine for PacedChain {
             );
         }
         self.last_ts = timestamp;
-        self.inner.apply(height, timestamp, payload)
+        self.inner.apply(height, timestamp, proposer, payload)
     }
     fn tip(&self) -> (Height, Digest) {
         self.inner.tip()

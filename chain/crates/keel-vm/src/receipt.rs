@@ -561,13 +561,21 @@ pub enum Event {
         owner: Address,
         amount: Amount,
     },
-    /// Staking emission: KEEL moved from the genesis `validator_bootstrap`
-    /// bucket into `validator_rewards` at an epoch boundary, paid out by
-    /// the same epoch's distribution.
-    EmissionPaid {
-        epoch: u64,
+    /// The block reward: KEEL minted for the time since the previous block,
+    /// `to_proposer` of it straight to the block's proposer (when it is a
+    /// validator), the rest into `validator_rewards` for the epoch payout.
+    BlockRewardMinted {
+        height: u64,
         amount: Amount,
-        remaining: Amount,
+        proposer: Option<Address>,
+        to_proposer: Amount,
+    },
+    /// The community reward: KEEL minted to a user for the protocol fee it
+    /// paid (`fee_usd` in USD micro-units).
+    CommunityRewardMinted {
+        owner: Address,
+        fee_usd: Amount,
+        amount: Amount,
     },
     /// A withdrawal of USDT through a chain whose reserve is below its
     /// target paid this premium (USDT) into the rebalancing pool.

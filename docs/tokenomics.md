@@ -2,44 +2,56 @@
 
 ## Supply
 
-- Hard cap: **21,000,000,000 KEEL** (matches the existing `KEEL_MAX_SUPPLY`).
-- Smallest unit: 10^-6 KEEL.
-- No inflation beyond the cap. Operators are paid from fee revenue (in kind,
-  through the fee split) and, since 2026-11-15, from the genesis validator
-  bucket paid out over time (`emission.validator_bps_per_year`, 10% of what
-  remains per year by default): coins that exist from genesis, reaching
-  validators, observers and delegators pro rata to stake.
-- Burn: the `fee_split_burn_bps` share of every fee (launch proposal 10%)
-  plus vetoed proposal deposits and slashed bonds.
+- Hard cap: **21,000,000,000 KEEL**. Smallest unit: 10^-6 KEEL.
+- 65% is issued at genesis (treasury, team, liquidity). The other 35% does
+  not exist until the chain mints it: 10% as the **block reward** to
+  validators and 25% as the **community reward** to the users who pay
+  fees. Both are capped, so total supply converges to the cap and never
+  passes it; both schedules are constants in `modules::rewards`, changed
+  only by a software upgrade validators choose to run, never by a vote
+  (decided 2026-11-16).
+- Burn: the `fee_split_burn_bps` share of every fee (10%) plus vetoed
+  proposal deposits and, once wired, slashed bonds.
 
 ## Genesis allocation (defaults in code: `keel_vm::genesis::Allocation`)
 
-The whole 21B is issued at genesis into DAO-controlled buckets. Nothing
-leaves a bucket without a governance proposal, except team grants, which
-vest on a schedule the chain enforces.
-
 | Bucket | Share | Where it sits | How it moves |
 |---|---|---|---|
-| DAO treasury | 35% | system `treasury` | `TreasurySpend` proposals |
-| Community rewards (trading, liquidity, referrals) | 25% | system `community_pool` | proposals; the KEEL awards already promised by the platform are paid from this bucket at genesis, line by line |
-| Team and early contributors | 15% | `vesting` (granted) + `team_reserve` (ungranted) | 1-year cliff, then linear over 4 years, released every block; ungranted remainder by proposal |
-| Validator / observer bootstrap | 10% | system `validator_bootstrap` | proposals (bonds for the first operator sets) |
-| Liquidity (house maker + stablecoin) | 10% | system `swap_pool` | the house maker's inventory from block one |
-| Strategic reserve | 5% | system `strategic_reserve` | proposals |
+| DAO treasury | 40% (the former 5% reserve folded in) | system `treasury`, issued at genesis | `TreasurySpend` proposals; also receives half of every fee |
+| Community rewards | 25% | not issued; a cap in `state.rewards` | minted to a user for every protocol fee it pays, `COMMUNITY_KEEL_PER_USD` (10 KEEL) per dollar of fee, until the cap is reached. The KEEL awards already promised by the platform are paid at genesis, line by line, out of this share |
+| Team and early contributors | 15% | `vesting` (granted) + `team_reserve` (ungranted), issued at genesis | 1-year cliff, then linear over 4 years, released every block; ungranted remainder by proposal |
+| Validators | 10% | not issued; a cap in `state.rewards` | the block reward: 262.5M KEEL in the first year, halving every four years by time, a tenth of each block's mint to its proposer and the rest to the epoch payout |
+| Liquidity (house maker + stablecoin) | 10% | system `swap_pool`, issued at genesis | the house maker's inventory from block one |
 
 Shares are basis points and must sum to 10,000; `total_supply` defaults
 to the cap. `keel genesis-from-export --allocation alloc.json` overrides
-them; `--no-allocation` skips issuance on test networks.
+them; `--no-allocation` skips the genesis issuance on test networks, which
+still mint the two rewards up to the default caps.
 
-### What I still have to decide, and what each needs
+### Decisions
 
-| Decision | Needed | Default until decided |
-|---|---|---|
-| Team grants | A list of (chain address, share of the team bucket in bps) and, if different, the cliff and duration | no grants; the whole 15% waits in `team_reserve` |
-| Bucket shares | Only if the 35/25/15/10/10/5 split changes; must sum to 100% | the split above |
-| Community emissions | A schedule (how much per epoch to trading/referral rewards); executed as proposals or a later emissions module | nothing emitted automatically |
-| Validator bootstrap use | Decided 2026-11-15: the bucket is the staking emission, `emission.validator_bps_per_year` of what remains per year, accrued at each epoch boundary into `validator_rewards` and distributed pro rata (`docs/governance.md`) | 10% a year |
-| Super admin | Decided 2026-11-15: there is none. The parameter admin and `SetParam` were removed; every parameter changes by `ParamChange` proposal, and the explorer's Governance page is the interface | no admin on any network |
+| Decision | Outcome |
+|---|---|
+| Super admin | None (2026-11-15). The parameter admin and `SetParam` were removed; every parameter changes by `ParamChange` proposal, and the explorer's Governance page is the interface. |
+| Validator reward | A block reward minted per block on a halving schedule in code (2026-11-16), replacing the genesis bucket and its governance rate: familiar to validators, capped at 10% of supply, with a proposer slice as a liveness incentive. |
+| Community emissions | Minted by usage, not dripped (2026-11-16): 10 KEEL per dollar of protocol fee to the payer, capped at 25% of supply. A quiet chain mints nothing; a busy one rewards the people making it busy. |
+| Bucket shares | 40 / 25 / 15 / 10 / 10 (2026-11-16). The strategic reserve had no purpose and is folded into the treasury. |
+| Team grants | Still open: a list of (chain address, share of the team bucket in bps) and, if different, the cliff and duration. Until then the whole 15% waits in `team_reserve`. |
+
+### The economics, in one paragraph
+
+The project funds itself by selling KEEL (the team allocation as it vests,
+and treasury KEEL by proposal) and earns a recurring revenue in the fees:
+half of every protocol fee reaches the treasury in the asset it was paid
+in, clients pay KEEL per flow for their users' waived fees, and the
+liquidity pool pays half its gain. The epoch buyback turns that revenue
+into KEEL. What holds the price while KEEL is sold is what the chain makes
+people hold or buy: KEEL locked for action capacity (linear in volume),
+bonds, the activation dust, and the usage prices. Against those stand the
+sellers: the treasury and vesting, validators selling block rewards to
+cover costs, and community reward recipients. That is why issuance is kept
+modest and halving, and why community rewards are earned on fees rather
+than dripped on a calendar.
 
 ## Demand sinks
 
@@ -90,18 +102,18 @@ Split: 50% treasury, 40% validators + observers + delegators (observers
 take 25% of that share first), 10% burn. All splits are on-chain ledger
 legs, auditable per fee.
 
-## Epoch rewards
+## Block rewards and epoch payouts
 
-At each epoch boundary the accumulated `validator_rewards` balance per asset
-is paid out in kind (USDT, BTC.BTC, …), so operators earn the exchange's
-revenue directly. The same boundary first accrues the staking emission:
-`remaining × emission.validator_bps_per_year × elapsed / year` of the
-`validator_bootstrap` bucket moves into `validator_rewards` in KEEL and is
-paid by the same distribution (observers' share first, then validators and
-their delegators pro rata to power). KEEL has no price model, so the
-emission is defined as a share of stake, not a value: what it is worth
-follows the demand sinks above, chiefly KEEL locked for action capacity and
-KEEL clients buy to pay usage.
+Every block mints KEEL for the time since the previous block, at the
+block-reward rate of its era. A tenth goes straight to the block's
+proposer; the rest lands in `validator_rewards` next to the fees. At each
+epoch boundary that pool is paid out, per asset and in kind (USDT, BTC,
+KEEL): observers first take `observer_reward_bps` split equally, then
+validators pro rata to bonded power, each delegator receiving its slice
+automatically. KEEL has no price model, so the block reward is defined as
+coins per time, not a value: what it is worth follows the demand sinks
+above. `GET /v1/supply` shows the rate, the next halving, and what remains
+of both caps.
 
 ## Wholesale and retail: how clients and Keel are paid
 

@@ -43,6 +43,7 @@ pub fn collect(
         return Ok(());
     }
     let s = split(state, amount);
+    let payer = from.owner;
     let mut records = vec![Record::debit(from, amount)];
     if s.treasury > 0 {
         records.push(Record::credit(system_key(asset, "treasury"), s.treasury));
@@ -59,5 +60,6 @@ pub fn collect(
     state
         .ledger
         .post(external_id, tx_type, group_id, None, records)?;
+    super::rewards::community_for_fee(state, payer, asset, amount, external_id);
     Ok(())
 }

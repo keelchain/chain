@@ -9,8 +9,9 @@ action's JSON they are 32-element byte arrays (serde form).
 |---|---|---|
 | POST | `/v1/actions` | body: `SignedAction` JSON (`{envelope:{signer,nonce,chain_id,action},signature}`) → 202 `{tx_id, admitted:true}` or 422 `{admitted:false, code, error}` |
 | GET | `/v1/status` | `{chain_id, height, timestamp, state_hash, validators[], mempool, accounts, orders}` |
+| GET | `/v1/supply` | KEEL supply: `cap`, `issued`, `burned`, `block_reward` (`cap`, `minted`, `remaining`, `rate_per_year`, `proposer_bps`, `halving_ms`, `started_ms`, `next_halving_ms`) and `community_reward` (`cap`, `minted`, `remaining`, `keel_per_fee_usd`) |
 | GET | `/v1/stable` | the unified USDT: `supply`, `reserves_in_stable`, `rebalance_pool`, `params` (`auto_convert`, `rebalance_max_premium_bps`), and per basket network `reserve`, `cap`, `target_ppm`, `share_ppm`, `premium_bps` (what a `WithdrawStable` through it pays now, and the rebate a deposit on it earns) |
-| GET | `/v1/params` | every governance parameter (`docs/governance.md`): the scalar `Params`, nested `clients`/`liquidity`/`recovery`/`emission`/`prices`/`stable`, and the dotted limit keys (`budget.activation_keel`, `sessions.max_secs`, …) flat |
+| GET | `/v1/params` | every governance parameter (`docs/governance.md`): the scalar `Params`, nested `clients`/`liquidity`/`recovery`/`prices`/`stable`, and the dotted limit keys (`budget.activation_keel`, `sessions.max_secs`, …) flat |
 | GET | `/v1/accounts/{addr}` | `{nonce, activated, budget{activation_keel, activation_balance, fee_mode, action_fee_keel, used,limit,cancel_limit,remaining,earned,…}, tier, tier_expires_at, balances[{asset,account_type,balance}]}` |
 | GET | `/v1/accounts/{addr}/orders` | `{open:[OrderRecord]}` |
 | GET | `/v1/accounts/{addr}/trades` | `{trades:[Trade]}` |

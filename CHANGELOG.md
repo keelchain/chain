@@ -5,6 +5,19 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **block reward and community reward replace the genesis buckets**
+  (2026-11-16). 65% of the cap is issued at genesis (treasury 40%, the
+  former reserve folded in; team 15%; liquidity 10%). Validators' 10% is
+  minted per block on a four-year halving schedule (262.5M KEEL in year
+  one, by elapsed time), a tenth of each block's mint to its proposer and
+  the rest to the epoch payout; the community's 25% is minted to fee
+  payers at 10 KEEL per dollar of protocol fee. Both schedules are
+  constants in `modules::rewards` (no governance parameter) and both are
+  capped, so supply converges to 21B. The staking emission module, its
+  parameter and the `validator_bootstrap`, `community_pool` and
+  `strategic_reserve` accounts are gone. Consensus now hands the block's
+  proposer to the state machine and the journal records it. New
+  `GET /v1/supply`; events `BlockRewardMinted`, `CommunityRewardMinted`.
 - Chain: **the parameter admin is gone, action and all.** The `SetParam`
   action, the `SetParamAdmin` proposal kind, the `ParamAdminChanged` event
   and `gov.param_admin` no longer exist; every parameter changes by
