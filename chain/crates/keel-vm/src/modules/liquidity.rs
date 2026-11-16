@@ -31,7 +31,7 @@
 
 use crate::{
     context::BlockContext,
-    modules::{fees, gov, tokens},
+    modules::{fees, tokens},
     receipt::{Event, VmError},
     state::State,
 };
@@ -44,7 +44,6 @@ use std::collections::BTreeMap;
 
 /// The node version whose activation switches the pool (and the client
 /// pricing that shipped with it) on.
-pub const ACTIVATION_VERSION: &str = "0.2.0";
 /// The house party account type the pool lives in.
 pub const SWAP_POOL: &str = "swap_pool";
 /// Value per share is stored as `value_usd * VPS_SCALE / total_shares`.
@@ -146,7 +145,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
     })
 }
 
-/// `SetParam` / `ParamChange` for the `liquidity.*` keys.
+/// `ParamChange` for the `liquidity.*` keys.
 pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>, VmError> {
     let bps = |v: u128| -> Result<u32, VmError> {
         u32::try_from(v)
@@ -184,11 +183,6 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
         key: key.to_string(),
         value,
     }])
-}
-
-/// Whether the pool (and everything gated with it) is live at `height`.
-pub fn active(state: &State, height: u64) -> bool {
-    gov::feature_active(state, height, ACTIVATION_VERSION)
 }
 
 fn pool_key(asset: &Asset) -> AccountKey {
@@ -247,11 +241,8 @@ fn pool(state: &State) -> Option<&Pool> {
 
 /// Depositors' share of the pool's balance in `asset`: what counts as a
 /// user liability (the protocol's own shares are platform money). Zero
-/// before activation or without a pool.
-pub fn user_pool_liability(state: &State, height: u64, asset: &Asset) -> Amount {
-    if !active(state, height) {
-        return 0;
-    }
+/// without a pool.
+pub fn user_pool_liability(state: &State, _height: u64, asset: &Asset) -> Amount {
     let Some(p) = pool(state) else {
         return 0;
     };
@@ -305,9 +296,6 @@ pub fn apply(
     tx_id: &[u8; 32],
     action: &Action,
 ) -> Result<Vec<Event>, VmError> {
-    if !active(state, ctx.height) {
-        return Err(VmError::Invalid("liquidity not active".into()));
-    }
     match action {
         Action::DepositLiquidity { asset, amount } => {
             deposit(state, ctx, signer, tx_id, asset, *amount)
@@ -559,9 +547,6 @@ fn withdraw(
 }
 
 pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
-    if !active(state, ctx.height) {
-        return Vec::new();
-    }
     let mut events = release_due(state, ctx);
     let len = state.params.epoch_length_blocks.max(1);
     if ctx.height == 0 || !ctx.height.is_multiple_of(len) {

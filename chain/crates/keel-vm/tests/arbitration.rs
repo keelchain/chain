@@ -416,34 +416,26 @@ fn taker_chooses_among_several_or_the_first_applies_at_mark_paid() {
         "paid trades are fixed"
     );
 
-    // The param admin caps how many an offer may name.
-    state.gov.param_admin = Some(alice.addr());
+    // Governance caps how many an offer may name.
+    keel_vm::modules::gov::change_param(&mut state, "arbitration.max_named", 1).unwrap();
     h += 1;
     let (r, _) = apply_block(
         &mut state,
         &at(h, 50),
-        &[
-            alice.act(Action::SetParam {
-                key: "arbitration.max_named".into(),
-                value: 1,
-            }),
-            alice.act(Action::SetOfferArbitrators {
-                offer_id: 0,
-                arbitrators: vec![arb1.addr(), arb2.addr()],
-            }),
-            alice.act(Action::SetParam {
-                key: "arbitration.max_named".into(),
-                value: 0,
-            }),
-        ],
+        &[alice.act(Action::SetOfferArbitrators {
+            offer_id: 0,
+            arbitrators: vec![arb1.addr(), arb2.addr()],
+        })],
     );
-    ok(&r[0]);
     assert!(
-        matches!(r[1].error, Some(VmError::Invalid(_))),
+        matches!(r[0].error, Some(VmError::Invalid(_))),
         "over the cap"
     );
     assert!(
-        matches!(r[2].error, Some(VmError::Invalid(_))),
+        matches!(
+            keel_vm::modules::gov::change_param(&mut state, "arbitration.max_named", 0),
+            Err(VmError::Invalid(_))
+        ),
         "cap must be >= 1"
     );
     assert_eq!(

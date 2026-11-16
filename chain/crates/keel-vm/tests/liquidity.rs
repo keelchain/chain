@@ -367,21 +367,12 @@ fn withdrawal_is_pro_rata_in_kind_after_the_delay_and_crystallises_gains() {
 
 #[test]
 fn quote_limits_bound_the_inventory_and_the_spread() {
-    let (mut state, mut alice, mut bob, mut v) = setup(0);
-    state.gov.param_admin = Some(v.addr());
+    let (mut state, mut alice, mut bob, _v) = setup(0);
     state.gov_house_operator = Some(alice.addr());
     seed_pool_vault(&mut state, &btc(), BTC, "btc");
     let mut c = Chain::new(state);
-    let (r, _) = c.block(&[v.act(Action::SetParam {
-        key: "liquidity.max_quote_inventory_bps".into(),
-        value: 2_500,
-    })]);
-    ok(&r[0]);
-    let (r, _) = c.block(&[v.act(Action::SetParam {
-        key: "liquidity.min_spread_bps".into(),
-        value: 50,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "liquidity.max_quote_inventory_bps", 2_500).unwrap();
+    set_param(&mut c.state, "liquidity.min_spread_bps", 50).expect("param");
     // 10 bps of spread is refused; a one-sided quote has no spread to check.
     let r = quote(
         &mut c,
@@ -435,13 +426,6 @@ fn reserve_invariant_counts_depositors_share_of_pool_vault_assets() {
     assert!(!events
         .iter()
         .any(|e| matches!(e, Event::InvariantBreached { .. })));
-    // Below activation the pool term is zero (the pre-0.2.0 reading).
-    let mut inactive = c.state.clone();
-    inactive.gov.upgrades.clear();
-    assert_eq!(
-        liquidity::user_pool_liability(&inactive, c.height, &btc()),
-        0
-    );
     // Reserves drop by 0.3 BTC with no liability leaving: only the pool
     // term makes that a breach.
     let drain = |s: &mut keel_vm::State| {
@@ -478,59 +462,11 @@ fn reserve_invariant_counts_depositors_share_of_pool_vault_assets() {
 }
 
 #[test]
-fn nothing_happens_below_the_activation_height() {
-    let (mut state, mut alice, mut bob, _v) = setup(0);
-    state.gov.upgrades.clear();
-    state
-        .gov
-        .upgrades
-        .push((liquidity::ACTIVATION_VERSION.into(), 6));
-    state.liquidity.params.max_quote_inventory_bps = 1;
-    state.gov_house_operator = Some(alice.addr());
-    seed_pool_vault(&mut state, &btc(), BTC, "btc");
-    let mut c = Chain::new(state);
-    set_price(
-        &mut c,
-        &mut alice,
-        &mut bob,
-        "BTC-USDT",
-        1_000_000 * SAT,
-        px(60_000),
-    );
-    // Height 3: refused; the clamp is the pre-activation whole balance.
-    let r = deposit(&mut c, &mut alice, usds(), 100 * USDT);
-    assert!(matches!(err(&r), VmError::Invalid(m) if m.contains("not active")));
-    ok(&quote(&mut c, &mut alice, None, Some((px(61_000), BTC))));
-    let bob_before = acct(&c.state, bob.addr(), &btc(), "deposit");
-    let (r, _) = c.block(&[bob.act(Action::PlaceOrder(PlaceOrder {
-        pair: "BTC-USDT".into(),
-        side: Side::Buy,
-        order_type: OrderType::Market,
-        price: None,
-        quantity: Some(10_000_000 * SAT),
-        quote_budget: None,
-        client_id: None,
-    }))]);
-    ok(&r[0]);
-    assert_eq!(
-        acct(&c.state, bob.addr(), &btc(), "deposit"),
-        bob_before + 10_000_000
-    );
-    assert_eq!(c.height, 5);
-    // Height 6: active.
-    let r = deposit(&mut c, &mut alice, usds(), 100 * USDT);
-    ok(&r);
-    assert!(liquidity::active(&c.state, c.height));
-    audit_clean(&c.state);
-}
-
-#[test]
 fn liquidity_params_are_votable_and_bounded() {
     let (mut state, mut alice, _bob, mut v) = setup(100_000_000_000);
     state.params.proposal_deposit = 1_000_000_000;
     state.params.voting_period_blocks = 3;
     state.params.timelock_blocks = 1;
-    state.gov.param_admin = Some(v.addr());
     let mut c = Chain::new(state);
     let id = c.state.gov.next_id;
     let (r, _) = c.block(&[alice.act(Action::Propose(Proposal {
@@ -553,21 +489,15 @@ fn liquidity_params_are_votable_and_bounded() {
     ok(&r[0]);
     assert_eq!(c.state.liquidity.params.protocol_share_bps, 3_000);
     // Bounds through the admin path.
-    let (r, _) = c.block(&[v.act(Action::SetParam {
-        key: "liquidity.max_quote_inventory_bps".into(),
-        value: 0,
-    })]);
-    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
-    let (r, _) = c.block(&[v.act(Action::SetParam {
-        key: "liquidity.protocol_share_bps".into(),
-        value: 10_001,
-    })]);
-    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
-    let (r, _) = c.block(&[v.act(Action::SetParam {
-        key: "liquidity.withdraw_delay_blocks".into(),
-        value: 100,
-    })]);
-    ok(&r[0]);
+    assert!(matches!(
+        set_param(&mut c.state, "liquidity.max_quote_inventory_bps", 0),
+        Err(VmError::Invalid(_))
+    ));
+    assert!(matches!(
+        set_param(&mut c.state, "liquidity.protocol_share_bps", 10_001),
+        Err(VmError::Invalid(_))
+    ));
+    set_param(&mut c.state, "liquidity.withdraw_delay_blocks", 100).expect("param");
     assert_eq!(
         liquidity::get_param(&c.state, "liquidity.withdraw_delay_blocks"),
         Some(100)

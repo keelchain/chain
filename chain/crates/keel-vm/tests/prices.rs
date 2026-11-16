@@ -41,8 +41,7 @@ fn buy(qty: u128) -> Action {
 
 #[test]
 fn settlement_reads_a_time_weighted_price_not_the_last_print() {
-    let (mut state, mut alice, mut bob, _v) = setup(0);
-    state.gov.param_admin = Some(alice.addr());
+    let (state, mut alice, mut bob, _v) = setup(0);
     assert_eq!(state.prices.params.twap_window_secs, 600);
     let mut c = Chain::new(state);
     let t0 = 10_000;
@@ -92,27 +91,13 @@ fn settlement_reads_a_time_weighted_price_not_the_last_print() {
 
     // The window is a governance parameter; 0 turns the reference off and
     // settlement falls back to the last fill; a week is the ceiling.
-    let (r, _) = c.block_at_secs(
-        t0 + 1_000,
-        &[
-            alice.act(Action::SetParam {
-                key: "prices.twap_window_secs".into(),
-                value: 8 * 86_400,
-            }),
-            alice.act(Action::SetParam {
-                key: "prices.twap_window_secs".into(),
-                value: 0,
-            }),
-        ],
-    );
-    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
-    ok(&r[1]);
+    c.block_at_secs(t0 + 1_000, &[]);
+    assert!(matches!(
+        set_param(&mut c.state, "prices.twap_window_secs", 8 * 86_400),
+        Err(VmError::Invalid(_))
+    ));
+    set_param(&mut c.state, "prices.twap_window_secs", 0).expect("param");
     assert_eq!(prices::reference(&c.state, "KEEL-USDT"), None);
     assert_eq!(tokens::usd_value(&c.state, &keel(), KEEL), Some(2 * USDT));
     assert!(c.state.ledger.audit().mismatches.is_empty());
-}
-
-#[test]
-fn a_migrated_chain_keeps_reading_the_last_fill() {
-    assert_eq!(prices::PricesState::migrated().params.twap_window_secs, 0);
 }

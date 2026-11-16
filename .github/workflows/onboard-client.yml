@@ -13,10 +13,6 @@ on:
         description: Add to the attester set
         type: boolean
         default: true
-      param_admin:
-        description: Make it the param admin (revokes the genesis key's SetParam)
-        type: boolean
-        default: false
       keel:
         description: KEEL to send (whole units)
         default: "100000"
@@ -47,6 +43,5 @@ jobs:
           H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[0]; print(h.get("user","ubuntu")+"@"+h["ip"])')
           ARGS=""
           [ "${{ github.event.inputs.attester }}" = true ] && ARGS="$ARGS --attester"
-          [ "${{ github.event.inputs.param_admin }}" = true ] && ARGS="$ARGS --param-admin"
           ARGS="$ARGS --keel ${{ github.event.inputs.keel }} --kusd ${{ github.event.inputs.kusd }}"
           ssh -i ~/.ssh/id_deploy "$H" "/opt/keelchain/onboard-client.sh $ADDRESS $ARGS"

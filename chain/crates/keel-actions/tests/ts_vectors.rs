@@ -4,8 +4,8 @@
 
 use keel_actions::{
     Action, Chain, CustodyRotation, CustodySwap, DepositObservation, HouseQuote, OfferSpec,
-    PlaceOrder, Proof, Proposal, ProposalKind, SignedAction, StartTrade, SwapSide,
-    SweepObservation, Transfer, Withdraw, CHAIN_ID_DEVNET,
+    PlaceOrder, Proof, Proposal, ProposalKind, SignedAction, StartTrade, SwapSide, Transfer,
+    Withdraw, CHAIN_ID_DEVNET,
 };
 use keel_crypto::Keypair;
 use keel_types::{Address, Asset, OrderId, OrderType, Side};
@@ -200,21 +200,6 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 expires_at: 1_800_000_000,
             },
         ),
-        (
-            "set_param",
-            Action::SetParam {
-                key: "taker_fee_bps".into(),
-                value: 15,
-            },
-        ),
-        (
-            "propose_param_admin",
-            Action::Propose(Proposal {
-                title: "revoke".into(),
-                description: "".into(),
-                kind: ProposalKind::SetParamAdmin { admin: None },
-            }),
-        ),
         ("lock_budget", Action::LockBudget { amount: 5_000_000 }),
         ("unlock_budget", Action::UnlockBudget { amount: 2_500_000 }),
         (
@@ -359,7 +344,6 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 public_key: vec![3u8; 33],
                 chain_code: [8u8; 32],
                 signer_url: "https://signer-b.example.com".into(),
-                sweep: true,
                 activate_at: Some(1_000),
             }),
         ),
@@ -368,18 +352,6 @@ fn vectors() -> Vec<(&'static str, Action)> {
             Action::CancelCustodyRotation {
                 chain: Chain::Bitcoin,
             },
-        ),
-        (
-            "observe_custody_sweep",
-            Action::ObserveCustodySweep(SweepObservation {
-                chain: Chain::Bitcoin,
-                custodian: Address::tagged(7),
-                from_gen: 0,
-                tx_hash: [5u8; 32],
-                asset: Asset::new("BTC.BTC"),
-                amount: 90_000,
-                fee: 1_000,
-            }),
         ),
         (
             "retire_custody_generation",

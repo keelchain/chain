@@ -39,10 +39,6 @@ pub struct Args {
     pub validators: String,
     #[arg(long)]
     pub out: String,
-    /// Chain address (hex) of the platform super admin: may change
-    /// parameters directly until governance revokes it.
-    #[arg(long)]
-    pub param_admin: Option<String>,
     /// JSON file with the KEEL allocation (keel_vm::genesis::Allocation);
     /// omitted = the tokenomics defaults with no team grants.
     #[arg(long)]
@@ -186,12 +182,6 @@ pub fn run(args: &Args, chain_id: u32) -> anyhow::Result<()> {
                 .map_err(|e| anyhow!("reserve {e}"))
         })
         .collect::<Result<_, _>>()?;
-    genesis.param_admin = match &args.param_admin {
-        Some(hex) => Some(
-            Address::from_hex(hex).ok_or_else(|| anyhow!("--param-admin must be 64 hex chars"))?,
-        ),
-        None => None,
-    };
     genesis.allocation = if args.no_allocation {
         None
     } else {

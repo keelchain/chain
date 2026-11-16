@@ -24,7 +24,7 @@
 //!   KEEL, and the rails (addresses, withdrawals) stay closed meanwhile.
 //!   With the fee waived the retail caps no longer apply.
 //!
-//! Governance knobs live here as `clients.*` parameters (`SetParam` and
+//! Governance knobs live here as `clients.*` parameters (`ParamChange` and
 //! `ParamChange` route them), so `Params` keeps its layout.
 
 use crate::{
@@ -201,7 +201,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
     })
 }
 
-/// `SetParam` / `ParamChange` for the `clients.*` keys.
+/// `ParamChange` for the `clients.*` keys.
 pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>, VmError> {
     let bps = |v: u128| -> Result<u32, VmError> {
         u32::try_from(v)
@@ -244,7 +244,7 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
 /// which the schedule is the client's own business.
 pub fn apply_set_fee(
     state: &mut State,
-    height: u64,
+    _height: u64,
     signer: Address,
     fee: &ClientFee,
 ) -> Result<Vec<Event>, VmError> {
@@ -252,7 +252,7 @@ pub fn apply_set_fee(
         return Err(VmError::Unauthorized);
     }
     let p = &state.clients.params;
-    let uncapped = active(state, height) && p.protocol_fee_waived == 1;
+    let uncapped = p.protocol_fee_waived == 1;
     if !uncapped
         && (fee.p2p_bps > p.fee_cap_p2p_bps
             || fee.taker_bps > p.fee_cap_taker_bps
@@ -294,12 +294,6 @@ pub fn client_of(state: &State, payer: &Address) -> Option<Address> {
     state.clients.attested_by.get(payer).copied()
 }
 
-/// Whether the 0.2.0 pricing (waived protocol fees, per-flow usage) is
-/// live at `height`.
-pub fn active(state: &State, height: u64) -> bool {
-    super::liquidity::active(state, height)
-}
-
 /// The client billed for `payer`'s flows: its attester, while the
 /// attestation is unexpired. `client_of` never expires, which is right for
 /// retail fees the client agreed with its user but not for billing.
@@ -312,8 +306,8 @@ pub fn billing_client_of(state: &State, payer: &Address, now_secs: u64) -> Optio
 /// `Some(client)` when the chain waives its protocol fee for `payer` and
 /// bills that client instead: the pricing is active and switched on, the
 /// payer has a live client, and the client is not paying for itself.
-pub fn waives_fee(state: &State, height: u64, payer: &Address, now_secs: u64) -> Option<Address> {
-    if !active(state, height) || state.clients.params.protocol_fee_waived != 1 {
+pub fn waives_fee(state: &State, _height: u64, payer: &Address, now_secs: u64) -> Option<Address> {
+    if state.clients.params.protocol_fee_waived != 1 {
         return None;
     }
     let client = billing_client_of(state, payer, now_secs)?;
@@ -517,9 +511,6 @@ pub fn charge_usage_to(
 
 /// Epoch boundary: collect usage owed from clients that hold KEEL again.
 pub fn end_block(state: &mut State, ctx: &crate::context::BlockContext) -> Vec<Event> {
-    if !active(state, ctx.height) {
-        return Vec::new();
-    }
     let len = state.params.epoch_length_blocks.max(1);
     if ctx.height == 0 || !ctx.height.is_multiple_of(len) {
         return Vec::new();

@@ -82,7 +82,6 @@ export const ACTION_LABELS: Record<string, string> = {
   Vote: 'Vote',
   ExecuteProposal: 'Execute proposal',
   Attest: 'Attest tier',
-  SetParam: 'Set parameter',
   EpochBoundary: 'Epoch boundary',
 };
 
@@ -231,9 +230,6 @@ function proposalKindFields(kind: unknown): NamedField[] {
       break;
     case 'PauseModule':
       out.push({ name: 'Module', field: { k: 'text', value: str(p['module']) } }, { name: 'Until height', field: { k: 'height', value: num(p['until_height']) } });
-      break;
-    case 'SetParamAdmin':
-      out.push({ name: 'Admin', field: p['admin'] ? { k: 'address', value: str(p['admin']) } : { k: 'badge', value: 'Revoked', tone: 'warn' } });
       break;
     case 'Text':
       break;
@@ -442,11 +438,6 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
         { name: 'Subject', field: { k: 'address', value: str(p['subject']) } },
         { name: 'Tier', field: { k: 'number', value: num(p['tier']) } },
         { name: 'Expires', field: { k: 'timestamp', value: num(p['expires_at']) * 1000 } },
-      ]);
-    case 'SetParam':
-      return view(`Set ${str(p['key'])} = ${str(p['value'])}`, [
-        { name: 'Parameter', field: { k: 'text', value: str(p['key']) } },
-        { name: 'Value', field: { k: 'number', value: amountStr(p['value']) } },
       ]);
     case 'EpochBoundary':
       return view('Epoch boundary', []);

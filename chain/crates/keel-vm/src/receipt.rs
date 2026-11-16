@@ -346,9 +346,6 @@ pub enum Event {
         asset: Asset,
         amount: Amount,
     },
-    ParamAdminChanged {
-        admin: Option<Address>,
-    },
     SessionAuthorized {
         principal: Address,
         key: Address,
@@ -478,18 +475,6 @@ pub enum Event {
         chain: String,
         custodian: Address,
         gen: u64,
-    },
-    /// Never emitted: generations are separate pools and nothing is moved
-    /// between them (`ObserveCustodySweep` is refused). Kept so old
-    /// receipts still decode.
-    PoolSwept {
-        chain: String,
-        custodian: Address,
-        from_gen: u64,
-        asset: Asset,
-        amount: Amount,
-        fee: Amount,
-        tx_hash: String,
     },
     /// A draining generation is no longer watched or paid from.
     PoolGenerationRetired {

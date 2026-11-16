@@ -55,7 +55,7 @@ Variables:
 | `KEEL_SIGNER_MODE` | `tss` (threshold signer across the hosts) or `local` (one host, development signer) |
 | `KEEL_OBSERVER_THRESHOLD` | optional; default two thirds of the hosts, rounded up |
 | `KEEL_VALIDATOR_BOND` | optional; KEEL bonded per validator at genesis (smallest units, default 100,000 KEEL) |
-| `KEEL_PARAM_ADMIN`, `KEEL_ATTESTER`, `KEEL_ARBITRATOR` | 64-hex addresses of keys I hold off the boxes; default to host 0's account when unset |
+| `KEEL_ATTESTER`, `KEEL_ARBITRATOR` | 64-hex addresses of keys I hold off the boxes; default to host 0's account when unset |
 | `KEEL_GENESIS_FUNDS` | optional extra credits, comma separated `<address>:<ASSET>:<amount>` |
 | `KEEL_NODE_EXTRA_ARGS` | optional extra `keel-node` flags on every host, e.g. `--extra-peers <follower key>` |
 | `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, `BITCOIN_WALLET` | `http://127.0.0.1:38332` (host 0), `keel`, `keel-vault-watch` (suffixed with the host index) |
@@ -67,7 +67,7 @@ Variables:
 | `KEEL_FAUCET_KEEL`, `KEEL_FAUCET_USDT` | optional; coins per claim (default 100 each). Cooldown per address 24 h, 5 claims per IP per day |
 | `KEEL_FAUCET_FLOAT_CLAIMS` | optional; how many claims' worth of each asset the faucet should hold (default 500). Every deploy of host 0 tops the faucet up from the genesis account when it holds less than half of that, so it works again after a reset |
 | `AGE_RECIPIENT` | optional; an `age` public key; backups are encrypted to it (keep the identity off the boxes) |
-| `KEEL_CLIENTS` | optional; JSON list of clients to re-onboard after a reset and to pre-approve in governance votes: `[{"address":"<hex>","attester":true,"param_admin":false,"keel":100000,"kusd":100000}]` |
+| `KEEL_CLIENTS` | optional; JSON list of clients to re-onboard after a reset and to pre-approve in governance votes: `[{"address":"<hex>","attester":true,"keel":100000,"kusd":100000}]` |
 | `KEEL_MONITORING` | `1` to run Prometheus, Alertmanager and Grafana on host 0 (`infra/testnet/monitoring`), scraping every host's node_exporter over the mesh |
 | `ALERT_SMTP_HOST`, `ALERT_SMTP_FROM`, `ALERT_SMTP_USER`, `ALERT_TO` | where alerts are mailed |
 
@@ -126,7 +126,7 @@ carry a proposal.
   Prometheus.
 - **Votes.** `keel-vote.timer` votes Yes every ten minutes on proposals I
   pre-approved on the host: Bitcoin checkpoints that match its own view,
-  attester and param-admin proposals for addresses in `KEEL_CLIENTS`, and
+  attester proposals for addresses in `KEEL_CLIENTS`, and
   software upgrades whose version the propose-upgrade run wrote to
   `/etc/keelchain/upgrades-approved`. Everything else waits for a hand vote.
 - **Memory.** `keel-node` reserves about 18 MB per peer slot up front, so
@@ -216,7 +216,6 @@ piped into `gh`, never pasted into a terminal or a chat.
 
    ```bash
    keel keygen   # three times; keep each "secret", set each "address":
-   gh variable set KEEL_PARAM_ADMIN -R $R --env $E --body <address>
    gh variable set KEEL_ATTESTER    -R $R --env $E --body <address>
    gh variable set KEEL_ARBITRATOR  -R $R --env $E --body <address>
    gh variable set KEEL_GENESIS_FUNDS -R $R --env $E --body '<param admin address>:KEEL:1000000000000,<param admin address>:USDT:1000000000000'
@@ -264,7 +263,7 @@ vaults with the development signer as before.
 ## Onboarding a client
 
 `.github/workflows/onboard-client.yml` runs `onboard-client.sh` on host 0:
-attester and param-admin roles through governance (propose with host 0's
+the attester role through governance (propose with host 0's
 validator account, vote, wait for the timelock, execute) and KEEL / USDT
 transfers from that account's operating float. With three validators the
 other hosts' vote timers do not cover client proposals yet, so run the

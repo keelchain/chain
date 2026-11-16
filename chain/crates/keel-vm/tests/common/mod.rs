@@ -125,6 +125,17 @@ pub fn acct(state: &State, who: Address, asset: &Asset, t: &str) -> i128 {
         .balance(&AccountKey::new(who, asset.clone(), t).unwrap())
 }
 
+/// Change a parameter the way an executed `ParamChange` does, without the
+/// proposal round trip (the parameter admin is gone; tests still need to
+/// set knobs).
+pub fn set_param(
+    state: &mut State,
+    key: &str,
+    value: u128,
+) -> Result<Vec<keel_vm::Event>, keel_vm::VmError> {
+    keel_vm::modules::gov::change_param(state, key, value)
+}
+
 pub fn ok(r: &Receipt) {
     assert!(r.ok, "{:?}", r.error);
 }

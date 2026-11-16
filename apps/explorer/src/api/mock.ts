@@ -712,7 +712,7 @@ export class MockExplorerApi implements ExplorerApi {
       { title: 'Pause TRON vault for 24h', description: 'Emergency pause after observer disagreement on a TRON block; superseded by validator emergency pause.', kind: { PauseModule: { module: 'vaults.TRON', until_height: 1_700_000 } }, status: 'vetoed' },
       { title: 'Signal: adopt USDT as the unit of account for offers', description: 'Text proposal signalling the migration off USDT-denominated offers.', kind: 'Text', status: 'executed' },
       { title: 'Raise treasury fee split to 55%', description: 'Failed at execution: would leave BTC.BTC reserves below liabilities after the pending treasury spend.', kind: { ParamChange: { key: 'fee_split_treasury_bps', value: 5500 } }, status: 'failed' },
-      { title: 'Revoke the parameter admin', description: 'Hand all parameter changes to governance; the platform super admin key is revoked.', kind: { SetParamAdmin: { admin: null } }, status: 'voting' },
+      { title: 'Lower the offer deposit to 5 KEEL', description: 'More offers from small sellers; the deposit still deters spam.', kind: { ParamChange: { key: 'offer_deposit', value: 5000000 } }, status: 'voting' },
     ];
     const bonded = units(31_500_000, 6);
     kinds.forEach((k, i) => {
@@ -785,25 +785,17 @@ export class MockExplorerApi implements ExplorerApi {
         });
       }
     });
-    // A few direct SetParam changes by the param admin (launch-phase tuning).
-    const direct: [string, string][] = [
+    // Parameter history: changes executed by proposal (there is no admin key).
+    const executed: [string, string][] = [
       ['taker_fee_bps', '12'],
       ['taker_fee_bps', '10'],
       ['large_deposit_delay_blocks', '600'],
       ['outbound_batch_interval_blocks', '20'],
     ];
-    direct.forEach(([key, value], i) => {
+    executed.forEach(([key, value], i) => {
       const h = this.heightAt((40 - i * 6) * dayMs + rng.int(0, dayMs));
       const from = i === 0 ? '20' : this.paramHistory.filter((p) => p.key === key).at(-1)?.to ?? DEFAULT_PARAMS[key] ?? '0';
       this.paramHistory.push({ height: h, key, from, to: value, tx_id: this.txIdAt(h, 0) });
-      this.pin(h, {
-        signer: this.paramAdmin,
-        kind: 'SetParam',
-        module: 'gov',
-        action: { SetParam: { key, value } },
-        events: [{ type: 'ParamChanged', key, value }],
-        ok: true,
-      });
     });
     this.paramHistory.sort((a, b) => b.height - a.height);
     this.proposalsList.sort((a, b) => b.id - a.id);

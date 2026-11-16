@@ -87,8 +87,9 @@ transition is its concern and does not block Keel.
   store reviewers; support and hello mailboxes on keelchain.com.
 - GitHub organisation `keelchain` (free) for the repository, npm
   organisation `keel`, store developer accounts under the entity.
-- The token: `KEEL` allocation buckets, team grants and the super-admin
-  address were open items under the old name and remain open.
+- The token: `KEEL` allocation buckets and team grants were open items
+  under the old name and remain open; the super-admin address is settled:
+  there is none (2026-11-15).
 - Testnet policy: how often it resets, faucet, and who runs additional
   validators and observers.
 

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Onboard a client account on the Keel testnet, run on the box by
 # .github/workflows/onboard-client.yml (as ubuntu, sudo for the key).
-#   onboard-client.sh <address> [--attester] [--param-admin] [--arbitrator <addr>] [--keel N] [--kusd N]
+#   onboard-client.sh <address> [--attester] [--arbitrator <addr>] [--keel N] [--kusd N]
 # `--arbitrator` registers a second address (the client's dispute-ruling
 # key) in the arbitrator set.
 # Roles go through governance (propose, vote with the genesis validator, wait
 # for the timelock, execute); funds are plain transfers from the genesis account.
 set -euo pipefail
 ADDR=${1:?address}; shift
-ATTESTER=0; PARAM_ADMIN=0; ARBITRATOR=""; KEEL_AMT=0; USDT_AMT=0
+ATTESTER=0; ARBITRATOR=""; KEEL_AMT=0; USDT_AMT=0
 while [ $# -gt 0 ]; do case "$1" in
-  --attester) ATTESTER=1;; --param-admin) PARAM_ADMIN=1;; --arbitrator) ARBITRATOR=$2; shift;;
+  --attester) ATTESTER=1;; --arbitrator) ARBITRATOR=$2; shift;;
   --keel) KEEL_AMT=$2; shift;; --kusd) USDT_AMT=$2; shift;; *) echo "unknown $1"; exit 2;; esac; shift; done
 [[ "$ADDR" =~ ^[0-9a-f]{64}$ ]] || { echo "address must be 64 hex"; exit 2; }
 set -a; . <(sudo cat /etc/keelchain/checkpoint.env); set +a
@@ -26,19 +26,14 @@ propose() { # title kind -> id
   local out; out=$(send gov propose "$1" "$2")
   echo "$out" | j 'd["events"][0]["ProposalCreated"]["proposal_id"]' || { echo "$out" >&2; exit 1; }
 }
-# One proposal deposit must fit the genesis account; lower it while this key is param admin.
+# Every proposal below locks `proposal_deposit`; the genesis account must hold it.
 DEP=$(curl -s $RPC/v1/params | j 'd["proposal_deposit"]')
 LIQ=$($KEEL account "$ME" | j '[b["balance"] for b in d["balances"] if b["asset"]=="KEEL" and b["account_type"]=="deposit"][0]')
-if [ "$DEP" -gt "$((LIQ/2))" ] && [ "$(roles | j 'd["param_admin"]')" = "$ME" ]; then
-  send raw '{"SetParam":{"key":"proposal_deposit","value":1000000000}}' >/dev/null; echo "proposal_deposit lowered to 1000 KEEL"; sleep 6
-fi
+[ "$LIQ" -ge "$DEP" ] || { echo "host 0 holds $LIQ KEEL units, below the proposal deposit $DEP; fund it or lower proposal_deposit in genesis-params.json"; exit 1; }
 IDS=()
 if [ $ATTESTER = 1 ]; then
   MEMBERS=$(roles | python3 -c "import json,sys; m=json.load(sys.stdin)['attesters']; m=m if '$ADDR' in m else m+['$ADDR']; print(json.dumps({'SetAttesters':{'members':m}}))")
   IDS+=("$(propose "Attester $ADDR" "$MEMBERS")"); sleep 6
-fi
-if [ $PARAM_ADMIN = 1 ]; then
-  IDS+=("$(propose "Param admin $ADDR" "{\"SetParamAdmin\":{\"admin\":\"$ADDR\"}}")"); sleep 6
 fi
 if [ -n "$ARBITRATOR" ]; then
   [[ "$ARBITRATOR" =~ ^[0-9a-f]{64}$ ]] || { echo "arbitrator address must be 64 hex"; exit 2; }

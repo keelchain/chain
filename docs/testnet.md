@@ -27,8 +27,7 @@ vault asset after that chain's confirmations.
 
 A client is any service that signs actions for its users or holds a role.
 Run the `Onboard client` workflow with the client's account address: it adds
-the account to the attester set (and, if asked, makes it the param admin) and
-sends it starting KEEL and USDT. The first client is a marketplace sandbox that
+the account to the attester set and sends it starting KEEL and USDT. The first client is a marketplace sandbox that
 signs up users with Keel Wallet and settles trades on the chain.
 
 ## Running a follower

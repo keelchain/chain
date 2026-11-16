@@ -1,8 +1,10 @@
 # What governance can change
 
 Everything on this page is a number or a set that a `ParamChange` proposal
-can move, or the parameter admin can set directly with `SetParam` while
-that role exists (`how-it-works.md` §4). Nothing here is a constant in the
+can move. There is no administrative key: the parameter admin was removed
+on 2026-11-15, so a vote is the only way (`how-it-works.md` §4), and the
+explorer's Governance page is where it is proposed, voted and executed.
+Nothing here is a constant in the
 code any more: the modules read every cap from chain state, so a change is
 a transaction with a tx id, visible in the explorer under Governance, and
 takes effect from the block that includes it. What is *not* on this page
@@ -238,12 +240,12 @@ the height at which nodes not running it halt); set the arbitrator,
 attester or observer sets, with the observer threshold; set a stablecoin
 basket entry and its cap; pause a module until a height; bind a token
 contract to an asset; set the Bitcoin or Ethereum light-client checkpoint;
-ban an arbitrator; set or revoke the parameter admin; or carry text only.
-The parameter admin can do none of these; it can only set the numbers above.
+ban an arbitrator; or carry text only.
 
 ## What governance cannot change
 
-Fixed by the protocol (a change is a software upgrade, gated on an
+Fixed by the protocol (a change is a software upgrade; before mainnet the
+networks simply restart from genesis, from mainnet on it is gated on an
 activation height so old blocks replay unchanged):
 
 - The ledger rules: no action freezes, seizes or edits a balance; KEEL is

@@ -5,6 +5,24 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **the parameter admin is gone, action and all.** The `SetParam`
+  action, the `SetParamAdmin` proposal kind, the `ParamAdminChanged` event
+  and `gov.param_admin` no longer exist; every parameter changes by
+  `ParamChange` proposal only. The devnet genesis makes the round trip
+  quick (1,000 KEEL deposit, 20-block vote, 2-block timelock);
+  `genesis-build` lost `--param-admin`, the onboarding workflow lost its
+  param-admin option, `/v1/gov/roles` lost `param_admin`. Explorer: the
+  Governance page proposes parameter changes, votes and executes with Keel
+  Wallet.
+- Chain: **no compatibility shims before mainnet** (2026-11-16). Removed
+  with the admin: the sweep stubs (`ObserveCustodySweep`, `PoolSwept`, the
+  `sweep` field of `RotateCustodyVault` and of the pool state), the 0.2.0
+  activation gates on the liquidity pool and the client pricing (always
+  on), the "off when migrated" defaults, and the whole snapshot migration
+  chain with its fixtures: a node loads its own schema only (13) and a
+  layout change restarts the networks from genesis. This renumbers actions
+  and proposal kinds on the wire: SDK and **Keel Wallet 1.4.0** carry the
+  new numbering; older wallet builds must update.
 - Chain: **KUSD is retired; the dollar is `USDT`, one balance on every
   network.** The stable asset's ticker is `USDT` (traders know it; a house
   dollar scared them), backed one to one by each network's vaulted USDT

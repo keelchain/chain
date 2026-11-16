@@ -61,8 +61,7 @@ fn fill_fee(r: &keel_vm::Receipt) -> u128 {
 
 #[test]
 fn attester_sets_a_schedule_and_earns_on_taker_fills() {
-    let (mut state, mut alice, mut bob, mut v) = setup(0);
-    state.gov.param_admin = Some(v.addr());
+    let (state, mut alice, mut bob, mut v) = setup(0);
     let mut c = Chain::new(state);
 
     // The validator is an attester on the devnet: it vouches for alice.
@@ -140,33 +139,24 @@ fn attester_sets_a_schedule_and_earns_on_taker_fills() {
     assert!(sys(&c.state, &keel(), "treasury") > treasury_before);
 
     // Switching the waiver off brings back the capped pre-0.2.0 pricing.
-    let (r, _) = c.block(&[v.act(Action::SetParam {
-        key: "clients.protocol_fee_waived".into(),
-        value: 0,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "clients.protocol_fee_waived", 0).expect("param");
     let (r, _) = c.block(&[v.act(Action::SetClientFee(ClientFee {
         p2p_bps: 10,
         taker_bps: 9_999,
         withdraw_bps: 10,
     }))]);
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
-    let (r, _) = c.block(&[v.act(Action::SetParam {
-        key: "clients.fee_cap_taker_bps".into(),
-        value: 20,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "clients.fee_cap_taker_bps", 20).expect("param");
     let (r, _) = c.block(&[v.act(Action::SetClientFee(ClientFee {
         p2p_bps: 100,
         taker_bps: 50,
         withdraw_bps: 10,
     }))]);
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
-    let (r, _) = c.block(&[v.act(Action::SetParam {
-        key: "clients.fee_cap_taker_bps".into(),
-        value: 20_000,
-    })]);
-    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    assert!(matches!(
+        set_param(&mut c.state, "clients.fee_cap_taker_bps", 20_000),
+        Err(VmError::Invalid(_))
+    ));
     rest_sell(&mut c, &mut bob, KEEL);
     let r = market_buy(&mut c, &mut alice, KEEL);
     ok(&r);
@@ -177,7 +167,6 @@ fn attester_sets_a_schedule_and_earns_on_taker_fills() {
 #[test]
 fn fill_usage_is_billed_or_owed_and_rails_close_until_paid() {
     let (mut state, mut alice, mut bob, mut v) = setup(0);
-    state.gov.param_admin = Some(v.addr());
     state.clients.params.usage_fill_keel = 2 * KEEL;
     state.clients.params.usage_address_keel = KEEL;
     state.params.epoch_length_blocks = 50;

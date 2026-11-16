@@ -73,8 +73,8 @@ Every validator executes every finalized block and the resulting state
 commitment is chained: `last_hash ‖ height ‖ (tx_id, ok, error_code)* ‖
 end-of-block events`. A node that diverges cannot follow the chain.
 
-Blocks are paced by two chain parameters, both editable from the
-backoffice: `min_block_interval_ms` (500 ms while there are pending
+Blocks are paced by two chain parameters, both governance parameters:
+`min_block_interval_ms` (500 ms while there are pending
 actions) and `idle_block_interval_ms` (5 s when the mempool is empty). The
 network floor is two validator round trips; on the local testnet a block
 takes about 22 ms when unpaced.
@@ -235,38 +235,30 @@ an asset; spend from the treasury; schedule a software upgrade (version and
 height at which unupgraded nodes halt); set the arbitrator, attester or
 observer sets (with the observer threshold); set a stablecoin basket
 entry; pause a module until a height; bind a token contract; set the
-Bitcoin or Ethereum light-client checkpoint; set or revoke the parameter
-admin; or a text proposal.
+Bitcoin or Ethereum light-client checkpoint; or a text proposal.
 
-### 4.2 The parameter admin
+### 4.2 No parameter admin
 
-One administrative key exists: `param_admin`, an optional address set at
-genesis and changeable only by a `SetParamAdmin` proposal. It may sign
-`SetParam { key, value }` for every numeric parameter the chain has: the
-scalar `Params`, the `budget.*` keys, the module-owned `clients.*`,
-`liquidity.*`, `arbitration.*`, `pools.*` and `recovery.*` keys, and the
-limits that used to be constants in the code (`sessions.*`, `p2p.*`,
-`disputes.*`, `gov.*`, `transfer.*`; schema 9). All of them a `ParamChange`
-proposal can also move. The full list, with defaults and bounds, is
-`docs/governance.md`. The admin gets the same validation a proposal would
-(fee split must sum to 100%, block pacing bounds, caps that cannot be set
-to zero, and so on). It cannot move funds, change sets, pause modules or
-upgrade software.
-
-At launch this key is the platform super admin's, held by the marketplace as
-`CHAIN_ADMIN_SECRET`, and the backoffice **Chain** page is its user
-interface: every parameter, grouped (block production, fees, P2P, staking,
-governance, vaults, Lightning, markets, action budget), with a description
-and a live status strip. Governance can take the right away at any time by
-passing `SetParamAdmin { admin: None }`, after which only proposals move
-parameters.
+There was one administrative key: `param_admin`, able to sign a
+`SetParam` action and move any parameter in one transaction, with the
+marketplace's backoffice as its interface. It was removed on 2026-11-15,
+action and proposal kind included: the protocol has no such thing. Every
+parameter, the scalar `Params`, the `budget.*` keys, the module-owned keys
+and the limits that used to be constants, changes only by a `ParamChange`
+proposal: deposit, vote, timelock, execute (`docs/governance.md` lists them
+all with defaults and bounds). The devnet makes the round trip quick (a
+1,000 KEEL deposit, a 20-block
+vote, a 2-block timelock) so scripts and tests can pass proposals in
+seconds; the testnet and mainnet use the real periods. The explorer's
+Governance page is where anyone with bonded KEEL proposes, votes and
+executes; a client's backoffice does the same by submitting proposals.
 
 ### 4.3 What nobody can do
 
 - Freeze, seize or edit a balance. There is no such action.
 - Mint KEEL.
 - Move funds out of a vault without an observer quorum signing.
-- Change a parameter silently: every `SetParam` and every proposal is a
+- Change a parameter silently: every proposal is a
   transaction with a tx id, shown in the explorer under Governance.
 
 The strongest emergency levers are non-discretionary and asset-scoped: the
@@ -377,8 +369,8 @@ whole KEEL locked grants `budget.per_locked_keel_per_day` (100) actions per
 day into a pool that refills linearly over 24 hours; the pool is spent
 after the free budget. `UnlockBudget` returns the KEEL in full after
 `budget.unlock_delay_secs` (3 days). Nothing is paid, so it adds demand for
-KEEL without adding a fee. The wallet page shows the capacity card and the
-backoffice user page shows each user's lock.
+KEEL without adding a fee. The wallet page shows the capacity card and a
+client's own interface can show each user's lock.
 
 Why the base is small (2026-11-15): a grant per address is a grant per
 keypair, and the activation floor only makes keypairs cost dust that stays

@@ -76,7 +76,6 @@ export type ProposalKind =
   | { SetBtcCheckpoint: { network: number; height: Amount; header: Bytes; period_start_time: number } }
   | { SetEthCheckpoint: { period: Amount; committee_root: Bytes; next_committee_root: Bytes | null; genesis_validators_root: Bytes; fork_version: Bytes; committee_size: number } }
   | { SetTokenContract: { asset: string; contract: Bytes } }
-  | { SetParamAdmin: { admin: Address | null } }
   | { BanArbitrator: { member: Address } };
 export interface Proposal { title: string; description: string; kind: ProposalKind }
 
@@ -114,8 +113,6 @@ export type Action =
   | { Vote: { proposal_id: Amount; choice: VoteChoice } }
   | { ExecuteProposal: { proposal_id: Amount } }
   | { Attest: { subject: Address; tier: number; expires_at: Amount } }
-  /** Direct parameter change by the chain's `param_admin` (genesis-set, governance-revocable). */
-  | { SetParam: { key: string; value: Amount } }
   | { LockBudget: { amount: Amount } }
   | { UnlockBudget: { amount: Amount } }
   | { AuthorizeSessionKey: { key: Address; scope: number; expires_at: number } }
@@ -138,7 +135,6 @@ export type Action =
   /** A custodial client rotates its vault on a chain to a fresh key of its own. */
   | { RotateCustodyVault: CustodyRotation }
   | { CancelCustodyRotation: { chain: Chain } }
-  | { ObserveCustodySweep: SweepObservation }
   | { RetireCustodyGeneration: { chain: Chain; custodian: Address; gen: Amount } }
   /** Fund the house maker's pool; mints pool shares at the pool's USD value. */
   | { DepositLiquidity: { asset: string; amount: Amount } }
@@ -174,21 +170,10 @@ export interface CustodyRotation {
   chain_code: Hash32;
   /** The new key's signer; the old generation's signer keeps serving it. */
   signer_url: string;
-  /** Must be `false`: generations are separate pools and the chain refuses a rotation that asks to move the old coins. Kept for the wire format. */
-  sweep: boolean;
   /** Activate at this height instead of at once. */
   activate_at?: Amount | null;
 }
 
-export interface SweepObservation {
-  chain: Chain;
-  custodian: Address;
-  from_gen: Amount;
-  tx_hash: Hash32;
-  asset: string;
-  amount: Amount;
-  fee: Amount;
-}
 
 /** Move a balance between a client's custody and the network vault against
  *  the custodian's floats; no coins move on any external chain. */
@@ -213,11 +198,11 @@ const ACTION_VARIANTS = [
   "CloseOffer", "StartTrade", "MarkPaid", "ReleaseTrade", "CancelTrade", "OpenDispute", "SubmitEvidence",
   "RuleDispute", "RequestDepositAddress", "ObserveDeposit", "ObserveOutbound", "ReportNetworkFee", "Withdraw",
   "RegisterVault", "MintStable", "BurnStable", "Bond", "Unbond", "Delegate", "Undelegate", "ClaimRewards", "Propose",
-  "Vote", "ExecuteProposal", "Attest", "SetParam", "LockBudget", "UnlockBudget", "AuthorizeSessionKey", "RevokeSessionKey",
+  "Vote", "ExecuteProposal", "Attest", "LockBudget", "UnlockBudget", "AuthorizeSessionKey", "RevokeSessionKey",
   "RegisterLightningNode", "ObserveLightningDeposit", "ObserveLightningPayout", "FundLightningPool", "AnnounceLightningSweep",
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
-  "ObserveCustodySweep", "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
+  "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
   "WithdrawStable",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
@@ -226,7 +211,7 @@ const VOTES = ["Yes", "No", "Abstain", "Veto"] as const;
 const PROPOSAL_KINDS = [
   "ParamChange", "ListPair", "DelistPair", "RegisterAsset", "TreasurySpend", "SoftwareUpgrade", "SetArbitrators",
   "SetAttesters", "SetObservers", "SetStableBasket", "PauseModule", "Text",
-  "SetBtcCheckpoint", "SetEthCheckpoint", "SetTokenContract", "SetParamAdmin", "BanArbitrator",
+  "SetBtcCheckpoint", "SetEthCheckpoint", "SetTokenContract", "BanArbitrator",
 ] as const;
 
 export function toBytes(v: string | number[] | Uint8Array): Uint8Array {
@@ -292,7 +277,6 @@ function proposalKind(w: Writer, k: ProposalKind): void {
       if (b.next_committee_root == null) w.u8(0); else { w.u8(1); w.fixed(toBytes(b.next_committee_root), 32); }
       w.fixed(toBytes(b.genesis_validators_root), 32); w.fixed(toBytes(b.fork_version), 4); w.u32(b.committee_size); break;
     case "SetTokenContract": w.string(b.asset); w.vecU8(toBytes(b.contract)); break;
-    case "SetParamAdmin": if (b.admin == null) w.u8(0); else { w.u8(1); address(w, b.admin); } break;
     case "BanArbitrator": address(w, b.member); break;
   }
 }
@@ -370,7 +354,6 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "Vote": w.u64(b.proposal_id); unitEnum(w, VOTES, b.choice); break;
     case "ExecuteProposal": w.u64(b.proposal_id); break;
     case "Attest": address(w, b.subject); w.u8(b.tier); w.u64(b.expires_at); break;
-    case "SetParam": w.string(b.key); w.u128(b.value); break;
     case "LockBudget": w.u128(b.amount); break;
     case "UnlockBudget": w.u128(b.amount); break;
     case "AuthorizeSessionKey": address(w, b.key); w.u32(b.scope); w.u64(b.expires_at); break;
@@ -398,11 +381,8 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "ChooseArbitrator": w.u64(b.trade_id); address(w, b.arbitrator); break;
     case "RotateCustodyVault":
       unitEnum(w, CHAINS, b.chain); w.vecU8(toBytes(b.public_key)); hash(w, b.chain_code); w.string(b.signer_url);
-      w.bool(b.sweep); w.option(b.activate_at, (h) => w.u64(h)); break;
+      w.option(b.activate_at, (h) => w.u64(h)); break;
     case "CancelCustodyRotation": unitEnum(w, CHAINS, b.chain); break;
-    case "ObserveCustodySweep":
-      unitEnum(w, CHAINS, b.chain); address(w, b.custodian); w.u64(b.from_gen); hash(w, b.tx_hash); w.string(b.asset);
-      w.u128(b.amount); w.u128(b.fee); break;
     case "RetireCustodyGeneration": unitEnum(w, CHAINS, b.chain); address(w, b.custodian); w.u64(b.gen); break;
     case "DepositLiquidity": w.string(b.asset); w.u128(b.amount); break;
     case "WithdrawLiquidity": w.u128(b.shares); break;

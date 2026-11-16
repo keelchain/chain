@@ -7,9 +7,12 @@ Read `plan.md` first. These rules keep parallel work from colliding.
   another workstream's files.
 - Shared files (`keel-vm/src/{state,apply,receipt,params,genesis}.rs`,
   `keel-actions/src/*`, root `Cargo.toml`): use the **Edit** tool with a small,
-  unique anchor; never rewrite them wholesale. Add new `Event` variants and
-  `Params` fields at the END of their lists. Never rename or remove an
-  existing item.
+  unique anchor; never rewrite them wholesale. Until mainnet there is no
+  wire or snapshot compatibility to keep: a variant, field or action that
+  is no longer wanted is deleted, not stubbed, and the networks restart
+  from genesis (decided 2026-11-16). From mainnet on, `Event` variants,
+  `Action` variants and `Params` fields are appended at the END of their
+  lists and never renamed or removed.
 - New external crates: add to your own crate's `[dependencies]` with an
   explicit version. Do not touch `[workspace.dependencies]`.
 
@@ -26,23 +29,18 @@ Read `plan.md` first. These rules keep parallel work from colliding.
 
 ## Snapshots and upgrades
 - A snapshot is `b"KEEL" | u32 schema | borsh(State)` (`keel-vm/src/migrate.rs`).
-  History: schema 1 added the header, 2 appended `State.clients`, 3 appended
-  `State.custody`, 4 appended `State.arbitration`, 5 appended `State.pools`,
-  6 appended `State.liquidity` and new fields inside `State.clients`, 7 added
-  `external_tx` inside `State.vaults` and `State.custody` (attestations and
-  outbounds), 8 appended `State.recovery`, 9 appended `State.limits` (the
-  caps that used to be constants), 10 appended `State.emission`, 11
-  appended `State.prices`, 12 appended `State.stable_conversion`; every
-  older layout is a frozen `StateVn` in `migrate.rs`.
-  Changing the layout of `State` or anything inside it means: bump `SCHEMA`,
-  keep a frozen copy of the old struct in `migrate.rs`, add the upgrade step,
-  and add a fixture of the old schema under `keel-vm/tests/fixtures/` with a
-  case in `tests/migrate.rs`. `cargo test -p keel-vm --test migrate` must keep
-  loading every fixture.
-- A change that alters what a block does (fees, matching, limits, new actions
-  with new effects) is gated on an activation height: read it from
-  `state.gov.upgrades` (the `SoftwareUpgrade` proposal kind) and keep the old
-  behaviour below it, so replaying the journal from genesis stays
+  Before mainnet there is no migration path: a node loads a snapshot of its
+  own schema only. Changing the layout of `State` or anything inside it
+  means bumping `SCHEMA` (so no node misreads a foreign snapshot) and
+  restarting the networks from genesis with `reset_chain`; the only fixture
+  under `keel-vm/tests/fixtures/` is the current schema's, rewritten by
+  `cargo test -p keel-vm --test migrate` after a bump. Frozen layouts,
+  "off when migrated" defaults and compatibility stubs are not written.
+- The same holds for behaviour: a change to what a block does ships as is,
+  with no activation-height gate, and the networks restart. The
+  `SoftwareUpgrade` proposal kind and `gov::feature_active` exist for
+  mainnet, where a behaviour change must keep the old path below its
+  activation height so replaying the journal from genesis stays
   byte-identical on every node.
 
 ## End to end
@@ -57,7 +55,7 @@ Read `plan.md` first. These rules keep parallel work from colliding.
 ## Parameters and module state
 - `Params` keeps its layout: a new knob for a module goes into that module's
   own state (`state.clients.params` is the pattern) and is reached through
-  `SetParam` / `ParamChange` with a dotted key (`clients.usage_address_keel`),
+  `ParamChange` with a dotted key (`clients.usage_address_keel`),
   routed in `gov::set_param`. New module states are appended at the end of
   `State`, which is a schema bump (see above).
 - No numeric limit is a constant in a module. A cap, a floor, a window or a

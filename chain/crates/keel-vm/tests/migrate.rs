@@ -1,14 +1,12 @@
-//! Snapshot schema: headerless (schema 0) fixtures keep loading, the header
-//! round-trips, and an unknown schema is refused.
+//! Snapshot framing: a snapshot round-trips through its header, a snapshot
+//! of any other schema is refused, and the checked-in fixture of the
+//! current schema (a devnet genesis) loads. There is no migration path
+//! before mainnet: a layout change restarts the networks from genesis.
 #![allow(clippy::unwrap_used)]
 
 use keel_actions::CHAIN_ID_DEVNET;
 use keel_crypto::Keypair;
-use keel_vm::{
-    genesis::{Genesis, GenesisValidator},
-    migrate::{self, MAGIC, SCHEMA},
-    State,
-};
+use keel_vm::{genesis::GenesisValidator, migrate, Genesis, State};
 use std::path::PathBuf;
 
 fn fixtures_dir() -> PathBuf {
@@ -33,166 +31,44 @@ fn genesis_state() -> State {
 fn snapshot_has_header_and_round_trips() {
     let state = genesis_state();
     let bytes = state.snapshot();
-    assert_eq!(&bytes[..4], MAGIC);
-    assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), SCHEMA);
-    let back = State::restore(&bytes).expect("restore");
+    let (schema, _) = migrate::split(&bytes);
+    assert_eq!(schema, migrate::SCHEMA);
+    let back = State::restore(&bytes).expect("round trip");
     assert_eq!(back.compute_hash(), state.compute_hash());
-    assert_eq!(back.height, state.height);
 }
 
 #[test]
-fn headerless_bytes_are_schema_zero_and_the_current_layout_is_not() {
-    // Headerless bytes are read as schema 0. The current layout differs
-    // from schema 0, so plain borsh of today's `State` must be refused
-    // rather than misread; the checked-in schema-0 fixture is what loads.
-    let state = genesis_state();
-    let headerless = borsh::to_vec(&state).unwrap();
-    assert!(State::restore(&headerless).is_none());
-    let (schema, _) = migrate::split(&headerless);
-    assert_eq!(schema, 0);
-}
-
-#[test]
-fn newer_schema_is_refused() {
+fn other_schemas_are_refused() {
     let state = genesis_state();
     let payload = borsh::to_vec(&state).unwrap();
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(MAGIC);
-    bytes.extend_from_slice(&(SCHEMA + 1).to_le_bytes());
-    bytes.extend_from_slice(&payload);
-    assert!(State::restore(&bytes).is_none());
+    let mut newer = Vec::new();
+    newer.extend_from_slice(migrate::MAGIC);
+    newer.extend_from_slice(&(migrate::SCHEMA + 1).to_le_bytes());
+    newer.extend_from_slice(&payload);
+    assert!(State::restore(&newer).is_none());
+    // Headerless bytes are schema 0: refused as well.
+    assert!(State::restore(&payload).is_none());
 }
 
-/// The checked-in fixture is a schema-0 (headerless) devnet genesis snapshot
-/// written by this test the first time it ran. It must keep loading after
-/// every layout change through `migrate::upgrade`; when it stops loading,
-/// the layout changed without a migration step. Regenerate only with
-/// `KEEL_WRITE_FIXTURES=1` and a deliberate schema bump.
+/// A fixture of the current schema, written the first time this runs after
+/// a schema bump (or with `KEEL_WRITE_FIXTURES=1`). It is the only fixture:
+/// older ones were deleted with the migration path.
 #[test]
-fn schema_zero_fixture_loads() {
-    let path = fixtures_dir().join("snapshot-schema0-devnet.bin");
-    if !path.exists() {
-        std::fs::create_dir_all(fixtures_dir()).unwrap();
-        std::fs::write(&path, legacy_body(0)).unwrap();
-    }
-    let bytes = std::fs::read(&path).unwrap();
-    let (schema, _) = migrate::split(&bytes);
-    assert_eq!(schema, 0, "fixture must stay headerless");
-    let state = State::restore(&bytes).expect("schema-0 fixture loads");
-    assert_eq!(state.chain_id, CHAIN_ID_DEVNET);
-    assert!(state.ledger.audit().mismatches.is_empty());
-    // Re-framing the upgraded state yields the current schema.
-    let (schema, _) = migrate::split(&state.snapshot());
-    assert_eq!(schema, SCHEMA);
-}
-
-/// Schemas up to this one only appended fields to `State`, so an older body
-/// is the current body without its tail. Schema 7 changed layouts inside
-/// `vaults`/`custody` (`external_tx`), so `legacy_body` cannot reproduce
-/// schema 6 any more; its fixture is kept as checked in.
-const TRUNCATABLE_UPTO: u32 = 5;
-
-/// The genesis state serialized in an older top-level layout (schemas up to
-/// `TRUNCATABLE_UPTO`): borsh writes fields in order, so an older body is
-/// the current body without its tail.
-fn legacy_body(schema: u32) -> Vec<u8> {
-    assert!(
-        schema <= TRUNCATABLE_UPTO,
-        "schema {schema} is not a truncation of the current layout"
-    );
-    let state = genesis_state();
-    let full = borsh::to_vec(&state).unwrap();
-    let liquidity = borsh::to_vec(&state.liquidity).unwrap();
-    let pools = borsh::to_vec(&state.pools).unwrap();
-    let arbitration = borsh::to_vec(&state.arbitration).unwrap();
-    let custody = borsh::to_vec(&state.custody).unwrap();
-    let clients = borsh::to_vec(&state.clients).unwrap();
-    // Schemas 2 to 5 carried the schema-3 `clients` layout: the eight
-    // original params (defaults on a devnet genesis) and five empty maps.
-    let legacy_clients = {
-        let mut v = borsh::to_vec(&(
-            200u32,
-            50u32,
-            100u32,
-            0u128,
-            0u128,
-            500u32,
-            1_000_000u64,
-            0u128,
-        ))
-        .unwrap();
-        v.extend_from_slice(&[0u8; 4 * 5]);
-        v
-    };
-    let head = full.len()
-        - liquidity.len()
-        - pools.len()
-        - arbitration.len()
-        - custody.len()
-        - clients.len();
-    let mut body = full[..head].to_vec();
-    if schema >= 2 {
-        body.extend_from_slice(&legacy_clients);
-    }
-    if schema >= 3 {
-        body.extend_from_slice(&custody);
-    }
-    if schema >= 4 {
-        body.extend_from_slice(&arbitration);
-    }
-    if schema >= 5 {
-        body.extend_from_slice(&pools);
-    }
-    if schema == 0 {
-        return body;
-    }
-    let mut out = b"KEEL".to_vec();
-    out.extend_from_slice(&schema.to_le_bytes());
-    out.extend_from_slice(&body);
-    out
-}
-
-/// Recovery tool: rewrite every older-schema fixture from the current
-/// genesis (`cargo test -p keel-vm --test migrate write_legacy_fixtures --
-/// --ignored`). Only needed when a fixture was lost or corrupted.
-#[test]
-#[ignore]
-fn write_legacy_fixtures() {
-    std::fs::create_dir_all(fixtures_dir()).unwrap();
-    for schema in 0..=TRUNCATABLE_UPTO {
-        let path = fixtures_dir().join(format!("snapshot-schema{schema}-devnet.bin"));
-        std::fs::write(&path, legacy_body(schema)).unwrap();
-    }
-}
-
-/// A fixture of the CURRENT schema, written the first time this runs after a
-/// schema bump (or with `KEEL_WRITE_FIXTURES=1`), so the next bump has an
-/// old-schema snapshot to migrate from. Every fixture in the directory must
-/// keep loading.
-#[test]
-fn every_schema_fixture_loads() {
-    let path = fixtures_dir().join(format!("snapshot-schema{SCHEMA}-devnet.bin"));
+fn the_current_schema_fixture_loads() {
+    let path = fixtures_dir().join(format!("snapshot-schema{}-devnet.bin", migrate::SCHEMA));
     if std::env::var_os("KEEL_WRITE_FIXTURES").is_some() || !path.exists() {
         std::fs::create_dir_all(fixtures_dir()).unwrap();
         std::fs::write(&path, genesis_state().snapshot()).unwrap();
     }
-    let mut seen = 0;
+    let bytes = std::fs::read(&path).unwrap();
+    let state = State::restore(&bytes).expect("fixture of the current schema loads");
+    assert!(state.ledger.audit().mismatches.is_empty());
     for entry in std::fs::read_dir(fixtures_dir()).unwrap() {
-        let p = entry.unwrap().path();
-        let name = p.file_name().unwrap().to_string_lossy().to_string();
-        if !name.starts_with("snapshot-schema") {
-            continue;
-        }
-        let bytes = std::fs::read(&p).unwrap();
-        let (schema, _) = migrate::split(&bytes);
-        let state = State::restore(&bytes).unwrap_or_else(|| {
-            panic!("{name} (schema {schema}) no longer loads: add a migration step")
-        });
-        assert!(state.ledger.audit().mismatches.is_empty(), "{name}");
-        seen += 1;
+        let name = entry.unwrap().file_name().to_string_lossy().to_string();
+        assert!(
+            !name.starts_with("snapshot-schema")
+                || name == path.file_name().unwrap().to_string_lossy(),
+            "{name}: fixtures of other schemas must not exist"
+        );
     }
-    assert!(
-        seen >= 2,
-        "expected the schema-0 and current fixtures, found {seen}"
-    );
 }

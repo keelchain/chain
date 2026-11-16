@@ -156,7 +156,6 @@ pub(crate) fn event_addresses(e: &Event) -> Vec<Address> {
         Event::PoolRotationScheduled { custodian, .. }
         | Event::PoolRotated { custodian, .. }
         | Event::PoolRotationCancelled { custodian, .. }
-        | Event::PoolSwept { custodian, .. }
         | Event::PoolGenerationRetired { custodian, .. } => vec![*custodian],
         Event::Delegated {
             owner, validator, ..

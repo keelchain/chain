@@ -27,7 +27,7 @@ use keel_types::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{fees, liquidity, tokens};
+use super::{fees, tokens};
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
@@ -225,13 +225,9 @@ fn synthetic_levels(state: &State, market: &Market, height: u64) -> Vec<Syntheti
     }
     let cfg = &market.cfg;
     let party = &cfg.house_party;
-    // With the pool live, one quote side may expose at most a share of
-    // the inventory (depositors' money); before that the whole balance.
-    let cap_bps: Amount = if liquidity::active(state, height) {
-        state.liquidity.params.max_quote_inventory_bps as Amount
-    } else {
-        10_000
-    };
+    // One quote side may expose at most a share of the inventory
+    // (depositors' money).
+    let cap_bps: Amount = state.liquidity.params.max_quote_inventory_bps as Amount;
     let capped = |inventory: Amount| mul_div_floor(inventory, cap_bps, 10_000).unwrap_or(0);
     let mut out = Vec::new();
     if let Some((price, size)) = h.ask {
@@ -801,11 +797,7 @@ fn quote(
 ) -> Result<Vec<Event>, VmError> {
     let max_ttl = state.params.house_quote_max_ttl_blocks;
     let operator = state.staking_house_operator();
-    let min_spread = if liquidity::active(state, ctx.height) {
-        state.liquidity.params.min_spread_bps as Amount
-    } else {
-        0
-    };
+    let min_spread = state.liquidity.params.min_spread_bps as Amount;
     let market = state
         .markets
         .pairs

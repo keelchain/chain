@@ -488,7 +488,7 @@ pub fn module_of_kind(kind: &str) -> &'static str {
         | "RegisterVault" => "vaults",
         "MintStable" | "BurnStable" => "stable",
         "Bond" | "Unbond" | "Delegate" | "Undelegate" | "ClaimRewards" => "staking",
-        "Propose" | "Vote" | "ExecuteProposal" | "SetParam" => "gov",
+        "Propose" | "Vote" | "ExecuteProposal" => "gov",
         "Attest" => "attest",
         _ => "unknown",
     }
@@ -540,8 +540,7 @@ pub fn infer_kind_from_events(events: &[Value]) -> (String, String) {
             Some("ProposalCreated") => "Propose",
             Some("Voted") => "Vote",
             Some("ProposalExecuted") => "ExecuteProposal",
-            Some("ParamChanged") => "SetParam",
-            Some("ParamAdminChanged") => "ExecuteProposal",
+            Some("ParamChanged") => "ExecuteProposal",
             Some("Attested") => "Attest",
             _ => "unknown",
         }
@@ -1865,10 +1864,6 @@ mod tests {
         assert_eq!(
             action_kind(&json!("ClaimRewards")),
             ("ClaimRewards".into(), "staking".into())
-        );
-        assert_eq!(
-            action_kind(&json!({"SetParam": {"key": "taker_fee_bps", "value": 5}})),
-            ("SetParam".into(), "gov".into())
         );
         assert_eq!(
             action_kind(&json!({"FutureAction": {"x": 1}})),

@@ -85,9 +85,6 @@ pub struct GovState {
     pub next_id: u64,
     /// Executed software upgrades: (version, activation height).
     pub upgrades: Vec<(String, u64)>,
-    /// Address allowed to change parameters directly with `SetParam`
-    /// (the platform super admin at launch; governance can revoke it).
-    pub param_admin: Option<Address>,
 }
 
 /// Whether governance has activated `version` at or below `height`: an
@@ -178,17 +175,11 @@ fn commit_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>,
     }])
 }
 
-/// Direct parameter change by the appointed admin. Same validation as an
-/// executed `ParamChange`, without the proposal round trip.
-pub fn set_param(
-    state: &mut State,
-    signer: Address,
-    key: &str,
-    value: u128,
-) -> Result<Vec<Event>, VmError> {
-    if state.gov.param_admin != Some(signer) {
-        return Err(VmError::Unauthorized);
-    }
+/// Apply a parameter change with the validation an executed `ParamChange`
+/// gets: module-owned keys through their module, scalar `Params` keys with
+/// the cross-field checks (fee split, block pacing). What `execute` runs,
+/// and what tests use to set a parameter without the proposal round trip.
+pub fn change_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>, VmError> {
     if let Some(r) = module_param_set(state, key, value) {
         return r;
     }
@@ -220,10 +211,7 @@ pub fn apply(
 fn validate_kind(state: &State, kind: &ProposalKind) -> Result<(), VmError> {
     match kind {
         ProposalKind::ParamChange { key, .. } => {
-            // Module-owned keys became votable with the 0.2.0 activation;
-            // before it a proposal on them is refused as it always was.
-            let module_key = super::liquidity::active(state, state.height)
-                && module_param_get(state, key).is_some();
+            let module_key = module_param_get(state, key).is_some();
             if state.params.get(key).is_none() && !module_key && !is_devnet_operator_key(state, key)
             {
                 return Err(VmError::Invalid(format!("unknown param {key}")));
@@ -441,27 +429,11 @@ fn execute_kind(
                 });
                 return Ok(());
             }
-            if super::liquidity::active(state, ctx.height) {
-                if let Some(r) = module_param_set(state, key, *value) {
-                    events.extend(r?);
-                    return Ok(());
-                }
-                events.extend(commit_param(state, key, *value)?);
+            if let Some(r) = module_param_set(state, key, *value) {
+                events.extend(r?);
                 return Ok(());
             }
-            // Pre-activation path, kept byte for byte: no block-timing check.
-            let mut next = state.params.clone();
-            if !next.set(key, *value) {
-                return Err(VmError::Invalid(format!("cannot set {key}")));
-            }
-            if !next.fee_split_ok() {
-                return Err(VmError::Invalid("fee split must sum to 10000".into()));
-            }
-            state.params = next;
-            events.push(Event::ParamChanged {
-                key: key.clone(),
-                value: *value,
-            });
+            events.extend(commit_param(state, key, *value)?);
         }
         ProposalKind::ListPair(cfg) => markets::list_pair(state, cfg.clone()),
         ProposalKind::DelistPair { symbol } => markets::delist_pair(state, symbol),
@@ -528,10 +500,6 @@ fn execute_kind(
         } => stable::set_basket(state, asset.clone(), *cap, *enabled),
         ProposalKind::SetBtcCheckpoint(cp) => vaults::apply_btc_checkpoint(state, cp)?,
         ProposalKind::SetEthCheckpoint(cp) => vaults::apply_eth_checkpoint(state, cp),
-        ProposalKind::SetParamAdmin { admin } => {
-            state.gov.param_admin = *admin;
-            events.push(Event::ParamAdminChanged { admin: *admin });
-        }
         ProposalKind::SetTokenContract { asset, contract } => {
             if contract.len() != 20 || !state.tokens.is_registered(asset) {
                 return Err(VmError::Invalid(

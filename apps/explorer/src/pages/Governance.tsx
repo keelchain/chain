@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useParams as useChainParams, useProposal, useProposals } from '../api/hooks';
 import type { Proposal, Tally } from '../api/types';
 import { FieldValue } from '../components/FieldValue';
+import { ProposalActions, ProposeParamCard } from '../components/GovernanceActions';
 import { AddressLink, Amount, Badge, BlockLink, Card, ErrorState, KV, Loading, StatTile, StatusBadge, TxLink } from '../components/ui';
 import { decodeAction } from '../lib/decode';
 import { formatAmount, formatInt, formatPercent, sentence } from '../lib/format';
@@ -57,7 +58,7 @@ export function GovernancePage() {
     <div className="stack">
       <div className="page-head">
         <h1>Governance</h1>
-        <span className="sub">Every parameter is a governance parameter: proposals lock a deposit, pass by bonded-KEEL vote with quorum, threshold and veto rules, and execute after a timelock</span>
+        <span className="sub">Every parameter is a governance parameter and there is no admin key: proposals lock a deposit, pass by bonded-KEEL vote with quorum, threshold and veto rules, and execute after a timelock</span>
         <span className="spacer" />
         <Link to={href('/governance/params')} className="btn">
           Parameters
@@ -69,6 +70,7 @@ export function GovernancePage() {
         <StatTile label="Executed" value={formatInt(list.filter((p) => p.status === 'executed').length)} />
         <StatTile label="Rejected or vetoed" value={formatInt(list.filter((p) => p.status === 'rejected' || p.status === 'vetoed').length)} />
       </div>
+      <ProposeParamCard />
       <Card flush>
         <div className="table-wrap">
           <table className="tbl">
@@ -142,6 +144,7 @@ export function ProposalPage() {
         <p style={{ margin: '0 0 12px', whiteSpace: 'pre-wrap' }}>{p.description}</p>
         <TallyBar tally={p.tally} />
       </Card>
+      <ProposalActions p={p} />
       <div className="grid-2">
         <Card title="Details" flush>
           <KV

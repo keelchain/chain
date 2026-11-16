@@ -1,7 +1,7 @@
 //! Governance-owned limits that used to be constants in the code: the
 //! activation floor and the per-action fee of the budget system, and the
 //! size and time caps of sessions, offers, disputes, proposals and
-//! transfers. Every number here is a `SetParam` / `ParamChange` key
+//! transfers. Every number here is a `ParamChange` key
 //! (`docs/governance.md`); nothing in a module compares against a literal.
 //!
 //! The struct is module state appended at the end of [`crate::State`]
@@ -88,17 +88,6 @@ impl Default for LimitsState {
     }
 }
 
-impl LimitsState {
-    /// What a chain that predates this module gets: the behaviour it had.
-    /// Governance turns the floor and the fee on with `SetParam`.
-    pub fn migrated() -> Self {
-        Self {
-            activation_keel: 0,
-            ..Self::default()
-        }
-    }
-}
-
 pub const PARAM_KEYS: &[&str] = &[
     "budget.activation_keel",
     "budget.action_fee_keel",
@@ -131,7 +120,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
     })
 }
 
-/// `SetParam` / `ParamChange` for the keys above, with the bounds that keep
+/// `ParamChange` for the keys above, with the bounds that keep
 /// the chain usable (a cap of zero would refuse every offer, proposal or
 /// session).
 pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>, VmError> {

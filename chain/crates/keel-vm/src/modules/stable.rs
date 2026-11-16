@@ -93,19 +93,6 @@ pub struct ConversionState {
     pub params: ConversionParams,
 }
 
-impl ConversionState {
-    /// What a chain that predates the module gets: nothing changes until
-    /// governance turns conversion on.
-    pub fn migrated() -> Self {
-        Self {
-            params: ConversionParams {
-                auto_convert: 0,
-                rebalance_max_premium_bps: 0,
-            },
-        }
-    }
-}
-
 pub const PARAM_KEYS: &[&str] = &["stable.auto_convert", "stable.rebalance_max_premium_bps"];
 
 pub fn get_param(state: &State, key: &str) -> Option<u128> {

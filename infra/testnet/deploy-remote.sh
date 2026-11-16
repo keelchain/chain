@@ -255,7 +255,6 @@ if [ "$IS_HOST0" = true ]; then
     python3 -c 'import json,sys
 for c in json.loads(sys.argv[1]):
     a=["--attester"] if c.get("attester", True) else []
-    a+=["--param-admin"] if c.get("param_admin") else []
     a+=["--keel", str(c.get("keel", 100000)), "--kusd", str(c.get("kusd", 100000))]
     print(c["address"], " ".join(a))' "$KEEL_CLIENTS" | while read -r ADDRC ARGSC; do
       # shellcheck disable=SC2086

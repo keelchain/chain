@@ -279,12 +279,7 @@ fn a_fresh_key_needs_the_activation_floor_before_its_budget_counts() {
     assert!(matches!(err(&r[0]), VmError::NotFound(_)));
 
     // The floor is a governance parameter; 0 turns it off.
-    c.state.gov.param_admin = Some(alice.addr());
-    let (r, _) = c.block(&[alice.act(Action::SetParam {
-        key: "budget.activation_keel".into(),
-        value: 0,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "budget.activation_keel", 0).expect("param");
     let (r, _) = c.block(&[dave.act(Action::BuyBudget { actions: 1 })]);
     assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
     assert!(c.state.ledger.audit().mismatches.is_empty());
@@ -292,19 +287,14 @@ fn a_fresh_key_needs_the_activation_floor_before_its_budget_counts() {
 
 #[test]
 fn fee_mode_charges_keel_per_action_once_the_free_budget_is_zero() {
-    let (mut state, mut alice, mut bob, _v) = setup(0);
-    state.gov.param_admin = Some(alice.addr());
+    let (state, mut alice, mut bob, _v) = setup(0);
     let mut c = Chain::new(state);
     let fee = c.state.limits.action_fee_keel;
     assert_eq!(fee, limits::DEFAULT_ACTION_FEE_KEEL);
     assert!(!limits::fee_mode(&c.state));
 
     // Governance removes the free budget: fee mode.
-    let (r, _) = c.block(&[alice.act(Action::SetParam {
-        key: "budget.base".into(),
-        value: 0,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "budget.base", 0).expect("param");
     assert!(limits::fee_mode(&c.state));
 
     // bob has no earned capacity: every action now costs the fee, routed
@@ -352,11 +342,7 @@ fn fee_mode_charges_keel_per_action_once_the_free_budget_is_zero() {
 
     // The fee is a governance parameter; a key that cannot pay it is
     // refused as exhausted, at admission and in the block.
-    let (r, _) = c.block(&[alice.act(Action::SetParam {
-        key: "budget.action_fee_keel".into(),
-        value: 10 * KEEL,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "budget.action_fee_keel", 10 * KEEL).expect("param");
     let mut poor = Actor::new(41);
     let (r, _) = c.block(&[alice.act(transfer(poor.addr(), c.state.limits.activation_keel))]);
     ok(&r[0]);
@@ -368,11 +354,7 @@ fn fee_mode_charges_keel_per_action_once_the_free_budget_is_zero() {
     let (r, _) = c.block(&[sa]);
     assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
     // A fee of zero in fee mode means: earned or locked capacity only.
-    let (r, _) = c.block(&[alice.act(Action::SetParam {
-        key: "budget.action_fee_keel".into(),
-        value: 0,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "budget.action_fee_keel", 0).expect("param");
     let (r, _) = c.block(&[poor.act(transfer(alice.addr(), 1))]);
     assert!(matches!(err(&r[0]), VmError::BudgetExhausted));
     assert!(c.state.ledger.audit().mismatches.is_empty());
@@ -380,32 +362,22 @@ fn fee_mode_charges_keel_per_action_once_the_free_budget_is_zero() {
 
 #[test]
 fn every_former_constant_is_a_governance_parameter() {
-    let (mut state, mut alice, _bob, _v) = setup(0);
-    state.gov.param_admin = Some(alice.addr());
+    let (state, mut alice, _bob, _v) = setup(0);
     let mut c = Chain::new(state);
     for key in limits::PARAM_KEYS {
         let before = limits::get_param(&c.state, key).expect(key);
         let value = before + 1;
-        let (r, _) = c.block(&[alice.act(Action::SetParam {
-            key: key.to_string(),
-            value,
-        })]);
-        ok(&r[0]);
+        set_param(&mut c.state, key, value).expect("param");
         assert_eq!(limits::get_param(&c.state, key), Some(value), "{key}");
     }
     // Out-of-range values are refused, so a cap of zero cannot lock the
     // chain out of offers or proposals.
-    let (r, _) = c.block(&[alice.act(Action::SetParam {
-        key: "gov.max_title_chars".into(),
-        value: 0,
-    })]);
-    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    assert!(matches!(
+        set_param(&mut c.state, "gov.max_title_chars", 0),
+        Err(VmError::Invalid(_))
+    ));
     // The proposal text limit is applied from the parameter.
-    let (r, _) = c.block(&[alice.act(Action::SetParam {
-        key: "gov.max_title_chars".into(),
-        value: 3,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "gov.max_title_chars", 3).expect("param");
     let (r, _) = c.block(&[alice.act(Action::Propose(keel_actions::Proposal {
         title: "four".into(),
         description: String::new(),

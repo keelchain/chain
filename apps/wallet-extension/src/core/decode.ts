@@ -71,7 +71,6 @@ export const ACTION_LABELS: Record<string, string> = {
   Vote: 'Vote',
   ExecuteProposal: 'Execute proposal',
   Attest: 'Attest tier',
-  SetParam: 'Set parameter',
   LockBudget: 'Lock budget',
   UnlockBudget: 'Unlock budget',
   AuthorizeSessionKey: 'Authorize session key',
@@ -416,9 +415,6 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Chain code', field: { k: 'hash', value: str(p['chain_code']) } },
         { name: 'New signer URL', field: { k: 'text', value: str(p['signer_url']) } },
       ];
-      // `sweep` is a legacy field the chain refuses when set: generations are
-      // separate pools. Shown only if someone tries, so the signer sees it.
-      if (p['sweep']) fields.push({ name: 'Sweep old coins (refused by the chain)', field: { k: 'bool', value: true } });
       if (present(p['activate_at'])) fields.push({ name: 'Activate at height', field: { k: 'number', value: amountStr(p['activate_at']) } });
       const when = present(p['activate_at']) ? ` at height ${amountStr(p['activate_at'])}` : ' now';
       return view(`Rotate your ${str(p['chain'])} vault to a fresh key${when}`, fields);

@@ -20,7 +20,7 @@ describe('decodeAction', () => {
     const v = decodeAction({ FutureThing: { x: 1 } });
     expect(v.kind).toBe('FutureThing');
     expect(v.fields.length).toBeGreaterThan(0);
-    expect(decodeAction(undefined, 'SetParam').kind).toBe('SetParam');
+    expect(decodeAction(undefined, 'Attest').kind).toBe('Attest');
   });
 });
 

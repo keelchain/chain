@@ -51,10 +51,10 @@ Everything above is in `chain/crates/keel-vm/src/modules/lightning.rs`
 `modules/vaults.rs`. The node serves `GET /v1/lightning` (params, pools,
 open assignments with invoice/amount/owner, pending sweeps, `pool_total`).
 
-## 2. Parameters (Backoffice → Chain → Lightning)
+## 2. Parameters
 
-All are chain params, changed with `SetParam` by the param admin, i.e. from
-the backoffice Chain page like every other parameter:
+All are chain params, changed by `ParamChange` proposal like every other
+parameter (there is no parameter admin since 2026-11-15):
 
 | Key | Default | Meaning |
 |---|---|---|

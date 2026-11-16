@@ -144,7 +144,6 @@ jobs:
           KEEL_VALIDATOR_SEED_2: ${{ secrets.KEEL_VALIDATOR_SEED_2 }}
           KEEL_CHAIN_ID: ${{ vars.KEEL_CHAIN_ID || '3' }}
           KEEL_OBSERVER_THRESHOLD: ${{ vars.KEEL_OBSERVER_THRESHOLD }}
-          KEEL_PARAM_ADMIN: ${{ vars.KEEL_PARAM_ADMIN }}
           KEEL_ATTESTER: ${{ vars.KEEL_ATTESTER }}
           KEEL_ARBITRATOR: ${{ vars.KEEL_ARBITRATOR }}
           KEEL_GENESIS_FUNDS: ${{ vars.KEEL_GENESIS_FUNDS }}
@@ -176,7 +175,7 @@ jobs:
           echo "$IDS" > release/identities.json
           HOST0=$(python3 -c 'import json; print(json.load(open("release/identities.json"))[0]["address"])')
           [ -n "$KEEL_OBSERVER_THRESHOLD" ] && ARGS="$ARGS --observer-threshold $KEEL_OBSERVER_THRESHOLD"
-          ARGS="$ARGS --param-admin ${KEEL_PARAM_ADMIN:-$HOST0} --attester ${KEEL_ATTESTER:-$HOST0} --arbitrator ${KEEL_ARBITRATOR:-$HOST0}"
+          ARGS="$ARGS --attester ${KEEL_ATTESTER:-$HOST0} --arbitrator ${KEEL_ARBITRATOR:-$HOST0}"
           for f in $(echo "${KEEL_GENESIS_FUNDS:-}" | tr ',' ' '); do ARGS="$ARGS --fund $f"; done
           # shellcheck disable=SC2086
           bin/keel --chain-id "$KEEL_CHAIN_ID" genesis-build $ARGS --params-json infra/testnet/genesis-params.json --out release/genesis.json

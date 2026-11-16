@@ -39,7 +39,7 @@ them; `--no-allocation` skips issuance on test networks.
 | Bucket shares | Only if the 35/25/15/10/10/5 split changes; must sum to 100% | the split above |
 | Community emissions | A schedule (how much per epoch to trading/referral rewards); executed as proposals or a later emissions module | nothing emitted automatically |
 | Validator bootstrap use | Decided 2026-11-15: the bucket is the staking emission, `emission.validator_bps_per_year` of what remains per year, accrued at each epoch boundary into `validator_rewards` and distributed pro rata (`docs/governance.md`) | 10% a year |
-| Super admin | The chain address that will hold `param_admin` (the backoffice super admin's chain key) | devnet: seed 0; mainnet: must be passed to `genesis-from-export --param-admin` |
+| Super admin | Decided 2026-11-15: there is none. The parameter admin and `SetParam` were removed; every parameter changes by `ParamChange` proposal, and the explorer's Governance page is the interface | no admin on any network |
 
 ## Demand sinks
 
@@ -67,11 +67,9 @@ them; `--no-allocation` skips issuance on test networks.
 
 ## Fee flows (defaults in `keel_vm::Params`, editable live)
 
-Every number below is a chain parameter. At launch the platform super
-admin changes them directly from the backoffice (Fees page → "Chain
-parameters", signed with `CHAIN_ADMIN_SECRET`, the `SetParam` action);
-governance can take that right away with a `SetParamAdmin { admin: None }`
-proposal, after which only `ParamChange` proposals can move them.
+Every number below is a chain parameter, and only a `ParamChange`
+proposal moves it: there is no administrative key (the parameter admin was
+removed on 2026-11-15; `docs/governance.md` lists every key).
 
 | Fee | Rate | Payer |
 |---|---|---|

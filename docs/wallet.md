@@ -236,9 +236,10 @@ the network vault as before.
 
 ## 6. What the operator still signs (its own keys, never users')
 
-Attester (KYC tiers), param admin (fees), treasury (awards, referral
-payouts), house maker quotes, the trade-expiry sweep, session keys it is
-authorized to hold. These stay in the marketplace's KMS/env as today.
+Attester (KYC tiers), governance proposals and votes with its bonded KEEL,
+treasury (awards, referral payouts), house maker quotes, the trade-expiry
+sweep, session keys it is authorized to hold. These stay in the
+marketplace's KMS/env as today; there is no parameter admin key any more.
 
 ## 7. Status (2026-09-09)
 

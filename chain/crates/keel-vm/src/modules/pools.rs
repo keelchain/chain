@@ -18,10 +18,7 @@
 //! coin is ever moved from one generation to another. New deposits go to
 //! the active key; a withdrawal is paid from whichever generation holds
 //! funds, the oldest draining one first; the old pool empties through
-//! those payouts alone. The chain enforces it: a rotation asking for a
-//! sweep is refused, and so is any `ObserveCustodySweep`. The `sweep` and
-//! `swept` fields below are kept only for the snapshot layout and are
-//! always `false` / empty.
+//! those payouts alone.
 //!
 //! Generation 0 is the vault as registered; it is materialised here only
 //! when the first rotation happens.
@@ -33,9 +30,8 @@ use crate::{
     state::State,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use keel_actions::{Action, Chain, CustodyRotation, SweepObservation};
-use keel_attest::Quorum;
-use keel_types::{Address, Amount, Asset};
+use keel_actions::{Action, Chain, CustodyRotation};
+use keel_types::Address;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -68,10 +64,6 @@ pub struct Generation {
     pub opened_height: u64,
     /// Height after which a draining generation may be retired.
     pub drain_until: u64,
-    /// Always `false`: generations are never swept (snapshot layout only).
-    pub sweep: bool,
-    /// Always empty: generations are never swept (snapshot layout only).
-    pub swept: BTreeMap<Asset, Amount>,
     /// Observers that reported it empty.
     pub reported_empty: BTreeSet<Address>,
 }
@@ -83,8 +75,6 @@ pub struct Rotation {
     pub chain_code: [u8; 32],
     pub signer_url: String,
     pub activate_at: u64,
-    /// Always `false` (snapshot layout only).
-    pub sweep: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -120,10 +110,6 @@ pub struct PoolsState {
     pub pools: BTreeMap<(Chain, Address), Pool>,
     /// Batch id -> the generation the observers should pay it from.
     pub batch_gen: BTreeMap<u64, u64>,
-    /// Always empty: generations are never swept (snapshot layout only).
-    pub swept: BTreeSet<(Chain, [u8; 32])>,
-    /// Always empty: generations are never swept (snapshot layout only).
-    pub sweeps_pending: BTreeMap<[u8; 32], (Quorum, SweepObservation)>,
 }
 
 pub const PARAM_KEYS: &[&str] = &["pools.grace_blocks", "pools.usage_rotation_keel"];
@@ -137,7 +123,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
     })
 }
 
-/// `SetParam` for the `pools.*` keys.
+/// `ParamChange` for the `pools.*` keys.
 pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>, VmError> {
     let p = &mut state.pools.params;
     match key {
@@ -254,7 +240,6 @@ pub fn apply(
     match action {
         Action::RotateCustodyVault(r) => rotate(state, ctx, signer, tx_id, r),
         Action::CancelCustodyRotation { chain } => cancel(state, signer, *chain),
-        Action::ObserveCustodySweep(o) => observe_sweep(state, signer, o),
         Action::RetireCustodyGeneration {
             chain,
             custodian,
@@ -278,12 +263,6 @@ fn rotate(
         .ok_or_else(|| VmError::NotFound("register a custody vault on this chain first".into()))?;
     if r.public_key.len() != r.chain.key_length() {
         return Err(VmError::Invalid("bad vault public key length".into()));
-    }
-    if r.sweep {
-        return Err(VmError::Invalid(
-            "generations are separate pools: nothing is moved between them; set sweep to false"
-                .into(),
-        ));
     }
     if r.public_key == vault.public_key {
         return Err(VmError::Invalid(
@@ -327,7 +306,6 @@ fn rotate(
                 chain_code: r.chain_code,
                 signer_url: r.signer_url.clone(),
                 activate_at: h,
-                sweep: r.sweep,
             });
             events.push(Event::PoolRotationScheduled {
                 chain: r.chain.as_str().into(),
@@ -344,7 +322,6 @@ fn rotate(
             r.public_key.clone(),
             r.chain_code,
             r.signer_url.clone(),
-            r.sweep,
         )),
     }
     Ok(events)
@@ -359,7 +336,6 @@ fn open_generation(
     public_key: Vec<u8>,
     chain_code: [u8; 32],
     signer_url: String,
-    sweep: bool,
 ) -> Vec<Event> {
     let grace = state.pools.params.grace_blocks;
     let Some(old) = state.custody.vaults.get(&(chain, custodian)).cloned() else {
@@ -386,8 +362,6 @@ fn open_generation(
             status: GenStatus::Draining,
             opened_height: old.registered_height,
             drain_until,
-            sweep,
-            swept: BTreeMap::new(),
             reported_empty: BTreeSet::new(),
         });
         0
@@ -397,7 +371,6 @@ fn open_generation(
             if g.status == GenStatus::Active {
                 g.status = GenStatus::Draining;
                 g.drain_until = drain_until;
-                g.sweep = sweep;
                 prev = g.gen;
             }
         }
@@ -413,8 +386,6 @@ fn open_generation(
         status: GenStatus::Active,
         opened_height: height,
         drain_until: 0,
-        sweep: false,
-        swept: BTreeMap::new(),
         reported_empty: BTreeSet::new(),
     });
     pool.rotation = None;
@@ -456,19 +427,6 @@ fn cancel(state: &mut State, signer: Address, chain: Chain) -> Result<Vec<Event>
         custodian: signer,
         gen: r.gen,
     }])
-}
-
-/// Refused, always: generations are separate pools and no coin is ever
-/// moved from one to another, so there is no sweep to attest. The action
-/// stays decodable for old blocks.
-fn observe_sweep(
-    _state: &mut State,
-    _signer: Address,
-    _o: &SweepObservation,
-) -> Result<Vec<Event>, VmError> {
-    Err(VmError::Invalid(
-        "generations are never swept: nothing moves between the pools of a custody vault".into(),
-    ))
 }
 
 fn retire(
@@ -549,7 +507,6 @@ pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
             r.public_key,
             r.chain_code,
             r.signer_url,
-            r.sweep,
         ));
     }
     let (observers, threshold) = staking::observers(state);

@@ -541,8 +541,6 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 .try_into()
                 .map_err(|_| anyhow!("chain code must be 32 bytes of hex"))?,
             signer_url,
-            // Generations are separate pools; the chain refuses anything else.
-            sweep: false,
             activate_at,
         }),
         ActionCmd::Custody(CustodyCmd::CancelRotation { chain }) => Action::CancelCustodyRotation {

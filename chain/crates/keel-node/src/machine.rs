@@ -1014,35 +1014,6 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// A snapshot written before the schema header existed (plain borsh of
-    /// the schema-0 layout, the checked-in VM fixture) still opens: the
-    /// node upgrades it through `keel_vm::migrate`.
-    #[test]
-    fn legacy_headerless_snapshot_opens() {
-        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../keel-vm/tests/fixtures/snapshot-schema0-devnet.bin");
-        let bytes = fs::read(&fixture).expect("schema-0 fixture");
-        let expected = State::restore(&bytes).expect("fixture decodes").last_hash;
-        let dir = std::env::temp_dir().join(format!("keel-legacy-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("snapshot-3.bin"), &bytes).unwrap();
-        let alice = Keypair::from_seed(1);
-        let genesis = Genesis::devnet(CHAIN_ID_DEVNET, &[alice.address()], vec![]);
-        let (m, shared) = VmMachine::open(&dir, genesis.build(), 2, 0).unwrap();
-        // The durable snapshot wins over the genesis it was opened with.
-        assert_eq!(m.tip(), (Height::new(3), digest_of(expected)));
-        assert!(shared
-            .state
-            .lock()
-            .unwrap()
-            .ledger
-            .audit()
-            .mismatches
-            .is_empty());
-        let _ = fs::remove_dir_all(&dir);
-    }
-
     #[test]
     fn upgrade_gate_follows_the_newest_activation() {
         let alice = Keypair::from_seed(1);

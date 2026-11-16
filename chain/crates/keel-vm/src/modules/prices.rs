@@ -54,18 +54,6 @@ pub struct PricesState {
     pub samples: BTreeMap<String, Vec<(u64, Amount)>>,
 }
 
-impl PricesState {
-    /// A chain that predates the module keeps reading the last fill.
-    pub fn migrated() -> Self {
-        Self {
-            params: PricesParams {
-                twap_window_secs: 0,
-            },
-            samples: BTreeMap::new(),
-        }
-    }
-}
-
 pub const PARAM_KEYS: &[&str] = &["prices.twap_window_secs"];
 
 pub fn get_param(state: &State, key: &str) -> Option<u128> {

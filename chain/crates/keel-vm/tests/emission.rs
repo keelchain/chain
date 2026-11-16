@@ -6,7 +6,6 @@
 mod common;
 
 use common::*;
-use keel_actions::Action;
 use keel_ledger::{AccountKey, Record, TxType};
 use keel_types::Address;
 use keel_vm::{modules::emission, Event, VmError};
@@ -39,9 +38,8 @@ fn bucket(state: &mut keel_vm::State, amount: u128) {
 
 #[test]
 fn the_bootstrap_bucket_pays_the_epoch_rewards_at_the_governed_rate() {
-    let (mut state, mut alice, bob, v) = setup(MIN_V);
+    let (mut state, alice, bob, v) = setup(MIN_V);
     state.params.epoch_length_blocks = 2;
-    state.gov.param_admin = Some(alice.addr());
     bucket(&mut state, 1_000 * KEEL);
     assert_eq!(emission::remaining(&state), 1_000 * KEEL);
     assert_eq!(
@@ -86,36 +84,15 @@ fn the_bootstrap_bucket_pays_the_epoch_rewards_at_the_governed_rate() {
 
     // The rate is a governance parameter: 0 switches the emission off,
     // more than 100% a year is refused.
-    let (r, _) = c.block_at_secs(
-        t0 + 2 * DAY,
-        &[
-            alice.act(Action::SetParam {
-                key: "emission.validator_bps_per_year".into(),
-                value: 20_000,
-            }),
-            alice.act(Action::SetParam {
-                key: "emission.validator_bps_per_year".into(),
-                value: 0,
-            }),
-        ],
-    );
-    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
-    ok(&r[1]);
+    c.block_at_secs(t0 + 2 * DAY, &[]);
+    assert!(matches!(
+        set_param(&mut c.state, "emission.validator_bps_per_year", 20_000),
+        Err(VmError::Invalid(_))
+    ));
+    set_param(&mut c.state, "emission.validator_bps_per_year", 0).expect("param");
     let remaining = emission::remaining(&c.state);
     let (_, ev) = c.block_at_secs(t0 + 2 * DAY, &[]);
     assert!(!ev.iter().any(|e| matches!(e, Event::EmissionPaid { .. })));
     assert_eq!(emission::remaining(&c.state), remaining);
     assert!(c.state.ledger.audit().mismatches.is_empty());
-}
-
-#[test]
-fn a_migrated_chain_starts_with_the_emission_off() {
-    let m = emission::EmissionState::migrated();
-    assert_eq!(m.params.validator_bps_per_year, 0);
-    assert_eq!(
-        emission::EmissionState::default()
-            .params
-            .validator_bps_per_year,
-        1_000
-    );
 }

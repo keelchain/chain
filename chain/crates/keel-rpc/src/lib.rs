@@ -1293,7 +1293,6 @@ async fn roles(AxumState(node): AxumState<Node>) -> Json<Value> {
             .map(|a| a.to_hex())
             .collect::<Vec<_>>(),
         "arbitrators_banned": hex(&s.arbitration.banned),
-        "param_admin": s.gov.param_admin.map(|a| a.to_hex()),
         "house_operator": s.gov_house_operator.map(|a| a.to_hex()),
     }))
 }
@@ -1439,8 +1438,6 @@ async fn liquidity(AxumState(node): AxumState<Node>) -> Json<Value> {
     }
     Json(json!({
         "height": s.height,
-        "active": liq::active(&s, s.height),
-        "activation_version": liq::ACTIVATION_VERSION,
         "pool": {
             "balances": holdings,
             "total_shares": total_shares.to_string(),

@@ -270,8 +270,7 @@ fn deposit_tron_usdt(
 
 #[test]
 fn a_usdt_deposit_on_any_network_is_one_usdt_balance_withdrawn_in_one_step() {
-    let (mut state, mut alice, _bob, mut v) = setup(0);
-    state.gov.param_admin = Some(alice.addr());
+    let (state, mut alice, _bob, mut v) = setup(0);
     assert_eq!(state.stable_conversion.params.auto_convert, 1);
     assert!(
         !state.stable.basket.contains_key(&Asset::new("SOL.USDC")),
@@ -357,11 +356,7 @@ fn a_usdt_deposit_on_any_network_is_one_usdt_balance_withdrawn_in_one_step() {
     invariant(&c.state);
 
     // Conversion off: the next deposit stays per-network.
-    let (r, _) = c.block(&[alice.act(Action::SetParam {
-        key: "stable.auto_convert".into(),
-        value: 0,
-    })]);
-    ok(&r[0]);
+    set_param(&mut c.state, "stable.auto_convert", 0).expect("param");
     let r = deposit_tron_usdt(&mut c, &mut v, index, 1_000_000, 2);
     ok(&r);
     assert_eq!(
@@ -373,8 +368,7 @@ fn a_usdt_deposit_on_any_network_is_one_usdt_balance_withdrawn_in_one_step() {
 
 #[test]
 fn a_short_network_charges_a_premium_and_pays_it_back_as_a_rebate() {
-    let (mut state, mut alice, _bob, mut v) = setup(0);
-    state.gov.param_admin = Some(alice.addr());
+    let (state, mut alice, _bob, mut v) = setup(0);
     let mut c = Chain::new(state);
     register_tron(&mut c, &mut v);
     register(&mut c, &mut v, keel_actions::Chain::Ethereum);
@@ -450,27 +444,11 @@ fn a_short_network_charges_a_premium_and_pays_it_back_as_a_rebate() {
     assert_eq!(stable::rebalance_pool(&c.state), 0);
 
     // The premium is a governance parameter; 0 turns rebalancing off.
-    let (r, _) = c.block(&[
-        alice.act(Action::SetParam {
-            key: "stable.rebalance_max_premium_bps".into(),
-            value: 20_000,
-        }),
-        alice.act(Action::SetParam {
-            key: "stable.rebalance_max_premium_bps".into(),
-            value: 0,
-        }),
-    ]);
-    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
-    ok(&r[1]);
+    assert!(matches!(
+        set_param(&mut c.state, "stable.rebalance_max_premium_bps", 20_000),
+        Err(VmError::Invalid(_))
+    ));
+    set_param(&mut c.state, "stable.rebalance_max_premium_bps", 0).expect("param");
     assert_eq!(stable::premium_bps(&c.state, &eth_usdt()), 0);
     invariant(&c.state);
-}
-
-#[test]
-fn a_migrated_chain_keeps_per_network_deposits_until_governance_turns_conversion_on() {
-    let m = stable::ConversionState::migrated();
-    assert_eq!(
-        (m.params.auto_convert, m.params.rebalance_max_premium_bps),
-        (0, 0)
-    );
 }

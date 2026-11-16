@@ -10,7 +10,7 @@
 //!
 //! Appended at the end of [`crate::State`] (schema 10, 2026-11-15). A
 //! snapshot older than that migrates with the rate at 0, so replaying old
-//! blocks is unchanged; governance turns it on with `SetParam`.
+//! blocks is unchanged; governance sets it by `ParamChange`.
 
 use crate::{
     context::BlockContext,
@@ -51,20 +51,6 @@ pub struct EmissionState {
     pub last_paid_ms: u64,
     /// Total paid out of the bucket so far.
     pub paid_total: Amount,
-}
-
-impl EmissionState {
-    /// What a chain that predates this module gets: nothing changes until
-    /// governance sets the rate.
-    pub fn migrated() -> Self {
-        Self {
-            params: EmissionParams {
-                validator_bps_per_year: 0,
-            },
-            last_paid_ms: 0,
-            paid_total: 0,
-        }
-    }
 }
 
 pub const PARAM_KEYS: &[&str] = &["emission.validator_bps_per_year"];

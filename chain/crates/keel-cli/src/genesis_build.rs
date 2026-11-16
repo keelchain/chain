@@ -40,9 +40,6 @@ pub struct Args {
     pub arbitrators: Vec<String>,
     #[arg(long = "attester")]
     pub attesters: Vec<String>,
-    /// Account that may change parameters directly until governance revokes it.
-    #[arg(long)]
-    pub param_admin: Option<String>,
     /// House-quote operator for system-owned pairs.
     #[arg(long)]
     pub house_operator: Option<String>,
@@ -153,11 +150,6 @@ pub fn build(args: &Args, chain_id: u32) -> anyhow::Result<Genesis> {
     g.observer_threshold = threshold;
     g.arbitrators = addresses(&args.arbitrators, "arbitrator")?;
     g.attesters = addresses(&args.attesters, "attester")?;
-    g.param_admin = args
-        .param_admin
-        .as_deref()
-        .map(|s| address(s, "param admin"))
-        .transpose()?;
     g.accounts = args
         .funds
         .iter()
@@ -178,7 +170,7 @@ pub fn build(args: &Args, chain_id: u32) -> anyhow::Result<Genesis> {
     if let Some(h) = args.house_operator.as_deref() {
         // The house operator is not part of `Genesis`; it is set by the
         // param admin after launch. Reject the flag until it is.
-        bail!("--house-operator {h}: set the house operator through SetParam after launch");
+        bail!("--house-operator {h}: set the house operator through a ParamChange proposal after launch");
     }
     Ok(g)
 }
@@ -228,7 +220,6 @@ mod tests {
             observer_threshold: Some(2),
             arbitrators: vec![Keypair::from_seed(7).address().to_hex()],
             attesters: vec![Keypair::from_seed(8).address().to_hex()],
-            param_admin: Some(Keypair::from_seed(9).address().to_hex()),
             house_operator: None,
             funds: vec![format!(
                 "{}:KEEL:{}",
@@ -248,7 +239,6 @@ mod tests {
         assert_eq!(g.observer_threshold, 2);
         assert_eq!(g.arbitrators, vec![Keypair::from_seed(7).address()]);
         assert_eq!(g.attesters, vec![Keypair::from_seed(8).address()]);
-        assert_eq!(g.param_admin, Some(Keypair::from_seed(9).address()));
         let state = g.build();
         assert!(state.ledger.audit().mismatches.is_empty());
         assert_eq!(state.staking.validators.len(), 3);

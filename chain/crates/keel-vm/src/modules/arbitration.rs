@@ -58,7 +58,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
     }
 }
 
-/// `SetParam` for the `arbitration.*` keys.
+/// `ParamChange` for the `arbitration.*` keys.
 pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>, VmError> {
     match key {
         "arbitration.max_named" => {

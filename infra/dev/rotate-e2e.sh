@@ -336,9 +336,19 @@ USER_AFTER=$((USER_AFTER - WITHDRAW_SATS))
 read -r RES LIA HALT <<<"$(reserves)"
 [[ "$RES" == "$LIA" && "$HALT" == False ]] || fail "reserve $RES vs liabilities $LIA halted=$HALT after the withdrawal"
 # ---------------------------------------------------------------- 4. rotate again
-say "the client (param admin on the devnet) shortens the grace to 5 blocks, then rotates again to a third signer (:$SIGNER_PORT3)"
-"$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 raw '{"SetParam":{"key":"pools.grace_blocks","value":5}}' > "$KEEL_DEVNET_DIR/grace.json"
-grep -qE '"ok": *true' "$KEEL_DEVNET_DIR/grace.json" || { cat "$KEEL_DEVNET_DIR/grace.json"; fail "could not set pools.grace_blocks"; }
+say "governance (the devnet validators) shortens the grace to 5 blocks, then the client rotates again to a third signer (:$SIGNER_PORT3)"
+# There is no parameter admin: a ParamChange proposal, voted by the devnet
+# validators (seeds 0..2 hold 75% of the bonded KEEL), passes in the
+# devnet's 20-block voting period and executes after its 2-block timelock.
+govern_param() { # key value
+  local out id
+  out=$("$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 gov propose "set $1" "{\"ParamChange\":{\"key\":\"$1\",\"value\":$2}}")
+  id=$(echo "$out" | json 'next(e["ProposalCreated"]["proposal_id"] for e in d["events"] if "ProposalCreated" in e)') || { echo "$out"; fail "proposal for $1 refused"; }
+  for s in "${OBS_SECRET[@]}"; do "$KEEL" --rpc "$RPC0" send --secret "$s" --wait 30 gov vote "$id" yes >/dev/null || fail "vote on proposal $id refused"; done
+  wait_for "proposal $id passed" 240 bash -c "curl -sf $RPC0/v1/gov/proposals/$id | python3 -c 'import sys,json; sys.exit(0 if json.load(sys.stdin)[\"status\"]==\"Passed\" else 1)'"
+  wait_for "proposal $id executed" 120 bash -c "\"$KEEL\" --rpc \"$RPC0\" send --secret \"$CLIENT_SECRET\" --wait 30 gov execute $id 2>/dev/null | grep -q '\"ParamChanged\"'"
+}
+govern_param pools.grace_blocks 5
 rotate "$CLIENT_SEED3" "$SIGNER_PORT3"
 wait_for "three generations, two draining" 30 bash -c "[[ \"\$(gens)\" == '2:Active 1:Draining 0:Draining' ]]"
 GAS_ADDR2=$(gen_field 2 address)

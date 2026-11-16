@@ -58,10 +58,6 @@ pub struct Genesis {
     /// devnet: only the funded accounts hold KEEL.
     #[serde(default)]
     pub allocation: Option<Allocation>,
-    /// Address allowed to change parameters directly (`SetParam`) until
-    /// governance revokes it: the platform super admin at launch.
-    #[serde(default)]
-    pub param_admin: Option<Address>,
     /// Software versions treated as activated from the given height, as
     /// if a `SoftwareUpgrade` proposal had executed. A fresh network seeds
     /// the version it is built with at height 0 so every gated feature is
@@ -311,7 +307,6 @@ impl Genesis {
             eth_checkpoint: None,
             token_contracts: Vec::new(),
             allocation: None,
-            param_admin: None,
             upgrades: vec![(BUILD_VERSION.to_string(), 0)],
         }
     }
@@ -436,7 +431,6 @@ impl Genesis {
             self.observer_threshold,
             &self.arbitrators,
         );
-        state.gov.param_admin = self.param_admin;
         state.gov.upgrades = self.upgrades.clone();
         if let Some(alloc) = &self.allocation {
             self.apply_allocation(&mut state, alloc);

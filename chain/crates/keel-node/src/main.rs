@@ -165,9 +165,12 @@ fn devnet_genesis(seeds: &[u64], chain_id: u32, idle_ms: Option<u32>) -> Genesis
         })
         .collect();
     let mut g = Genesis::devnet(chain_id, &funded, validators);
-    // The first seed doubles as the super admin so `SetParam` (the
-    // backoffice "Chain parameters" card) works on a devnet.
-    g.param_admin = seeds.first().map(|s| Keypair::from_seed(*s).address());
+    // Governance is the only way to change a parameter, so a devnet makes
+    // it quick: a 1,000 KEEL deposit, a 20-block vote, a 2-block timelock.
+    // The end-to-end scripts pass proposals with the devnet validators.
+    g.params.proposal_deposit = 1_000_000_000;
+    g.params.voting_period_blocks = 20;
+    g.params.timelock_blocks = 2;
     if let Some(ms) = idle_ms {
         g.params.idle_block_interval_ms = ms;
         g.params.min_block_interval_ms = g.params.min_block_interval_ms.min(ms);
@@ -494,6 +497,6 @@ mod tests {
         let g = devnet_genesis(&[1, 2], 42, None);
         assert_eq!(g.chain_id, 42);
         assert_eq!(g.validators.len(), 2);
-        assert_eq!(g.param_admin, Some(Keypair::from_seed(1).address()));
+        assert_eq!(g.params.voting_period_blocks, 20);
     }
 }

@@ -54,15 +54,6 @@ pub fn check_admission(state: &State, sa: &SignedAction) -> Result<(), VmError> 
     if state.is_paused(sa.envelope.action.module()) {
         return Err(VmError::Paused(sa.envelope.action.module().into()));
     }
-    // Actions of a feature governance has not activated yet are kept out
-    // of the mempool so a node never includes them early.
-    if matches!(
-        sa.envelope.action,
-        Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. }
-    ) && !liquidity::active(state, state.height + 1)
-    {
-        return Err(VmError::Invalid("liquidity not active".into()));
-    }
     if sa.envelope.action.is_observer_action() {
         if !staking::is_observer(state, &sa.envelope.signer) {
             return Err(VmError::Unauthorized);
@@ -314,7 +305,6 @@ fn apply_one(
             tier,
             expires_at,
         } => attest::apply_attest(state, ctx, signer, *subject, *tier, *expires_at),
-        Action::SetParam { key, value } => gov::set_param(state, signer, key, *value),
         Action::SetClientFee(fee) => clients::apply_set_fee(state, ctx.height, signer, fee),
         Action::RegisterCustodyVault(_)
         | Action::RequestCustodyAddress { .. }
@@ -326,7 +316,6 @@ fn apply_one(
         }
         Action::RotateCustodyVault(_)
         | Action::CancelCustodyRotation { .. }
-        | Action::ObserveCustodySweep(_)
         | Action::RetireCustodyGeneration { .. } => {
             pools::apply(state, ctx, signer, &tx_id, action)
         }

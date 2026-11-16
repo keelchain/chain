@@ -117,13 +117,6 @@ pub enum Action {
         tier: u8,
         expires_at: u64,
     },
-    /// Direct parameter change by the governance-appointed `param_admin`
-    /// (the platform's super admin at launch). Same keys as `ParamChange`;
-    /// bypasses voting until governance revokes the admin.
-    SetParam {
-        key: String,
-        value: u128,
-    },
     // ---- action capacity by locking KEEL (Tron energy model, 2026-09-08)
     /// Lock KEEL from the deposit account; grants `per_locked_keel_per_day`
     /// actions per whole KEEL per day on top of the free budget.
@@ -222,11 +215,6 @@ pub enum Action {
     CancelCustodyRotation {
         chain: Chain,
     },
-    /// Refused since generations stopped being swept (see
-    /// `SweepObservation`). Historically: an observer attested a sweep
-    /// that moved coins from a draining
-    /// generation of a custody vault to its active one.
-    ObserveCustodySweep(SweepObservation),
     /// An observer reports a draining generation empty (the quorum retires
     /// it once its grace is over); the custodian may retire it itself then.
     RetireCustodyGeneration {
@@ -326,7 +314,6 @@ impl Action {
                 | Action::FundLightningPool { .. }
                 | Action::AnnounceLightningSweep { .. }
                 | Action::ObserveCustodyDeposit { .. }
-                | Action::ObserveCustodySweep(_)
                 | Action::ObserveRecovery(_)
         )
     }
@@ -369,7 +356,6 @@ impl Action {
             | Action::ClaimRewards => "staking",
             Action::Propose(_) | Action::Vote { .. } | Action::ExecuteProposal { .. } => "gov",
             Action::Attest { .. } => "attest",
-            Action::SetParam { .. } => "gov",
             Action::SetClientFee(_) => "clients",
             Action::RegisterCustodyVault(_)
             | Action::RequestCustodyAddress { .. }
@@ -379,7 +365,6 @@ impl Action {
             Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
             Action::RotateCustodyVault(_)
             | Action::CancelCustodyRotation { .. }
-            | Action::ObserveCustodySweep(_)
             | Action::RetireCustodyGeneration { .. } => "pools",
             Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. } => "liquidity",
             Action::RequestRecovery(_) | Action::ObserveRecovery(_) => "recovery",
@@ -736,30 +721,11 @@ pub struct CustodyRotation {
     #[serde(with = "crate::hex32")]
     pub chain_code: [u8; 32],
     /// The new key's signer; the old generation's signer keeps serving it.
+    /// Generations are separate pools: nothing is ever moved from the old
+    /// key to the new one.
     pub signer_url: String,
-    /// Must be `false`. Generations are separate pools: the chain never
-    /// moves coins from an old generation to a new one, and a rotation
-    /// asking for it is refused. The field stays in the encoding so older
-    /// clients still decode.
-    pub sweep: bool,
     /// Activate at this height instead of at once.
     pub activate_at: Option<u64>,
-}
-
-/// Payload of `ObserveCustodySweep`, which the chain refuses: generations
-/// are never swept into one another. Kept so the wire format and old
-/// blocks still decode.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
-pub struct SweepObservation {
-    pub chain: Chain,
-    pub custodian: Address,
-    pub from_gen: u64,
-    #[serde(with = "crate::hex32")]
-    pub tx_hash: [u8; 32],
-    pub asset: Asset,
-    pub amount: Amount,
-    /// Network fee the transaction paid, in the chain's native asset.
-    pub fee: Amount,
 }
 
 /// Which side of the custodian's floats a swap moves the balance to.
@@ -885,10 +851,6 @@ pub enum ProposalKind {
     SetTokenContract {
         asset: Asset,
         contract: Vec<u8>,
-    },
-    /// Appoint (or with `None` revoke) the address allowed to `SetParam`.
-    SetParamAdmin {
-        admin: Option<Address>,
     },
     /// Bar an address from ruling any dispute, named or fallback.
     BanArbitrator {

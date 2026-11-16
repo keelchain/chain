@@ -309,10 +309,11 @@ What changes:
    cannot be invented by a key), so it gets its own seed per host
    (`KEEL_OBSERVER_SEED_<i>`) and the quorum becomes 2-of-3 as soon as
    there are three observers.
-4. **The admin hats come off the box now.** `KEEL_PARAM_ADMIN`,
-   `KEEL_ATTESTER` and `KEEL_ARBITRATOR` get set to keys I hold off the
-   boxes before the next reset; today they default to host 0's account.
-   A variable change and a reset, nothing to build.
+4. **The admin hats come off the box now.** `KEEL_ATTESTER` and
+   `KEEL_ARBITRATOR` get set to keys I hold off the boxes before the next
+   reset; today they default to host 0's account. A variable change and a
+   reset, nothing to build. The parameter admin no longer exists
+   (2026-11-15): parameters move by proposal only.
 5. **Cap the faucet.** It stays hot; its balance is the blast radius. It
    holds a week of claims and a scheduled transfer from an off-box key
    tops it up. Today's balance is far more than a week.
@@ -476,9 +477,9 @@ flip it. Both halves below.
 | Maintenance (writes) | `touch /run/keelchain/maintenance` on an edge box | action and faucet submission on that box (503) | reads | removing the file | immediate |
 | **Payout freeze** | `systemctl stop keel-tss@<i>` on `n - t + 1` hosts (on today's box, the one signer) | every external payout: no threshold can be reached, so nothing leaves a vault on any network | the chain, deposits, trading, withdrawal *requests* queue on chain | starting the signers | immediate |
 | Deposit freeze | `systemctl stop keel-observer@<i>` on enough hosts to break the attestation quorum | crediting of new deposits | everything else | starting the observers | immediate |
-| Budget to minimum | `SetParam` from the parameter admin: `per_locked_keel_per_day` to its floor | every non-free action economically, chain-wide, including from a validator's own RPC | consensus, reads, governance | `SetParam` back | next block |
+| Budget to minimum | a `ParamChange` proposal: `per_locked_keel_per_day` to its floor | every non-free action economically, chain-wide, including from a validator's own RPC | consensus, reads, governance | a proposal back | voting period plus timelock |
 | Chain pause | stop the validator units | everything (safe: no block is lost, no fork) | nothing | start them | immediate |
-| Revoke a client | governance proposal replacing the attester or parameter admin | that client's privileged role | its users' funds | a new proposal | timelock |
+| Revoke a client | governance proposal replacing the attester set | that client's privileged role | its users' funds | a new proposal | timelock |
 | Revoke a deploy | GitHub environment: rotate `SSH_PRIVATE_KEY`, remove the key line on the boxes | the compromised key | every other path | nothing to revert | minutes |
 | Freeze deploys | GitHub environment: required reviewer, or disable the workflow | any push reaching the boxes | the running chain | re-enabling | immediate |
 
@@ -568,7 +569,7 @@ changes. Revert when the analytics are quiet.
 
 **Flood of valid actions.** Budgets drain the sender; if the mempool still
 grows, lower the per-key rate in the API-key map and, as a last resort,
-`SetParam` the capacity down to its floor. Check the sender's address on the explorer
+propose the capacity down to its floor. Check the sender's address on the explorer
 first; a legitimate client doing a backfill looks the same.
 
 **A box is unreachable.** Confirm from the other box over the mesh and from

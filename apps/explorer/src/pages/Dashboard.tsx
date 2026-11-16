@@ -327,8 +327,6 @@ function RotateSection({ w }: { w: WalletValue }) {
           public_key: pk.trim(),
           chain_code: cc.trim(),
           signer_url: url.trim(),
-          // Generations are separate pools; the chain refuses anything else.
-          sweep: false,
           activate_at: at.trim() ? Number(at) : null,
         },
       },

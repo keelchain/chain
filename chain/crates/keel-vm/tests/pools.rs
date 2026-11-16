@@ -1,9 +1,8 @@
 //! Custody fresh-pool rotation: a fresh key becomes the active generation,
 //! the old one drains (still credited, still paying) until its grace is
-//! over and the observers report it empty, generations are never swept into
-//! one another (the chain refuses both the request and the attestation),
-//! scheduled rotations open in `end_block`, and registration can no longer
-//! overwrite a key.
+//! over and the observers report it empty, scheduled rotations open in
+//! `end_block`, and registration can no longer overwrite a key. Generations
+//! are separate pools: there is no action that moves coins between them.
 #![allow(clippy::unwrap_used)]
 
 mod common;
@@ -11,7 +10,7 @@ mod common;
 use common::*;
 use keel_actions::{
     Action, Chain as ExtChain, CustodyRotation, CustodyVaultRegistration, DepositObservation,
-    Proof, SweepObservation, Withdraw,
+    Proof, Withdraw,
 };
 use keel_ledger::{Record, TxType};
 use keel_types::{Address, Asset};
@@ -26,9 +25,6 @@ use keel_vm::{
 
 fn usdt() -> Asset {
     Asset::new("TRON.USDT")
-}
-fn trx() -> Asset {
-    Asset::new("TRON.TRX")
 }
 
 fn registration() -> CustodyVaultRegistration {
@@ -47,7 +43,6 @@ fn rotation(key: u8, url: &str, activate_at: Option<u64>) -> Action {
         public_key: vec![key; 33],
         chain_code: [key; 32],
         signer_url: url.into(),
-        sweep: false,
         activate_at,
     })
 }
@@ -252,70 +247,6 @@ fn rotation_opens_a_fresh_generation_and_the_old_one_drains() {
 }
 
 #[test]
-fn generations_are_never_swept_into_one_another() {
-    let (state, mut alice, _bob, mut v) = setup(0);
-    let mut c = Chain::new(state);
-    let client = v.addr();
-    let (r, _) = c.block(&[v.act(Action::RegisterCustodyVault(registration()))]);
-    ok(&r[0]);
-    let (r, _) = c.block(&[v.act(Action::Attest {
-        subject: alice.addr(),
-        tier: 1,
-        expires_at: T0 + 1_000_000,
-    })]);
-    ok(&r[0]);
-    fund_custody(&mut c.state, client, alice.addr(), &usdt(), 5_000_000);
-    fund_custody(&mut c.state, client, client, &trx(), 3_000_000);
-
-    // A rotation that asks the observers to move the old coins is refused:
-    // generations are separate pools.
-    let (r, _) = c.block(&[v.act(Action::RotateCustodyVault(CustodyRotation {
-        chain: ExtChain::Tron,
-        public_key: vec![3u8; 33],
-        chain_code: [3u8; 32],
-        signer_url: "https://signer-b.example.com".into(),
-        sweep: true,
-        activate_at: None,
-    }))]);
-    assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("separate pools")));
-    assert_eq!(statuses(&c, client), vec![(0, GenStatus::Active)]);
-
-    // The same rotation without it opens generation 1; generation 0 drains
-    // through payouts, so batches are pointed at it.
-    let (r, _) = c.block(&[v.act(rotation(3, "https://signer-b.example.com", None))]);
-    ok(&r[0]);
-    let pool = &c.state.pools.pools[&(ExtChain::Tron, client)];
-    assert!(pool.gens.iter().all(|g| !g.sweep));
-    assert_eq!(pools::batch_generation(&c.state, ExtChain::Tron, client), 0);
-
-    // No one, observer or not, can record a sweep between the generations.
-    let sweep = |from_gen: u64| {
-        Action::ObserveCustodySweep(SweepObservation {
-            chain: ExtChain::Tron,
-            custodian: client,
-            from_gen,
-            tx_hash: [9u8; 32],
-            asset: usdt(),
-            amount: 5_000_000,
-            fee: 1_000_000,
-        })
-    };
-    let (r, _) = c.block(&[alice.act(sweep(0)), v.act(sweep(0)), v.act(sweep(1))]);
-    assert!(matches!(err(&r[0]), VmError::Unauthorized));
-    for receipt in &r[1..] {
-        assert!(matches!(err(receipt), VmError::Invalid(m) if m.contains("never swept")));
-    }
-    // Nothing moved and nothing was charged.
-    assert!(c.state.pools.swept.is_empty());
-    assert!(c.state.pools.sweeps_pending.is_empty());
-    let pool = &c.state.pools.pools[&(ExtChain::Tron, client)];
-    assert!(pool.gens.iter().all(|g| g.swept.is_empty()));
-    assert_eq!(custody::balance(&c.state, client, &trx()), 3_000_000);
-    assert_eq!(custody::balance(&c.state, alice.addr(), &usdt()), 5_000_000);
-    assert!(c.state.ledger.audit().mismatches.is_empty());
-}
-
-#[test]
 fn scheduled_rotation_opens_in_end_block_and_can_be_cancelled() {
     let (state, _alice, _bob, mut v) = setup(0);
     let mut c = Chain::new(state);
@@ -368,20 +299,12 @@ fn scheduled_rotation_opens_in_end_block_and_can_be_cancelled() {
             .public_key,
         vec![3u8; 33]
     );
-    // Params through the admin.
-    c.state.gov.param_admin = Some(client);
-    let (r, _) = c.block(&[
-        v.act(Action::SetParam {
-            key: "pools.grace_blocks".into(),
-            value: 50,
-        }),
-        v.act(Action::SetParam {
-            key: "pools.grace_blocks".into(),
-            value: 0,
-        }),
-    ]);
-    ok(&r[0]);
-    assert!(matches!(err(&r[1]), VmError::Invalid(_)));
+    // Params through governance, with their bounds.
+    set_param(&mut c.state, "pools.grace_blocks", 50).expect("param");
+    assert!(matches!(
+        set_param(&mut c.state, "pools.grace_blocks", 0),
+        Err(VmError::Invalid(_))
+    ));
     assert_eq!(pools::get_param(&c.state, "pools.grace_blocks"), Some(50));
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }
