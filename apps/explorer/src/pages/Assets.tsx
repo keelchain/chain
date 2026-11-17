@@ -99,7 +99,7 @@ export function AssetPage() {
         <StatTile label="Supply" value={<Amount value={a.supply} decimals={a.decimals} compact />} hint={`${formatAmount(a.supply, a.decimals)} ${a.asset}`} />
         <StatTile label="Holders" value={formatInt(a.holders)} />
         <StatTile label="Transfers 24h" value={formatInt(a.transfers_24h)} />
-        <StatTile label="Decimals" value={a.decimals} hint={`smallest unit 10^-${a.decimals}`} />
+        <StatTile label="Decimals" value={a.decimals} hint={a.kind === 'native' ? '1 KEEL = 1,000,000 orcas' : `smallest unit 10^-${a.decimals}`} />
         {a.reserves && <StatTile label="Vault reserves" value={<Amount value={a.reserves} decimals={a.decimals} compact />} hint={ratio !== null ? `${formatPercent(ratio, 2)} of liabilities` : undefined} />}
         {a.kind === 'native' && <StatTile label="Hard cap" value="21B" hint="21,000,000,000 KEEL" />}
       </div>

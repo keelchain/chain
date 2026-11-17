@@ -1,15 +1,16 @@
-# KEEL tokenomics (draft v0.1, open decisions marked TBD)
+# KEEL tokenomics
 
 ## Supply
 
-- Hard cap: **21,000,000,000 KEEL**. Smallest unit: 10^-6 KEEL.
+- Hard cap: **21,000,000,000 KEEL**. The smallest unit is the **orca**:
+  1 KEEL = 1,000,000 orcas, so every KEEL amount on the chain, in the
+  RPC and in the SDK is a count of orcas.
 - 65% is issued at genesis (treasury, team, liquidity). The other 35% does
   not exist until the chain mints it: 10% as the **block reward** to
   validators and 25% as the **community reward** to the users who pay
   fees. Both are capped, so total supply converges to the cap and never
   passes it; both schedules are constants in `modules::rewards`, changed
-  only by a software upgrade validators choose to run, never by a vote
-  (decided 2026-11-16).
+  only by a software upgrade validators choose to run, never by a vote.
 - Burn: the `fee_split_burn_bps` share of every fee (10%) plus vetoed
   proposal deposits and, once wired, slashed bonds.
 
@@ -28,15 +29,11 @@ to the cap. `keel genesis-from-export --allocation alloc.json` overrides
 them; `--no-allocation` skips the genesis issuance on test networks, which
 still mint the two rewards up to the default caps.
 
-### Decisions
+### Open before mainnet
 
-| Decision | Outcome |
+| Item | What it needs |
 |---|---|
-| Super admin | None (2026-11-15). The parameter admin and `SetParam` were removed; every parameter changes by `ParamChange` proposal, and the explorer's Governance page is the interface. |
-| Validator reward | A block reward minted per block on a halving schedule in code (2026-11-16), replacing the genesis bucket and its governance rate: familiar to validators, capped at 10% of supply, with a proposer slice as a liveness incentive. |
-| Community emissions | Minted by usage, not dripped (2026-11-16): 10 KEEL per dollar of protocol fee to the payer, capped at 25% of supply. A quiet chain mints nothing; a busy one rewards the people making it busy. |
-| Bucket shares | 40 / 25 / 15 / 10 / 10 (2026-11-16). The strategic reserve had no purpose and is folded into the treasury. |
-| Team grants | Still open: a list of (chain address, share of the team bucket in bps) and, if different, the cliff and duration. Until then the whole 15% waits in `team_reserve`. |
+| Team grants | The list of chain addresses with each one's share of the team bucket in basis points, and the cliff and duration if different from one year and four years. Until then the whole 15% waits in `team_reserve`. |
 
 ### The economics, in one paragraph
 
@@ -58,11 +55,11 @@ than dripped on a calendar.
 - Validator bond (min 100,000 KEEL), observer bond (500,000), arbitrator
   bond (50,000); slashed on misconduct.
 - Governance vote weight.
-- Action capacity by locking (2026-09-08, the Tron energy model):
+- Action capacity by locking (the Tron energy model):
   each whole KEEL locked grants `budget.per_locked_keel_per_day` actions per
   day (default 100) on top of a free base that is only an onboarding grant
-  (`budget.base`, 500 actions since 2026-11-15; a per-address grant is a
-  per-keypair grant, so volume cannot be free); unlocking returns the KEEL
+  (`budget.base`, 500 actions; a per-address grant is a per-keypair grant,
+  so volume cannot be free); unlocking returns the KEEL
   in full after `budget.unlock_delay_secs` (default 3 days). Nothing is
   paid, so it adds demand without adding a fee, and the demand is linear
   in use: an exchange locks in proportion to its volume however many
@@ -72,7 +69,7 @@ than dripped on a calendar.
 - Offer listing deposit: 10 KEEL per live offer (refundable).
 - Proposal deposit: 1,000,000 KEEL (refunded on pass or reject; burned on veto).
 - Fee tier discounts for stakers (planned parameter).
-- Liquidity-pool deposits (2026-10-02): KEEL, USDT or BTC put into the
+- Liquidity-pool deposits: KEEL, USDT or BTC put into the
   house maker's pool earns the depositor's share of the spread; the
   protocol keeps `liquidity.protocol_share_bps` (50%) of the pool's gain
   through the fee split.
@@ -80,8 +77,8 @@ than dripped on a calendar.
 ## Fee flows (defaults in `keel_vm::Params`, editable live)
 
 Every number below is a chain parameter, and only a `ParamChange`
-proposal moves it: there is no administrative key (the parameter admin was
-removed on 2026-11-15; `docs/governance.md` lists every key).
+proposal moves it: there is no administrative key (`docs/governance.md`
+lists every key).
 
 | Fee | Rate | Payer |
 |---|---|---|
@@ -95,8 +92,7 @@ removed on 2026-11-15; `docs/governance.md` lists every key).
 Accounts attested by a live client pay none of the first four; their
 client pays usage in KEEL instead (below): 0.01 KEEL per filled order,
 0.1 KEEL per release, per withdrawal and per deposit address, 1 KEEL per
-ruling by default (all governance parameters; zero before 2026-11-15,
-which made the waiver a full subsidy).
+ruling by default (all governance parameters).
 
 Split: 50% treasury, 40% validators + observers + delegators (observers
 take 25% of that share first), 10% burn. All splits are on-chain ledger

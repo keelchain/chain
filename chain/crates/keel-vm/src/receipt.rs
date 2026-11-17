@@ -42,7 +42,7 @@ pub enum VmError {
     Unimplemented(String),
     /// The address holds less KEEL than `budget.activation_keel`, so its
     /// free budget is not usable yet (appended 2026-11-15).
-    #[error("address holds less than the activation floor of {need} KEEL units")]
+    #[error("address holds less than the activation floor of {need} orcas")]
     NotActivated { need: u128 },
 }
 

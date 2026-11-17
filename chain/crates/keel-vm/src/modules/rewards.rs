@@ -26,7 +26,7 @@ use keel_ledger::{Record, TxType};
 use keel_types::{mul_div_floor, Address, Amount};
 use serde::{Deserialize, Serialize};
 
-/// 21 billion KEEL, six decimals.
+/// 21 billion KEEL, in orcas (six decimals).
 pub const KEEL_CAP: Amount = 21_000_000_000 * 1_000_000;
 /// Four years in milliseconds: the halving interval.
 pub const HALVING_MS: u64 = 4 * 365 * 86_400_000;

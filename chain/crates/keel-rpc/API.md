@@ -1,7 +1,8 @@
 # Keel node HTTP/WS API (v1)
 
 Base: `http://127.0.0.1:<rpc-port>` (devnet: 5000+i). JSON everywhere.
-Amounts are integers in smallest units and may exceed 2^53: parse as
+Amounts are integers in smallest units (for KEEL: orcas, 1,000,000 to the
+KEEL) and may exceed 2^53: parse as
 bigint. Addresses are 64-hex ed25519 public keys in paths; inside a signed
 action's JSON they are 32-element byte arrays (serde form).
 

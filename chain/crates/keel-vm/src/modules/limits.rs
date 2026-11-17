@@ -35,7 +35,7 @@ pub const DEFAULT_MAX_MEMO_BYTES: u32 = 256;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct LimitsState {
-    /// `budget.activation_keel`: the least KEEL (smallest units; spendable,
+    /// `budget.activation_keel`: the least KEEL (in orcas; spendable,
     /// locked, unlocking, bonded, and offer or proposal deposits all count)
     /// an address must hold before the chain accepts a budget-spending
     /// action from it. The free budget is worth

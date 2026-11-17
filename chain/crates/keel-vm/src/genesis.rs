@@ -75,7 +75,7 @@ pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// (the `accounts` list) come out of the community bucket first.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Allocation {
-    /// Smallest units (10^-6 KEEL). Default: the 21B hard cap.
+    /// In orcas (10^-6 KEEL). Default: the 21B hard cap.
     pub total_supply: Amount,
     /// DAO treasury, spendable only by TreasurySpend proposals. Issued at
     /// genesis.

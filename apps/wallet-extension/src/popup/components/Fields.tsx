@@ -12,7 +12,7 @@ export function FieldValue({ f }: { f: NamedField['field'] }) {
       return <code title={f.value}>{truncateHex(f.value, 10, 8)}</code>;
     case 'amount':
     case 'price':
-      return <span className="strong" title={`${f.value} smallest units`}>{f.formatted}</span>;
+      return <span className="strong" title={`${f.value} ${'asset' in f && f.asset === 'KEEL' ? 'orcas' : 'smallest units'}`}>{f.formatted}</span>;
     case 'asset':
     case 'pair':
     case 'text':

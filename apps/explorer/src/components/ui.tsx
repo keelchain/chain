@@ -126,7 +126,7 @@ export function Amount({ value, asset, decimals, compact = false, sym = true }: 
   const text = formatAmount(value, d, { compact });
   const full = formatAmount(value, d, { maxFraction: d });
   return (
-    <span className="amount" title={value === null || value === undefined ? undefined : `${full}${asset ? ` ${asset}` : ''}`}>
+    <span className="amount" title={value === null || value === undefined ? undefined : `${full}${asset ? ` ${asset}` : ''}${asset === 'KEEL' ? ` (${value} orcas)` : ''}`}>
       {text}
       {sym && asset && <span className="sym">{asset}</span>}
     </span>

@@ -88,7 +88,7 @@ params! {
     fee_split_validators_bps: u32 = 4_000,
     fee_split_burn_bps: u32 = 1_000,
     // ---- P2P
-    /// Refundable KEEL deposit (smallest units) per live offer.
+    /// Refundable KEEL deposit (orcas) per live offer.
     offer_deposit: u128 = 10_000_000,
     /// Seconds a buyer has to mark paid before the seller may cancel.
     default_payment_window_secs: u32 = 1_800,

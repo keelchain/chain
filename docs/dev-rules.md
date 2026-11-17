@@ -19,7 +19,8 @@ Read `plan.md` first. These rules keep parallel work from colliding.
 ## Determinism (everything at `keel-vm` and below)
 - No floats, no `HashMap`/`HashSet`, no wall clock, no randomness. Block time
   is `BlockContext::timestamp` (ms) / `seconds()`.
-- Amounts are `u128` smallest units; all rounding floors; use
+- Amounts are `u128` smallest units (for KEEL: orcas, `keel_types::ORCAS_PER_KEEL`
+  to the KEEL); all rounding floors; use
   `keel_types::mul_div_floor`.
 - Ids are counters in state, never hashes of wall-clock data.
 - Money moves only through `state.ledger.post(...)`; escrow is a transfer

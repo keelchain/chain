@@ -6,6 +6,10 @@ use primitive_types::U256;
 
 pub type Amount = u128;
 
+/// The smallest unit of KEEL is the orca: 1 KEEL = 1,000,000 orcas. Every
+/// KEEL amount on the chain is a count of orcas.
+pub const ORCAS_PER_KEEL: Amount = 1_000_000;
+
 /// 10^n as an `Amount`. Panics past 10^38 (no asset has that many decimals).
 pub const fn pow10(n: u32) -> Amount {
     let mut out: Amount = 1;

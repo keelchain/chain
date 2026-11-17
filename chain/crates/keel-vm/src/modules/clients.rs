@@ -45,7 +45,7 @@ pub struct ClientParams {
     pub fee_cap_p2p_bps: u32,
     pub fee_cap_taker_bps: u32,
     pub fee_cap_withdraw_bps: u32,
-    /// KEEL (smallest units) a client pays per deposit address issued to
+    /// Orcas a client pays per deposit address issued to
     /// one of its accounts, and per withdrawal queued. 0 = free.
     pub usage_address_keel: u128,
     pub usage_outbound_keel: u128,
@@ -62,7 +62,7 @@ pub struct ClientParams {
     /// usage prices below instead and its retail schedule is uncapped.
     /// 0: the pre-0.2.0 pricing (protocol fee plus capped retail).
     pub protocol_fee_waived: u32,
-    /// KEEL (smallest units) a client pays per order that filled, per
+    /// Orcas a client pays per order that filled, per
     /// escrow release and per dispute ruling of its accounts. 0 = free.
     pub usage_fill_keel: u128,
     pub usage_release_keel: u128,
@@ -503,7 +503,7 @@ pub fn charge_usage_to(
             Ok(events)
         }
         Err(_) => Err(VmError::Invalid(format!(
-            "client {} cannot pay the {kind} usage price of {price} KEEL units",
+            "client {} cannot pay the {kind} usage price of {price} orcas",
             client.to_hex()
         ))),
     }

@@ -152,7 +152,9 @@ the address from a set. This is listed in section 17.
 
 ### 3.1 KEEL
 
-- Hard cap **21,000,000,000 KEEL**, six decimals. 65% is issued at
+- Hard cap **21,000,000,000 KEEL**, six decimals: the smallest unit is the
+  **orca**, 1 KEEL = 1,000,000 orcas, and every KEEL amount the chain
+  handles is a count of orcas. 65% is issued at
   genesis; the other 35% is minted by the chain itself, capped, and only
   on two schedules that are constants in the code: the block reward to
   validators (10% of supply, halving every four years) and the community

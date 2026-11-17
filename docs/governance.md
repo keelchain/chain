@@ -12,7 +12,8 @@ takes effect from the block that includes it. What is *not* on this page
 operator, and changing it means a software upgrade or a config file, not a
 vote.
 
-Units: KEEL amounts are in smallest units (1 KEEL = 1,000,000). `bps` is
+Units: KEEL amounts are in orcas, the smallest unit (1 KEEL = 1,000,000
+orcas). `bps` is
 basis points (100 bps = 1%). USD values are in micro-dollars
 (1,000,000 = $1). Heights are blocks; times are seconds unless the key says
 `_ms`.

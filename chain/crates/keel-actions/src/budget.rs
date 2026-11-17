@@ -15,7 +15,7 @@ pub struct BudgetParams {
     pub cancel_bonus: u64,
     /// Actions one address may include in one block.
     pub max_per_block: u32,
-    /// KEEL (smallest units) per purchased action.
+    /// Orcas per purchased action.
     pub price_per_action: u128,
     /// Actions per day granted per whole KEEL locked (2026-09-08, the
     /// Tron energy model: lock, do not pay; the lock comes back in full).
@@ -52,7 +52,7 @@ pub struct Budget {
     pub earned: u64,
     pub last_block: u64,
     pub used_in_block: u32,
-    /// KEEL (smallest units) locked for capacity.
+    /// Orcas locked for capacity.
     pub locked: u128,
     /// Regenerating pool of actions granted by the lock: refills linearly
     /// to `lock_cap` over 24 h, spent after the free budget is exhausted.
@@ -65,7 +65,7 @@ pub struct Budget {
 }
 
 const DAY_MS: u128 = 86_400_000;
-const KEEL_UNIT: u128 = 1_000_000;
+const KEEL_UNIT: u128 = keel_types::ORCAS_PER_KEEL;
 
 impl Budget {
     pub fn limit(&self, p: &BudgetParams) -> u64 {

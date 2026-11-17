@@ -17,6 +17,7 @@ pub mod market;
 pub use address::Address;
 pub use amount::{
     base_for_quote, fee_of, floor_to_lot, mul_div_floor, pow10, quote_amount, Amount,
+    ORCAS_PER_KEEL,
 };
 pub use asset::Asset;
 pub use ids::{BlockHeight, OrderId, Seq, TxSeq};

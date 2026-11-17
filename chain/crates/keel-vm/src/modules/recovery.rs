@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct RecoveryParams {
-    /// Charged to the requester, in KEEL smallest units (0 = free).
+    /// Charged to the requester, in orcas (0 = free).
     pub fee_keel: u128,
     /// Blocks an open row waits for the observers before it expires.
     pub expiry_blocks: u64,
