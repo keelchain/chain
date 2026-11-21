@@ -191,6 +191,15 @@ beyond the 1 KEEL lock.
 </div>
 </div>
 
+## What stays with you
+
+Keel is infrastructure. Your licences, the identification of your users
+(KYC), transaction monitoring (KYT), sanctions screening, moderation,
+disputes with your users, their support and your taxes are yours alone;
+an attestation you record on the chain is your statement, not Keel's. The
+legal wording is in the
+[policy and terms](https://keelchain.com/policy/#client-responsibility).
+
 ## Keeping it running
 
 Harbor's Overview shows the one next thing to do, if there is one: lock

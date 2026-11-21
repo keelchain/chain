@@ -18,7 +18,7 @@
 <section><div class="wrap prose">
   <div class="eyebrow">Keelchain</div>
   <h1 style="font-size:2.2rem">Policy and terms</h1>
-  <p class="muted">Last updated 15 November 2026. Keelchain is a public testnet; no real funds are involved. Every rule below is enforced by the chain's code, and every number in it is a governance parameter anyone can read at <code>/v1/params</code> and that only a vote or the parameter admin can change (<a href="../docs/governance/">what governance can change</a>).</p>
+  <p class="muted">Last updated 21 November 2026. Keelchain is a public testnet; no real funds are involved. Every rule below is enforced by the chain's code, and every number in it is a governance parameter anyone can read at <code>/v1/params</code> and that only a vote or the parameter admin can change (<a href="../docs/governance/">what governance can change</a>).</p>
 
   <h2>Deposits</h2>
   <p>You deposit by sending coins on a supported network (Bitcoin, Ethereum, Tron, BNB Smart Chain, Solana) to a deposit address the chain assigns to your account. The address belongs to a vault key held in threshold shares by the observers, or to your exchange's own vault when you use a custodial client. The chain credits your account after that network's confirmation depth. Coins sent on an unsupported network or in an unlisted token are not credited, and you alone can recover them through the self-service recovery flow.</p>
@@ -52,6 +52,37 @@
     <li>Hold your private keys. Keel Wallet keeps them on your device; a custodial client keeps its own.</li>
     <li>Change a rule silently. Every parameter change is a transaction shown in the explorer under Governance.</li>
   </ul>
+
+  <h2 id="role">Keelchain is infrastructure only</h2>
+  <p>In these terms, "<b>Keelchain</b>", "<b>we</b>" and "<b>us</b>" mean the persons who develop and publish the Keelchain software and operate this website. The "<b>Network</b>" means the Keelchain blockchain, its vaults and the software, interfaces and documentation made available with it, including the explorer, Keel Wallet, Keel Harbor, the APIs and the SDK. A "<b>Client</b>" means any exchange, marketplace, payment service or other business or person that makes the Network available to others or carries on an activity using it. An "<b>End User</b>" means a person who uses the Network through a Client.</p>
+  <p>Keelchain provides the Network solely as technical infrastructure. Keelchain is not an exchange, broker, dealer, custodian, money transmitter, payment institution, virtual asset service provider or other financial intermediary, and it does not operate, control or supervise any Client. Keelchain is not a party to any transaction, trade, offer, escrow or dispute carried out on the Network, has no relationship with any End User by reason of that End User's use of a Client, and does not act as agent, fiduciary or adviser to any Client or End User. Nothing on the Network or this website is legal, financial, investment or tax advice.</p>
+
+  <h2 id="client-responsibility">Responsibilities of Clients</h2>
+  <p>Each Client is solely and exclusively responsible for its own business and for its End Users. Without limitation, each Client is solely responsible for:</p>
+  <ul>
+    <li><b>Regulatory status.</b> Determining which laws and regulations apply to it in every jurisdiction in which it operates or has End Users, and obtaining and maintaining every licence, registration, authorisation and approval that those laws require.</li>
+    <li><b>Customer identification.</b> Know-your-customer (KYC) and know-your-business (KYB) procedures, customer due diligence and enhanced due diligence, verification of identity and beneficial ownership, and the accuracy of every attestation it records on the Network about an account. An attestation on the Network is a statement made by the Client alone; Keelchain does not verify, endorse or guarantee it.</li>
+    <li><b>Financial crime compliance.</b> Anti-money-laundering and counter-terrorist-financing controls, transaction monitoring and blockchain analytics (KYT), sanctions and politically-exposed-person screening, travel-rule obligations, suspicious activity and other regulatory reporting, and record keeping.</li>
+    <li><b>Moderation and conduct.</b> The content of offers, listings, messages and other material that it or its End Users publish, the prevention of fraud and market abuse on its service, the handling of complaints, and the resolution of disputes with and between its End Users, including the appointment and conduct of any arbitrator it relies on.</li>
+    <li><b>Its End Users.</b> Its terms of service, disclosures, fees and customer support, consumer-protection and data-protection obligations, and every statement it makes to its End Users.</li>
+    <li><b>Assets and keys.</b> The safekeeping of any assets it holds for others, the security of its vaults, signers, keys and systems, and the solvency of its business.</li>
+    <li><b>Taxes.</b> All taxes, duties and reporting that arise from its activity and that of its End Users.</li>
+  </ul>
+  <p>Keelchain performs none of these functions, undertakes no duty to perform them, and does not monitor, review or approve the activity of any Client or End User. The registration of a Client on the Network, including its admission to any role by governance, and the sale of a plan to a Client, are technical events only; they are not a licence, an endorsement, a representation as to the Client's compliance or good standing, or an assumption of any responsibility for it.</p>
+  <p>Each Client represents and warrants that it has full power and authority to carry on its activity, that it complies and will continue to comply with all laws and regulations applicable to it, and that it will not use the Network, or permit it to be used, for any unlawful purpose or for the benefit of any person subject to sanctions.</p>
+
+  <h2 id="no-warranty">No warranty</h2>
+  <p>The Network is provided "as is" and "as available". To the fullest extent permitted by applicable law, Keelchain disclaims all warranties, representations and conditions of any kind, whether express, implied or statutory, including any implied warranty of merchantability, fitness for a particular purpose, title, non-infringement, accuracy, availability, security or freedom from error or interruption. The Network is open, decentralised software operated by independent validators and observers and changed by governance; Keelchain does not control it and cannot reverse, alter or cancel any transaction recorded on it.</p>
+
+  <h2 id="liability">Limitation of liability</h2>
+  <p>To the fullest extent permitted by applicable law, Keelchain, its contributors, officers, employees and affiliates shall not be liable to any Client, End User or other person, whether in contract, tort (including negligence), breach of statutory duty or otherwise, for: (a) any act or omission of a Client or an End User, or any loss arising from a Client's service; (b) any failure of a Client to comply with any law, regulation or obligation described above; (c) any loss of assets, keys, profits, revenue, business, goodwill or data; (d) any loss arising from the conduct of a validator, observer, arbitrator or other third party, from a governance decision, from an external blockchain or stablecoin issuer, or from a fault, attack or interruption affecting the Network; or (e) any indirect, incidental, special, punitive or consequential loss, in each case however caused and even if advised of the possibility of it.</p>
+  <p>Nothing in these terms excludes or limits any liability that cannot lawfully be excluded or limited.</p>
+
+  <h2 id="indemnity">Indemnity</h2>
+  <p>Each Client shall indemnify and hold harmless Keelchain, its contributors, officers, employees and affiliates from and against all claims, demands, proceedings, regulatory actions, losses, liabilities, fines, penalties, costs and expenses (including reasonable legal fees) arising out of or in connection with the Client's service, its End Users, its breach of these terms, or its breach of any law or regulation or of the rights of any third party.</p>
+
+  <h2 id="acceptance">Acceptance</h2>
+  <p>By registering as a Client, buying a plan, attesting an account or otherwise making the Network available to others, a Client accepts these terms. A Client must bring the substance of the sections above to the attention of its End Users and must not represent that Keelchain operates, endorses or is responsible for its service.</p>
 
   <h2>Contact</h2>
   <p><a href="mailto:support@keelchain.com">support@keelchain.com</a> for questions about these terms; <a href="../wallet/privacy.html">Keel Wallet privacy policy</a> for what the extension stores.</p>
