@@ -82,28 +82,94 @@ than dripped on a calendar.
 
 ## Fee flows (defaults in `keel_vm::Params`, editable live)
 
-Every number below is a chain parameter, and only a `ParamChange`
+What you pay Keel depends on which of three you are, so pick your tab:
+the fees below are the whole list for that path, and the other two do not
+apply to you. Every number is a chain parameter, and only a `ParamChange`
 proposal moves it: there is no administrative key (`docs/governance.md`
 lists every key).
 
-| Fee | Rate | Payer |
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+**Keel takes no share of your fees.** You hold your users' coins in your
+own vault and charge them whatever you like on your own ledger; the chain
+never sees those fees. You pay a membership and a price per use of the
+rails. Your users pay Keel nothing.
+
+| What you pay | Price | When |
 |---|---|---|
-| Book taker | 10 bps | taker, from what it receives |
-| Book maker | 0 | — |
-| P2P release | 1% (+1% under $50) | seller |
-| Withdrawal | network cost + $1 flat | withdrawer |
-| Dispute | 1% of escrow | losing side |
-| Liquidity pool profit share | 50% of the pool's gain above its high-water mark, in kind, each epoch | the pool (depositors) |
+| KEEL kept locked | 100,000 / 500,000 / 2,000,000 by tier, returned in full on unlock | while the plan runs |
+| Plan fee | $300 / $1,000 / $3,000 by tier, in USDT; includes $300 / $1,200 / $4,000 of the usage below | every 30 days |
+| Deposit address issued in your vault | $0.02 | per address |
+| Withdrawal from your vault, or a float swap | $0.10 | per withdrawal or swap |
+| Vault rotation | $0 (`pools.usage_rotation_usd_micro`) | per rotation |
+| Network cost of a withdrawal | the actual cost, from the gas you keep in your own vault | per withdrawal |
+| A user's balance you swapped onto the book: filled order / escrow release / dispute ruling | $0.002 / $0.05 / $1 | per flow |
 
-Accounts attested by a client with a running plan pay none of the first
-four; their client pays the plan and usage instead (below), in dollars
-settled in USDT: $0.002 per filled order, $0.05 per release, $0.10 per
-withdrawal, $0.02 per deposit address, $1 per ruling by default (all
-governance parameters).
+| What does not apply to you | |
+|---|---|
+| Taker fee, P2P release fee, dispute fee, withdrawal flat fee | waived for your users while your plan runs |
+| A share of your trading, withdrawal or any other fee | never |
+| A fee per action | none; your users act on your plan's daily pool |
 
-Split: 50% treasury, 40% validators + observers + delegators (observers
-take 25% of that share first), 10% burn. All splits are on-chain ledger
-legs, auditable per fee.
+</div>
+<div class="tab" data-mode="noncustodial">
+
+**Keel takes no share of your fees.** Your users hold their own keys in
+Keel Wallet and trade on the chain. While your plan runs they pay none of
+the protocol fees; you set your own fee (`SetClientFee`, uncapped) and the
+chain collects it from your user and pays it to you in the same block,
+in full. You pay a membership and a small fixed price per flow.
+
+| What you pay | Price | When |
+|---|---|---|
+| KEEL kept locked | 100,000 / 500,000 / 2,000,000 by tier, returned in full on unlock | while the plan runs |
+| Plan fee | $300 / $1,000 / $3,000 by tier, in USDT; includes $300 / $1,200 / $4,000 of the usage below | every 30 days |
+| Order of one of your users that filled | $0.002 | per order |
+| Escrow release (a completed P2P trade) | $0.05 | per release |
+| Dispute ruling | $1 | per ruling |
+| Deposit address issued to one of your users | $0.02 | per address |
+| Withdrawal by one of your users | $0.10 | per withdrawal |
+
+| What your users pay | |
+|---|---|
+| To you | the fee you set: a share of a P2P release, of a taker fill, of a withdrawal |
+| To Keel | nothing on trades, releases or rulings. On a withdrawal only the external network's cost, passed through at cost |
+| To act | nothing, and no KEEL: their actions come out of your plan's daily pool |
+
+| What does not apply to you | |
+|---|---|
+| Taker fee (10 bps), P2P release fee (1%), dispute fee (1%), withdrawal flat fee ($1) | waived for your users while your plan runs and nothing is owed |
+| A share of your fees | never |
+
+</div>
+<div class="tab" data-mode="user">
+
+**You pay a share of the value you move, and nothing to act.** You came
+with a wallet and no exchange. There is no plan and no usage price for
+you; these are the only fees.
+
+| Fee | Rate | Who pays |
+|---|---|---|
+| Order book, taking an order | 10 bps | the taker, from what it receives |
+| Order book, making an order | 0 | nobody |
+| P2P trade released | 1% (+1% under $50) | the seller |
+| Withdrawal | the external network's cost + $1 flat | the withdrawer |
+| Dispute | 1% of the escrow | the side that loses |
+| Acting at all | no fee: 1 KEEL locked gives a hundred actions a day and comes back on unlock | you lock, you do not pay |
+
+If an exchange with a plan onboards your account, its tab applies instead:
+these fees stop and you pay what that exchange charges.
+
+</div>
+</div>
+
+Two things are the same on every path. The liquidity pool pays 50% of its
+gain above its high-water mark, in kind, each epoch (it is the pool's
+depositors who pay that, not traders). And everything Keel collects, on
+any path, is split the same way: 50% treasury, 40% validators, observers
+and delegators (observers take 25% of that share first), 10% burn. All
+splits are on-chain ledger legs, auditable per fee.
 
 ## Block rewards and epoch payouts
 
@@ -162,7 +228,7 @@ handful of actions. They lock 1 KEEL, which is a hundred actions a day,
 and get it back in full three days after they unlock it. That lock is the
 whole spam defence: an attacker's capacity is the KEEL they tie up, per
 day, whatever the number of keys. What a user does pay is a share of the
-value they move (the fee table above), not a price per transaction. There
+value they move (the fee table in their tab above), not a price per transaction. There
 is no plan and no usage for a user; the rest of this section is about
 clients.
 

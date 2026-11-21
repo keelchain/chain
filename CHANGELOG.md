@@ -5,6 +5,11 @@ Dates are UTC.
 
 ## Unreleased
 
+- Docs: **fees per path** (2026-11-21). The "Fee flows" section of
+  `tokenomics.md` is three tabs, one complete fee table each for a
+  custodial client, a non-custodial client and a wallet user, in place of
+  one table that only applied to the last. The tabs are restyled as a
+  segmented control labelled with what the choice is about.
 - Docs: **mode tabs** (2026-11-21). Every section that reads differently
   for a custodial client, a non-custodial client or a person with Keel
   Wallet, or for coins in Keel against coins in your wallet, is written
