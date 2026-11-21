@@ -72,6 +72,13 @@ pub struct CustodyState {
     /// (custodian, asset) -> custody balances it backs (incl. escrow).
     pub liabilities: BTreeMap<(Address, Asset), Amount>,
     pub halted: BTreeSet<(Address, Asset)>,
+    /// (custodian, reserve asset) -> that asset held in the custodian's
+    /// vault as backing of the unified USDT its accounts hold, in the
+    /// reserve asset's units (see "One USDT in custody" below).
+    pub stable_backing: BTreeMap<(Address, Asset), Amount>,
+    /// Outbounds that pay out redeemed USDT: a failed one is converted
+    /// back, so the account is not left holding a per-network asset.
+    pub stable_outbounds: BTreeSet<OutboundId>,
 }
 
 impl CustodyState {
@@ -97,6 +104,14 @@ fn escrow_key(owner: Address, asset: &Asset) -> AccountKey {
 }
 
 /// Spendable custody balance of `owner` in `asset`.
+fn stable_reserve_key(custodian: Address, asset: &Asset) -> AccountKey {
+    AccountKey::new(custodian, asset.clone(), "custody_stable_reserve").expect("catalog type")
+}
+
+fn issuance_key(custodian: Address, stable: &Asset) -> AccountKey {
+    AccountKey::new(custodian, stable.clone(), "custody_issuance").expect("catalog type")
+}
+
 pub fn balance(state: &State, owner: Address, asset: &Asset) -> Amount {
     state.ledger.balance(&custody_key(owner, asset)).max(0) as Amount
 }
@@ -153,6 +168,13 @@ pub fn apply(
             Ok(events)
         }
         Action::TransferCustody(t) => transfer(state, signer, tx_id, t),
+        Action::WithdrawCustodyStable(w) => {
+            let (custodian, mut events) = withdraw_stable(state, ctx, signer, tx_id, w)?;
+            events.extend(clients::charge_usage_to(
+                state, custodian, "outbound", tx_id,
+            )?);
+            Ok(events)
+        }
         _ => Err(VmError::Invalid("not a custody action".into())),
     }
 }
@@ -421,7 +443,233 @@ fn observe_deposit(
     if owner == custodian {
         settle_expenses(state, custodian, &o.asset)?;
     }
+    // A dollar stablecoin becomes USDT on arrival, as in the network vault.
+    events.extend(mint_stable(
+        state,
+        custodian,
+        owner,
+        &o.asset,
+        o.amount,
+        &external_id,
+    )?);
     Ok(events)
+}
+
+// ---------------- One USDT in custody (2026-11-21) ----------------
+//
+// A client's vault receives USDT on several networks, and its users hold
+// one USDT. So a custody deposit of an asset in the stable basket is
+// credited as the unified USDT, exactly as a deposit to the network vault
+// is, with one difference: the backing never leaves the client. The
+// deposited coins stay in the client's own vault, earmarked in
+// `stable_backing`, and the USDT is issued against them from the client's
+// own `custody_issuance` account. A withdrawal names the network to be
+// paid on and is redeemed out of what the client's vault holds there.
+//
+// Invariant, per custodian: its custody USDT <= the sum of its backing
+// converted to USDT units. Conversion floors, so rounding only ever leaves
+// backing behind. The per-asset reserve check is unchanged, because the
+// backing stays counted in that asset's liabilities: the coins are still
+// owed, to the holders of the USDT.
+
+/// Whether a custody balance of `asset` is held as the unified USDT.
+fn unifies(state: &State, asset: &Asset) -> bool {
+    state.stable_conversion.params.auto_convert == 1
+        && state.stable.basket.get(asset).is_some_and(|e| e.enabled)
+}
+
+/// `custodian`'s backing, in USDT units.
+pub fn stable_backing(state: &State, custodian: Address) -> Amount {
+    let sd = state.tokens.decimals(&state.tokens.stable).unwrap_or(6);
+    state
+        .custody
+        .stable_backing
+        .iter()
+        .filter(|((c, _), _)| *c == custodian)
+        .map(|((_, a), v)| super::stable::convert(*v, state.tokens.decimals(a).unwrap_or(sd), sd))
+        .fold(0, Amount::saturating_add)
+}
+
+/// Turn `amount` of `asset` on `owner`'s custody balance into USDT. Does
+/// nothing when the asset is not unified or the amount is below one unit
+/// of USDT.
+pub fn mint_stable(
+    state: &mut State,
+    custodian: Address,
+    owner: Address,
+    asset: &Asset,
+    amount: Amount,
+    external_id: &str,
+) -> Result<Vec<Event>, VmError> {
+    if !unifies(state, asset) {
+        return Ok(Vec::new());
+    }
+    let (rd, sd) = super::stable::decimals(state, asset)?;
+    let minted = super::stable::convert(amount, rd, sd);
+    if minted == 0 {
+        return Ok(Vec::new());
+    }
+    let stable = state.tokens.stable.clone();
+    state.ledger.post(
+        &format!("{external_id}:unify"),
+        TxType::StableMint,
+        None,
+        None,
+        vec![
+            Record::debit(custody_key(owner, asset), amount),
+            Record::credit(stable_reserve_key(custodian, asset), amount),
+        ],
+    )?;
+    state.ledger.post(
+        &format!("{external_id}:unify:issue"),
+        TxType::StableMint,
+        None,
+        None,
+        vec![
+            Record::debit(issuance_key(custodian, &stable), minted),
+            Record::credit(custody_key(owner, &stable), minted),
+        ],
+    )?;
+    let b = state
+        .custody
+        .stable_backing
+        .entry((custodian, asset.clone()))
+        .or_insert(0);
+    *b = b.saturating_add(amount);
+    add_liability(state, custodian, &stable, minted);
+    Ok(vec![Event::CustodyStableMinted {
+        custodian,
+        owner,
+        asset: asset.clone(),
+        amount_in: amount,
+        minted,
+    }])
+}
+
+/// Turn `burn` USDT on `owner`'s custody balance into `asset` out of the
+/// custodian's backing on that network. Returns the amount of `asset`.
+fn redeem_stable(
+    state: &mut State,
+    custodian: Address,
+    owner: Address,
+    asset: &Asset,
+    burn: Amount,
+    external_id: &str,
+) -> Result<(Amount, Vec<Event>), VmError> {
+    if !state.stable.basket.contains_key(asset) {
+        return Err(VmError::Invalid(format!("{asset} does not back USDT")));
+    }
+    let (rd, sd) = super::stable::decimals(state, asset)?;
+    let out = super::stable::convert(burn, sd, rd);
+    if out == 0 {
+        return Err(VmError::Invalid("amount too small".into()));
+    }
+    let held = state
+        .custody
+        .stable_backing
+        .get(&(custodian, asset.clone()))
+        .copied()
+        .unwrap_or(0);
+    if held < out {
+        return Err(VmError::Invalid(format!(
+            "the client's vault holds {held} {asset} for USDT, not the {out} this needs; choose another network"
+        )));
+    }
+    let stable = state.tokens.stable.clone();
+    if balance(state, owner, &stable) < burn {
+        return Err(VmError::NotEnoughFunds);
+    }
+    state.ledger.post(
+        &format!("{external_id}:redeem:burn"),
+        TxType::StableBurn,
+        None,
+        None,
+        vec![
+            Record::debit(custody_key(owner, &stable), burn),
+            Record::credit(issuance_key(custodian, &stable), burn),
+        ],
+    )?;
+    state.ledger.post(
+        &format!("{external_id}:redeem"),
+        TxType::StableBurn,
+        None,
+        None,
+        vec![
+            Record::debit(stable_reserve_key(custodian, asset), out),
+            Record::credit(custody_key(owner, asset), out),
+        ],
+    )?;
+    state
+        .custody
+        .stable_backing
+        .insert((custodian, asset.clone()), held - out);
+    sub_liability(state, custodian, &stable, burn);
+    Ok((
+        out,
+        vec![Event::CustodyStableRedeemed {
+            custodian,
+            owner,
+            asset: asset.clone(),
+            burned: burn,
+            amount_out: out,
+        }],
+    ))
+}
+
+/// `WithdrawCustodyStable`: redeem `amount` USDT into `via` and queue the
+/// payout from the custodian's vault, in one action.
+fn withdraw_stable(
+    state: &mut State,
+    ctx: &BlockContext,
+    signer: Address,
+    tx_id: &[u8; 32],
+    w: &keel_actions::WithdrawStable,
+) -> Result<(Address, Vec<Event>), VmError> {
+    if w.amount == 0 {
+        return Err(VmError::Invalid("amount must be > 0".into()));
+    }
+    let custodian = *state
+        .custody
+        .custodian_of
+        .get(&signer)
+        .ok_or_else(|| VmError::Invalid("account holds no custody balance".into()))?;
+    let chain = vaults::chain_of(state, &w.via)?;
+    // Checked before anything is redeemed: a refused payout must not
+    // leave the account holding the per-network asset.
+    if !vaults::valid_destination(chain, &w.to) {
+        return Err(VmError::Invalid("bad destination address".into()));
+    }
+    if state.custody.vault(chain, custodian).is_none() {
+        return Err(VmError::NotFound(format!(
+            "custody vault on {}",
+            chain.as_str()
+        )));
+    }
+    let stable = state.tokens.stable.clone();
+    for a in [&stable, &w.via] {
+        if state.custody.halted.contains(&(custodian, a.clone())) {
+            return Err(VmError::Paused(format!(
+                "custody outbounds for {a} (reserve below balances)"
+            )));
+        }
+    }
+    let group = format!("custody:stable:{}", tokens::hex(tx_id));
+    let (out, mut events) = redeem_stable(state, custodian, signer, &w.via, w.amount, &group)?;
+    let outbound_id = state.vaults.next_outbound_id;
+    let (_, queued) = withdraw(
+        state,
+        ctx,
+        signer,
+        tx_id,
+        &Withdraw {
+            asset: w.via.clone(),
+            to: w.to.clone(),
+            amount: out,
+        },
+    )?;
+    state.custody.stable_outbounds.insert(outbound_id);
+    events.extend(queued);
+    Ok((custodian, events))
 }
 
 fn expense_key(custodian: Address, asset: &Asset) -> AccountKey {
@@ -463,6 +711,12 @@ fn withdraw(
     tx_id: &[u8; 32],
     w: &Withdraw,
 ) -> Result<(Address, Vec<Event>), VmError> {
+    if w.asset == state.tokens.stable {
+        return Err(VmError::Invalid(
+            "USDT leaves custody with WithdrawCustodyStable, which names the network to pay on"
+                .into(),
+        ));
+    }
     let chain = vaults::chain_of(state, &w.asset)?;
     let custodian = *state
         .custody
@@ -550,7 +804,14 @@ fn swap(
     if s.amount == 0 {
         return Err(VmError::Invalid("amount must be > 0".into()));
     }
-    let chain = vaults::chain_of(state, &s.asset)?;
+    // The unified USDT lives on no single chain: it swaps like any asset,
+    // against the custodian's USDT on either side.
+    let is_stable = s.asset == state.tokens.stable;
+    let chain = if is_stable {
+        None
+    } else {
+        Some(vaults::chain_of(state, &s.asset)?)
+    };
     // Whose balance moves, and which custodian's floats it moves against.
     let owner = s.on_behalf_of.unwrap_or(signer);
     let custodian = match state.custody.custodian_of.get(&owner) {
@@ -567,11 +828,15 @@ fn swap(
         return Err(VmError::Unauthorized);
     }
     require_member(state, owner, custodian)?;
-    if state.custody.vault(chain, custodian).is_none() {
+    let has_vault = match chain {
+        Some(c) => state.custody.vault(c, custodian).is_some(),
+        None => state.custody.vaults.keys().any(|(_, c)| *c == custodian),
+    };
+    if !has_vault {
         return Err(VmError::NotFound(format!(
-            "custody vault of {} on {}",
+            "custody vault of {} for {}",
             custodian.to_hex(),
-            chain.as_str()
+            s.asset
         )));
     }
     if state.custody.halted.contains(&(custodian, s.asset.clone())) {
@@ -682,7 +947,9 @@ fn transfer(
                 "cannot transfer to the system address".into(),
             ));
         }
-        vaults::chain_of(state, &leg.asset)?;
+        if leg.asset != state.tokens.stable {
+            vaults::chain_of(state, &leg.asset)?;
+        }
         match state.custody.custodian_of.get(&leg.to) {
             Some(c) if *c == custodian => {}
             Some(_) => {
@@ -802,7 +1069,19 @@ pub(crate) fn settle_outbound(
             outbound_id: ob.id,
             refunded: ob.amount,
         });
+        // A failed payout of redeemed USDT goes back to being USDT.
+        if state.custody.stable_outbounds.contains(&ob.id) {
+            events.extend(mint_stable(
+                state,
+                custodian,
+                ob.owner,
+                &ob.asset,
+                ob.amount,
+                &format!("{group}:failed"),
+            )?);
+        }
     }
+    state.custody.stable_outbounds.remove(&ob.id);
     Ok(events)
 }
 
@@ -860,8 +1139,15 @@ pub fn end_block(state: &mut State, ctx: &BlockContext) -> Vec<Event> {
         .iter()
         .map(|(k, v)| (k.clone(), *v))
         .collect();
+    let stable = state.tokens.stable.clone();
     for ((custodian, asset), liabilities) in rows {
-        let reserve = state.custody.reserve(state, custodian, &asset);
+        // The unified USDT is backed by the client's dollar stablecoins,
+        // not by a vault balance of its own.
+        let reserve = if asset == stable {
+            stable_backing(state, custodian) as i128
+        } else {
+            state.custody.reserve(state, custodian, &asset)
+        };
         let breached = reserve < liabilities as i128;
         let key = (custodian, asset.clone());
         if breached && !state.custody.halted.contains(&key) {

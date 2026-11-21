@@ -419,6 +419,12 @@ export class Wallet {
       if (!via || !via.includes('.')) throw new UiError('Choose the network to receive your USDT on.');
       if (to.trim().length < 20) throw new UiError('Enter the destination address on the external chain.');
       action = { WithdrawStable: { via, to: to.trim(), amount } } as unknown as Action;
+    } else if (kind === 'withdraw-custody' && asset === 'USDT') {
+      // The same one USDT in an exchange's custody: redeemed into the
+      // chosen network's USDT out of the exchange's own vault.
+      if (!via || !via.includes('.')) throw new UiError('Choose the network to receive your USDT on.');
+      if (to.trim().length < 20) throw new UiError('Enter the destination address on the external chain.');
+      action = { WithdrawCustodyStable: { via, to: to.trim(), amount } } as unknown as Action;
     } else if (kind === 'withdraw' || kind === 'withdraw-custody') {
       if (!asset.includes('.')) throw new UiError(`${asset} is a Keel asset; withdrawals go to an external chain (BTC.BTC, TRON.USDT, …).`);
       if (to.trim().length < 20) throw new UiError('Enter the destination address on the external chain.');
@@ -428,7 +434,7 @@ export class Wallet {
         : ({ WithdrawCustody: { asset, to: to.trim(), amount } } as unknown as Action);
     } else if (kind === 'swap-to-market' || kind === 'swap-to-custody') {
       // The float swap (docs/models.md): custody <-> the chain's market, no coins moving.
-      if (!asset.includes('.')) throw new UiError(`${asset} is a Keel asset; only bridged assets sit in custody.`);
+      if (!asset.includes('.') && asset !== 'USDT') throw new UiError(`${asset} is a Keel asset; only bridged assets and USDT sit in custody.`);
       action = { SwapCustody: { asset, amount, to: kind === 'swap-to-market' ? 'deposit' : 'custody', on_behalf_of: null } } as unknown as Action;
     } else if (kind === 'lock-budget' || kind === 'unlock-budget') {
       // Action capacity (core/capacity.ts): KEEL into the lock, or on its way back out.

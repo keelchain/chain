@@ -201,6 +201,13 @@ is the client's reserve versus liabilities per asset; the per-network switch
 applies the same way (enable a network once its custody vault is registered
 and `/v1/ready/{chain}` is green for deposits).
 
+USDT in your custody is one asset, `USDT`, whichever network it came in
+on: a deposit of Tron, BNB Smart Chain or ERC-20 USDT to one of your
+addresses is credited as `USDT` and stays in your vault as its backing.
+Pay it out with `WithdrawCustodyStable { via, to, amount }` on a network
+where your vault holds enough; `GET /v1/custody/{addr}` reports the
+backing per network under `stable` (`models.md`, "One USDT in custody").
+
 To settle a trade between two of your own users without leaving custody,
 move the balance with `TransferCustody`: seller to your escrow account,
 then to the buyer on release or back on cancel, signed by you

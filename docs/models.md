@@ -73,6 +73,55 @@ the chain's order book or withdrawn through the network vault, and an account
 belongs to one custodian. That separation is what makes the per-vault reserve
 check exact. The way across is the float swap below.
 
+### One USDT in custody
+
+A custodial client's users hold one USDT, whatever network it arrived on,
+exactly as they would in the network vault. A deposit of USDT on Ethereum
+(ERC-20), Tron or BNB Smart Chain to an address in the client's vault is
+credited as the unified `USDT` on the user's custody balance
+(`CustodyStableMinted`). The coins do not go anywhere: they stay in the
+client's own vault, earmarked as the backing of the USDT its accounts
+hold.
+
+```
+deposit   TRON.USDT arrives in the client's vault
+          client's backing on Tron +X      user custody USDT +X
+withdraw  WithdrawCustodyStable { via: "BSC.USDT", to, amount }
+          user custody USDT -X             client's backing on BSC -X
+          BSC.USDT is paid out of the client's vault
+```
+
+- **It is one balance.** `TransferCustody` and the float swap take `USDT`
+  like any asset; a transfer between two users never asks which network
+  either side's USDT came from.
+- **A withdrawal names the network.** `via` is that network's USDT
+  (`ETH.USDT`, `TRON.USDT`, `BSC.USDT`), `amount` is in USDT. The chain
+  redeems it out of what the client's vault holds on that network and
+  queues the payout, in one action. A plain `WithdrawCustody` of `USDT`
+  is refused, because it names no network.
+- **A network can only pay what the vault holds there.** If the client's
+  vault is short of USDT on the network asked for, the withdrawal is
+  refused before anything is redeemed and the user picks another network.
+  Keeping each network stocked is the client's job, by ordinary means: its
+  own top-ups at the vault's index-0 address are credited as USDT on its
+  own balance and add backing on that network.
+- **A failed payout is USDT again.** The redeemed amount is converted
+  back, so no account is left holding a per-network asset.
+- **Proof of reserves.** Per client: the USDT its accounts hold is never
+  more than its backing converted to USDT units (BNB Smart Chain's USDT
+  has 18 decimals; conversion floors, so rounding only leaves backing
+  behind). The per-network reserve check is unchanged: the backing stays
+  counted in what the vault owes on that network. `GET /v1/custody/{addr}`
+  shows `stable.liabilities`, `stable.backing_total` and `stable.backing[]`
+  per network.
+
+The rule is the network's own (`stable.auto_convert` and the governance
+basket, `SetStableBasket`): an asset that is in the basket and enabled is
+unified in custody too. Unlike the network vault there is no cap and no
+rebalancing premium here, because the reserves, and the risk of each
+network's USDT, are the client's alone. USDC is not USDT and is not
+converted.
+
 ### The float swap: custody to the market and back, no coins moving
 
 A custodial client can hold a float on both sides: coins in its own vault

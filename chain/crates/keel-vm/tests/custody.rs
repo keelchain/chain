@@ -149,7 +149,23 @@ fn custody_vault_lifecycle() {
             ..
         }
     )));
-    assert_eq!(custody::balance(&c.state, alice.addr(), &usdt()), 5_000_000);
+    assert_eq!(custody::balance(&c.state, alice.addr(), &usds()), 5_000_000);
+    // One USDT: the Tron USDT stays in the client's vault as backing and
+    // alice holds the unified USDT, as she would in the network vault.
+    assert!(r[0].events.contains(&Event::CustodyStableMinted {
+        custodian: client,
+        owner: alice.addr(),
+        asset: usdt(),
+        amount_in: 5_000_000,
+        minted: 5_000_000,
+    }));
+    assert_eq!(
+        acct(&c.state, alice.addr(), &usdt(), "custody"),
+        0,
+        "no per-network balance is left on the account"
+    );
+    assert_eq!(custody::stable_backing(&c.state, client), 5_000_000);
+    assert_eq!(liabilities(&c, client, &usds()), 5_000_000);
     assert_eq!(acct(&c.state, alice.addr(), &usdt(), "deposit"), 0);
     assert_eq!(reserve(&c, client, &usdt()), 5_000_000);
     assert_eq!(liabilities(&c, client, &usdt()), 5_000_000);
@@ -181,13 +197,24 @@ fn custody_vault_lifecycle() {
         amount: 1_000_000,
     }))]);
     assert!(!r[0].ok);
-    // It leaves through the client's vault: escrowed, batched per client.
-    c.state.params.outbound_batch_interval_blocks = 1;
+    // USDT names the network it leaves on; the plain custody withdrawal
+    // has no network to pay it on.
     let (r, _) = c.block(&[alice.act(Action::WithdrawCustody(Withdraw {
-        asset: usdt(),
+        asset: usds(),
         to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
-        amount: 2_000_000,
+        amount: 1_000_000,
     }))]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    // It leaves through the client's vault: redeemed into Tron USDT,
+    // escrowed, batched per client.
+    c.state.params.outbound_batch_interval_blocks = 1;
+    let (r, _) = c.block(&[alice.act(Action::WithdrawCustodyStable(
+        keel_actions::WithdrawStable {
+            via: usdt(),
+            to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+            amount: 2_000_000,
+        },
+    ))]);
     ok(&r[0]);
     let id = r[0]
         .events
@@ -197,7 +224,7 @@ fn custody_vault_lifecycle() {
             _ => None,
         })
         .unwrap();
-    assert_eq!(custody::balance(&c.state, alice.addr(), &usdt()), 3_000_000);
+    assert_eq!(custody::balance(&c.state, alice.addr(), &usds()), 3_000_000);
     assert_eq!(
         acct(&c.state, alice.addr(), &usdt(), "custody_escrow"),
         2_000_000
@@ -255,11 +282,13 @@ fn custody_vault_lifecycle() {
 
     // A failed outbound refunds the custody balance; the next fee comes
     // out of the client's gas balance, so the TRX reserve stays covered.
-    let (r, _) = c.block(&[alice.act(Action::WithdrawCustody(Withdraw {
-        asset: usdt(),
-        to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
-        amount: 1_000_000,
-    }))]);
+    let (r, _) = c.block(&[alice.act(Action::WithdrawCustodyStable(
+        keel_actions::WithdrawStable {
+            via: usdt(),
+            to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+            amount: 1_000_000,
+        },
+    ))]);
     ok(&r[0]);
     let id2 = id + 1;
     let (r, _) = c.block(&[v.act(Action::ObserveOutbound(OutboundObservation {
@@ -276,12 +305,14 @@ fn custody_vault_lifecycle() {
         c.state.vaults.outbounds[&id2].status,
         OutboundStatus::Failed
     );
-    assert_eq!(custody::balance(&c.state, alice.addr(), &usdt()), 3_000_000);
-    let (r, _) = c.block(&[alice.act(Action::WithdrawCustody(Withdraw {
-        asset: usdt(),
-        to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
-        amount: 1_000_000,
-    }))]);
+    assert_eq!(custody::balance(&c.state, alice.addr(), &usds()), 3_000_000);
+    let (r, _) = c.block(&[alice.act(Action::WithdrawCustodyStable(
+        keel_actions::WithdrawStable {
+            via: usdt(),
+            to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+            amount: 1_000_000,
+        },
+    ))]);
     ok(&r[0]);
     let id3 = id2 + 1;
     let (r, end) = c.block(&[v.act(Action::ObserveOutbound(OutboundObservation {
@@ -362,7 +393,7 @@ fn custody_accounts_belong_to_one_client() {
     ok(&r[1]);
     assert_eq!(reserve(&c, v.addr(), &usdt()), 1_000_000);
     assert_eq!(reserve(&c, bob.addr(), &usdt()), 4_000_000);
-    assert_eq!(custody::balance(&c.state, bob.addr(), &usdt()), 4_000_000);
+    assert_eq!(custody::balance(&c.state, bob.addr(), &usds()), 4_000_000);
     let (res, liab) = custody::totals(&c.state, &usdt());
     assert_eq!((res, liab), (5_000_000, 5_000_000));
     assert!(c.state.ledger.audit().mismatches.is_empty());
@@ -801,5 +832,188 @@ fn a_custody_balance_moves_between_accounts_of_the_same_client() {
         })),
     ]);
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    assert!(c.state.ledger.audit().mismatches.is_empty());
+}
+
+/// One USDT in custody: a client whose vault receives USDT on Tron, BNB
+/// Smart Chain and Ethereum gives its users a single USDT balance, and a
+/// withdrawal is paid on whichever network the user names, out of what
+/// the client's own vault holds there.
+#[test]
+fn usdt_on_any_network_is_one_custody_balance() {
+    let (state, mut alice, mut bob, mut v) = setup(0);
+    let mut c = Chain::new(state);
+    let client = v.addr();
+    let (bsc, eth) = (Asset::new("BSC.USDT"), Asset::new("ETH.USDT"));
+    let on = |chain: ExtChain| CustodyVaultRegistration {
+        chain,
+        ..registration(1)
+    };
+    let mut setup_actions = vec![
+        v.act(Action::RegisterCustodyVault(on(ExtChain::Tron))),
+        v.act(Action::RegisterCustodyVault(on(ExtChain::Bsc))),
+        v.act(Action::RegisterCustodyVault(on(ExtChain::Ethereum))),
+    ];
+    for who in [&alice, &bob] {
+        setup_actions.push(v.act(Action::Attest {
+            subject: who.addr(),
+            tier: 1,
+            expires_at: T0 + 1_000_000,
+        }));
+    }
+    let (r, _) = c.block(&setup_actions);
+    for x in &r {
+        ok(x);
+    }
+    let (r, _) = c.block(&[
+        alice.act(Action::RequestCustodyAddress {
+            chain: ExtChain::Bsc,
+            custodian: client,
+        }),
+        bob.act(Action::RequestCustodyAddress {
+            chain: ExtChain::Ethereum,
+            custodian: client,
+        }),
+    ]);
+    ok(&r[0]);
+    ok(&r[1]);
+    let deposit = |chain: ExtChain, asset: &Asset, index: u64, amount: u128, tx: u8| {
+        Action::ObserveCustodyDeposit {
+            custodian: client,
+            observation: DepositObservation {
+                chain,
+                ..obs(asset.clone(), index, amount, tx)
+            },
+        }
+    };
+    // alice receives 50 USDT on BSC (18 decimals there), bob 30 on
+    // Ethereum (ERC-20): each holds plain USDT.
+    let bsc_unit = 1_000_000_000_000u128;
+    let (r, _) = c.block(&[v.act(deposit(ExtChain::Bsc, &bsc, 1, 50_000_000 * bsc_unit, 21))]);
+    ok(&r[0]);
+    // An Ethereum deposit is credited on a light-client proof, which this
+    // test does not build: credit it and convert it as the chain does.
+    fund_custody(&mut c.state, client, bob.addr(), &eth, 30_000_000);
+    custody::mint_stable(&mut c.state, client, bob.addr(), &eth, 30_000_000, "eth").unwrap();
+    assert_eq!(
+        custody::balance(&c.state, alice.addr(), &usds()),
+        50_000_000
+    );
+    assert_eq!(custody::balance(&c.state, bob.addr(), &usds()), 30_000_000);
+    assert_eq!(custody::balance(&c.state, alice.addr(), &bsc), 0);
+    assert_eq!(custody::stable_backing(&c.state, client), 80_000_000);
+    assert_eq!(liabilities(&c, client, &usds()), 80_000_000);
+
+    // It is one currency: alice pays bob in USDT, wherever hers came from.
+    let (r, _) = c.block(&[alice.act(transfer_custody(
+        bob.addr(),
+        usds(),
+        10_000_000,
+        None,
+        "usdt",
+    ))]);
+    ok(&r[0]);
+    assert_eq!(custody::balance(&c.state, bob.addr(), &usds()), 40_000_000);
+
+    // alice, whose USDT arrived on BSC, withdraws on Tron: the client's
+    // vault holds no Tron USDT, so that network is refused and nothing is
+    // redeemed. She is told why and can pick another.
+    let tron_to = "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE";
+    let (r, _) = c.block(&[alice.act(Action::WithdrawCustodyStable(
+        keel_actions::WithdrawStable {
+            via: usdt(),
+            to: tron_to.into(),
+            amount: 5_000_000,
+        },
+    ))]);
+    assert!(
+        matches!(err(&r[0]), VmError::Invalid(m) if m.contains("choose another network")),
+        "{:?}",
+        r[0]
+    );
+    assert_eq!(
+        custody::balance(&c.state, alice.addr(), &usds()),
+        40_000_000
+    );
+    // The client tops its Tron inventory up at its own address: that too
+    // is USDT on its balance, and backing on Tron for everyone.
+    let (r, _) = c.block(&[v.act(deposit(ExtChain::Tron, &usdt(), 0, 20_000_000, 23))]);
+    ok(&r[0]);
+    assert_eq!(custody::balance(&c.state, client, &usds()), 20_000_000);
+    let (r, _) = c.block(&[alice.act(Action::WithdrawCustodyStable(
+        keel_actions::WithdrawStable {
+            via: usdt(),
+            to: tron_to.into(),
+            amount: 5_000_000,
+        },
+    ))]);
+    ok(&r[0]);
+    assert!(r[0].events.contains(&Event::CustodyStableRedeemed {
+        custodian: client,
+        owner: alice.addr(),
+        asset: usdt(),
+        burned: 5_000_000,
+        amount_out: 5_000_000,
+    }));
+    assert_eq!(
+        custody::balance(&c.state, alice.addr(), &usds()),
+        35_000_000
+    );
+    assert_eq!(
+        acct(&c.state, alice.addr(), &usdt(), "custody_escrow"),
+        5_000_000
+    );
+    // bob withdraws on Ethereum, alice on BSC in its own 18 decimals.
+    let evm_to = "0x52908400098527886E0F7030069857D2E4169EE7";
+    let (r, _) = c.block(&[
+        bob.act(Action::WithdrawCustodyStable(
+            keel_actions::WithdrawStable {
+                via: eth.clone(),
+                to: evm_to.into(),
+                amount: 30_000_000,
+            },
+        )),
+        alice.act(Action::WithdrawCustodyStable(
+            keel_actions::WithdrawStable {
+                via: bsc.clone(),
+                to: evm_to.into(),
+                amount: 1_000_000,
+            },
+        )),
+    ]);
+    ok(&r[0]);
+    ok(&r[1]);
+    assert_eq!(
+        acct(&c.state, alice.addr(), &bsc, "custody_escrow"),
+        (1_000_000 * bsc_unit) as i128
+    );
+    // More than Ethereum holds is refused, though bob has the USDT.
+    let (r, _) = c.block(&[bob.act(Action::WithdrawCustodyStable(
+        keel_actions::WithdrawStable {
+            via: eth.clone(),
+            to: evm_to.into(),
+            amount: 1,
+        },
+    ))]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+
+    // Every USDT in custody is backed, and each network's reserve still
+    // covers what is owed on it; nothing is halted.
+    let (_, end) = c.block(&[]);
+    assert!(!end
+        .iter()
+        .any(|e| matches!(e, Event::CustodyReserveBreached { .. })));
+    assert!(c.state.custody.halted.is_empty());
+    assert_eq!(
+        custody::stable_backing(&c.state, client),
+        liabilities(&c, client, &usds())
+    );
+    for a in [&usdt(), &bsc, &eth] {
+        assert_eq!(
+            reserve(&c, client, a),
+            liabilities(&c, client, a) as i128,
+            "{a}"
+        );
+    }
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }

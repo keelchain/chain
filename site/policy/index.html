@@ -32,7 +32,7 @@
     <li>A network's reserve can only pay out what it holds. If the network you choose is short of USDT, the withdrawal is refused on that network and you may choose another; nobody at Keelchain moves coins between networks.</li>
     <li>Your USDT is only as good as its backing. If the issuer freezes or USDT loses its peg on one network, every USDT holder on Keel shares that loss in proportion. The reserve is capped per network (<code>SetStableBasket</code>) to bound how much any one network can be.</li>
     <li>USDC is not USDT and is never mixed with it: USDC you deposit stays USDC, with its own market.</li>
-    <li>Coins held in an exchange's custody vault are not converted; they stay the coin you deposited and leave on the same network.</li>
+    <li>USDT held in an exchange's custody vault is one USDT balance too, but it is backed by the USDT that exchange's own vault holds, not by Keel's reserve. You withdraw it on a network where that vault holds enough; keeping its networks stocked is the exchange's responsibility. Other coins in custody stay the coin you deposited and leave on the same network.</li>
   </ul>
   <p>Governance can turn automatic conversion off (<code>stable.auto_convert</code>), in which case USDT deposits stay tagged with their network and you convert by hand.</p>
 

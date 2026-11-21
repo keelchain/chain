@@ -316,6 +316,14 @@ enum CustodyCmd {
         #[arg(long)]
         on_behalf_of: Option<String>,
     },
+    /// Withdraw unified USDT from this custody on one network: `via` is
+    /// that network's USDT (TRON.USDT, BSC.USDT, ETH.USDT), paid out of
+    /// the custodian's own vault there. `amount` is in USDT units.
+    WithdrawUsdt {
+        via: String,
+        to: String,
+        amount: Amount,
+    },
     /// Move a custody balance to other accounts of the same client (its
     /// escrow account, the buyer, a fee account). No coins move. Several
     /// `--to` are one posting: all of them happen or none.
@@ -573,6 +581,13 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
         ActionCmd::Custody(CustodyCmd::Withdraw { asset, to, amount }) => {
             Action::WithdrawCustody(Withdraw {
                 asset: Asset::new(asset),
+                to,
+                amount,
+            })
+        }
+        ActionCmd::Custody(CustodyCmd::WithdrawUsdt { via, to, amount }) => {
+            Action::WithdrawCustodyStable(keel_actions::WithdrawStable {
+                via: Asset::new(via),
                 to,
                 amount,
             })

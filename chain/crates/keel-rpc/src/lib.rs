@@ -920,7 +920,7 @@ async fn custody_client(
         .tokens
         .assets
         .keys()
-        .filter(|a| a.chain().is_some())
+        .filter(|a| a.chain().is_some() || **a == s.tokens.stable)
         .map(|a| {
             json!({
                 "asset": a.to_string(),
@@ -939,6 +939,15 @@ async fn custody_client(
         "rotations": rotations,
         "accounts": accounts,
         "floats": floats,
+        // One USDT in custody: what the accounts hold, and the dollar
+        // stablecoins in this vault that back it, per network.
+        "stable": {
+            "asset": s.tokens.stable.to_string(),
+            "liabilities": s.custody.liabilities.get(&(custodian, s.tokens.stable.clone())).copied().unwrap_or(0).to_string(),
+            "backing_total": keel_vm::modules::custody::stable_backing(&s, custodian).to_string(),
+            "backing": s.custody.stable_backing.iter().filter(|((c, _), _)| *c == custodian).map(|((_, a), v)| json!({ "asset": a.to_string(), "amount": v.to_string() })).collect::<Vec<_>>(),
+            "halted": s.custody.halted.contains(&(custodian, s.tokens.stable.clone())),
+        },
     })))
 }
 

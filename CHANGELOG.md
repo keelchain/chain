@@ -5,6 +5,16 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **one USDT in custody** (2026-11-21). A deposit of USDT on
+  Ethereum (ERC-20), Tron or BNB Smart Chain into a client's own vault is
+  credited as the unified `USDT` on the custody balance, backed by the
+  USDT that vault holds on each network; it no longer stays `TRON.USDT`
+  or `BSC.USDT`. `WithdrawCustodyStable { via, to, amount }` pays it out
+  on the network named, from that vault. `TransferCustody` and
+  `SwapCustody` take `USDT`. Events `CustodyStableMinted`,
+  `CustodyStableRedeemed`; `GET /v1/custody/{addr}` adds `stable`.
+  A client that kept per-network USDT balances must switch to the single
+  balance. Snapshot schema 18.
 - Chain: **transfers inside custody** (2026-11-21). `TransferCustody
   { legs: [{ to, asset, amount }], on_behalf_of, memo }` moves custody
   balances from one account to others of the same custodial client,

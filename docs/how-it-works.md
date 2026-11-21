@@ -218,8 +218,11 @@ on by default); the user never holds `TRON.USDT` or `BSC.USDT`. A
 withdrawal is one action, `WithdrawStable { via, to, amount }`: it redeems
 the balance into the chosen network's USDT and queues the payout. The
 explicit `MintStable` and `BurnStable` remain for anyone holding a
-per-chain asset (custody vaults are not converted: an exchange's users hold
-the coin they deposited, and it leaves on the same network). Conversions
+per-chain asset. A custodial client's vault works the same way, on its own
+reserves: a USDT deposit there is credited as the one `USDT`, backed by the
+USDT that client's vault holds on each network, and leaves with
+`WithdrawCustodyStable { via, to, amount }` (`models.md`, "One USDT in
+custody"). Conversions
 floor, so rounding can only leave reserve behind, never issue unbacked
 coin; mint and burn charge no fee. A basket entry that is disabled or at
 its cap leaves the deposit as credited.

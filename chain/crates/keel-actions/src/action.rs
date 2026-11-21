@@ -261,6 +261,10 @@ pub enum Action {
     /// client's custody (docs/models.md, "Transfers inside custody"). One
     /// ledger posting; the client's vault backs the same total.
     TransferCustody(CustodyTransfer),
+    /// Withdraw unified USDT from a custody balance on the network the
+    /// user picks (`via`): it is redeemed into that network's USDT out of
+    /// the custodian's own vault and paid out in one step.
+    WithdrawCustodyStable(WithdrawStable),
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -381,7 +385,8 @@ impl Action {
             | Action::ObserveCustodyDeposit { .. }
             | Action::WithdrawCustody(_)
             | Action::SwapCustody(_)
-            | Action::TransferCustody(_) => "custody",
+            | Action::TransferCustody(_)
+            | Action::WithdrawCustodyStable(_) => "custody",
             Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
             Action::RotateCustodyVault(_)
             | Action::CancelCustodyRotation { .. }

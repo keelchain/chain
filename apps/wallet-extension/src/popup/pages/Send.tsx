@@ -63,10 +63,11 @@ export function Send({ state }: { state: UiState }) {
     kind === 'transfer'
       ? [...spendable.entries()].map(([a, balance]) => ({ asset: a, balance }))
       : kind === 'swap'
-        ? [...(from === 'custody' ? inCustody : spendable).entries()].filter(([a]) => a.includes('.')).map(([a, balance]) => ({ asset: a, balance }))
+        ? [...(from === 'custody' ? inCustody : spendable).entries()].filter(([a]) => a.includes('.') || a === 'USDT').map(([a, balance]) => ({ asset: a, balance }))
         : [
             // The unified USDT leaves as the chosen network's USDT (one-step redeem and withdraw).
-            ...(kind === 'withdraw' && from !== 'custody' ? [{ asset: 'USDT', balance: spendable.get('USDT') ?? '0' }] : []),
+            // In custody it is one USDT as well, paid out of the exchange's own vault on the chosen network.
+            ...(kind === 'withdraw' ? [{ asset: 'USDT', balance: (from === 'custody' ? inCustody : spendable).get('USDT') ?? '0' }] : []),
             ...BRIDGED_ASSETS.map((b) => ({ asset: b.asset, balance: (from === 'custody' ? inCustody : spendable).get(b.asset) ?? '0' })),
           ];
   const chosen = options.some((o) => o.asset === asset) ? asset : (options[0]?.asset ?? '');

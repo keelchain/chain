@@ -149,7 +149,9 @@ export type Action =
   | { BuyPlan: { tier: number } }
   /** The tier a client's plan renews at; 0 stops renewal. */
   | { SetPlanRenewal: { tier: number } }
-  | { TransferCustody: CustodyTransfer };
+  | { TransferCustody: CustodyTransfer }
+  /** Withdraw unified USDT from a custody balance on the network `via` names. */
+  | { WithdrawCustodyStable: WithdrawStable };
 
 export interface RecoveryRequest {
   /** The address family (the chain whose deposit index the address is). */
@@ -227,7 +229,7 @@ const ACTION_VARIANTS = [
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
-  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody",
+  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody", "WithdrawCustodyStable",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -418,6 +420,7 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "WithdrawStable": w.string(b.via); w.string(b.to); w.u128(b.amount); break;
     case "BuyPlan": w.u8(b.tier); break;
     case "SetPlanRenewal": w.u8(b.tier); break;
+    case "WithdrawCustodyStable": w.string(b.via); w.string(b.to); w.u128(b.amount); break;
     case "TransferCustody":
       w.vec(b.legs as CustodyLeg[], (l) => { address(w, l.to); w.string(l.asset); w.u128(l.amount); });
       w.option(b.on_behalf_of, (a) => address(w, a)); w.option(b.memo, (m) => w.string(m)); break;

@@ -404,6 +404,12 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
         { name: 'Redeemed into', field: { k: 'asset', value: str(p['asset']) } },
         { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: str(p['asset']) } },
       ]);
+    case 'WithdrawCustodyStable':
+      return view(`Withdraw USDT from custody as ${str(p['via'])}`, [
+        { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: 'USDT' } },
+        { name: 'Paid out in', field: { k: 'asset', value: str(p['via']) } },
+        { name: 'Destination', field: { k: 'text', value: str(p['to']) } },
+      ]);
     case 'TransferCustody': {
       const legs = Array.isArray(p['legs']) ? (p['legs'] as Record<string, unknown>[]) : [];
       const fields: NamedField[] = [];

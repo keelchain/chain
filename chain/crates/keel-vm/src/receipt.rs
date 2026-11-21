@@ -415,6 +415,24 @@ pub enum Event {
         asset: Asset,
         amount: Amount,
     },
+    /// A dollar stablecoin in `custodian`'s vault became unified USDT on
+    /// `owner`'s custody balance (`amount_in` of `asset`, `minted` USDT).
+    CustodyStableMinted {
+        custodian: Address,
+        owner: Address,
+        asset: Asset,
+        amount_in: Amount,
+        minted: Amount,
+    },
+    /// Unified USDT on `owner`'s custody balance was redeemed into
+    /// `asset` out of `custodian`'s vault, on its way out.
+    CustodyStableRedeemed {
+        custodian: Address,
+        owner: Address,
+        asset: Asset,
+        burned: Amount,
+        amount_out: Amount,
+    },
     CustodyWithdrawalQueued {
         custodian: Address,
         outbound_id: u64,

@@ -408,6 +408,14 @@ fn vectors() -> Vec<(&'static str, Action)> {
         ("buy_plan", Action::BuyPlan { tier: 2 }),
         ("set_plan_renewal", Action::SetPlanRenewal { tier: 0 }),
         (
+            "withdraw_custody_stable",
+            Action::WithdrawCustodyStable(keel_actions::WithdrawStable {
+                via: Asset::new("BSC.USDT"),
+                to: "0x52908400098527886E0F7030069857D2E4169EE7".into(),
+                amount: 12_500_000,
+            }),
+        ),
+        (
             "transfer_custody",
             Action::TransferCustody(keel_actions::CustodyTransfer {
                 legs: vec![

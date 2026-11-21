@@ -321,7 +321,11 @@ observer builds the transaction, your own signer signs it after the policy
 check, and the observers broadcast and confirm it. Network fees come out of
 your vault's index-0 gas balance when it has one, otherwise they are booked
 as your expense until the next top-up. Each withdrawal is usage
-(`clients.usage_outbound_usd_micro`, $0.10). A balance that has been swapped
+(`clients.usage_outbound_usd_micro`, $0.10). USDT in your custody is one
+balance: it leaves with `WithdrawCustodyStable { via, to, amount }`, which
+names the network to pay on (`TRON.USDT`, `BSC.USDT`, `ETH.USDT`) and is
+redeemed out of what your vault holds there (`models.md`, "One USDT in
+custody"). A balance that has been swapped
 to the `deposit` side (`SwapCustody`) is withdrawn as in the other tabs, or
 swapped back first. The whole procedure is in `models.md`, Model A.
 

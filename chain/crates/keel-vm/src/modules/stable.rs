@@ -187,7 +187,7 @@ pub fn set_basket(state: &mut State, asset: Asset, cap: Amount, enabled: bool) {
 }
 
 /// Convert between a reserve asset and the stable by decimals (floored).
-fn convert(amount: Amount, from_decimals: u32, to_decimals: u32) -> Amount {
+pub(crate) fn convert(amount: Amount, from_decimals: u32, to_decimals: u32) -> Amount {
     if from_decimals == to_decimals {
         amount
     } else if from_decimals < to_decimals {
@@ -225,7 +225,7 @@ pub fn apply(
     }
 }
 
-fn decimals(state: &State, asset: &Asset) -> Result<(u32, u32), VmError> {
+pub(crate) fn decimals(state: &State, asset: &Asset) -> Result<(u32, u32), VmError> {
     let rd = state
         .tokens
         .decimals(asset)

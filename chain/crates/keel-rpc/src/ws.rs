@@ -151,6 +151,12 @@ pub(crate) fn event_addresses(e: &Event) -> Vec<Address> {
         | Event::CustodySwapped {
             custodian, owner, ..
         } => vec![*owner, *custodian],
+        Event::CustodyStableMinted {
+            custodian, owner, ..
+        }
+        | Event::CustodyStableRedeemed {
+            custodian, owner, ..
+        } => vec![*owner, *custodian],
         Event::CustodyTransferred {
             custodian,
             from,

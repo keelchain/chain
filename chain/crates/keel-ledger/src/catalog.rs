@@ -40,6 +40,10 @@ pub const ACCOUNT_TYPES: &[(&str, NormalSide, bool)] = &[
     // custody vault is checked against its own reserve.
     ("custody", NormalSide::Credit, true),
     ("custody_escrow", NormalSide::Credit, true),
+    // One USDT in custody (2026-11-21): the dollar stablecoins in a
+    // client's vault that back the unified USDT its accounts hold. Owned
+    // by the client, restricted, and counted with its custody balances.
+    ("custody_stable_reserve", NormalSide::Credit, true),
     ("order_escrow", NormalSide::Credit, true),
     // ---- platform revenue (inherited, unrestricted credit-normal) ----
     ("marketplace_escrow_fee", NormalSide::Credit, false),
@@ -95,6 +99,9 @@ pub const ACCOUNT_TYPES: &[(&str, NormalSide, bool)] = &[
     // Native issuance: the KEEL and stable "mint" counter-accounts. Debit-normal
     // so supply is readable as one balance.
     ("issuance", NormalSide::Debit, false),
+    // The counter-account of the unified USDT a client's vault backs
+    // (owned by the client; the network's own is the system `issuance`).
+    ("custody_issuance", NormalSide::Debit, false),
     // Genesis allocation buckets (docs/tokenomics.md). System-owned,
     // restricted: governance spends them with TreasurySpend-style
     // proposals, nothing can overdraw them.

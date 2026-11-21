@@ -176,7 +176,9 @@ fn rotation_opens_a_fresh_generation_and_the_old_one_drains() {
         observation: obs(usdt(), 1, 1_000_000, 1),
     })]);
     ok(&r[0]);
-    assert_eq!(custody::balance(&c.state, alice.addr(), &usdt()), 6_000_000);
+    // (Credited as the unified USDT; the balance funded above stays as it was.)
+    assert_eq!(custody::balance(&c.state, alice.addr(), &usds()), 1_000_000);
+    assert_eq!(custody::balance(&c.state, alice.addr(), &usdt()), 5_000_000);
 
     // A withdrawal batch is pointed at the draining generation, so the old
     // pool drains through ordinary payouts: the only way coins leave it.

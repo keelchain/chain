@@ -81,6 +81,7 @@ export const ACTION_LABELS: Record<string, string> = {
   RegisterCustodyVault: 'Register custody vault',
   RequestCustodyAddress: 'Request custody address',
   WithdrawCustody: 'Withdraw from custody',
+  WithdrawCustodyStable: 'Withdraw USDT from custody',
   SwapCustody: 'Swap custody',
   TransferCustody: 'Transfer in custody',
   SetOfferArbitrators: 'Name offer arbitrators',
@@ -105,6 +106,7 @@ const MOVES_FUNDS: Record<string, string> = {
   BurnStable: 'This converts USDT into a reserve asset.',
   Bond: 'This locks KEEL as a bond.',
   Delegate: 'This delegates KEEL to a validator.',
+  WithdrawCustodyStable: 'This sends USDT out of the chain to an external address, paid from your custodian\'s vault on the network you chose.',
   WithdrawCustody: 'This sends funds out of the chain to an external address, paid from your custodian\'s vault.',
   TransferCustody: 'This sends a custody balance to another account of the same exchange.',
   SwapCustody: 'This moves a balance between your custodian\'s vault and the network vault. The amount stays yours; only what backs it changes.',
@@ -386,6 +388,15 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
         { name: 'Custodian', field: { k: 'address', value: str(p['custodian']) } },
       ]);
+    case 'WithdrawCustodyStable': {
+      const via = str(p['via']);
+      const chain = via.split('.')[0] ?? '';
+      return view(`Withdraw ${formatAmount(amountStr(p['amount']), 6)} USDT from custody as ${via} to ${str(p['to'])}`, [
+        { name: 'Amount', field: amount(p['amount'], 'USDT') },
+        { name: 'Paid out in', field: { k: 'asset', value: via } },
+        { name: 'Destination', field: { k: 'external', chain, value: str(p['to']) } },
+      ]);
+    }
     case 'WithdrawCustody': {
       const asset = str(p['asset']);
       const chain = asset.split('.')[0] ?? '';

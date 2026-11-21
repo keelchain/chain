@@ -355,7 +355,8 @@ fn apply_one(
         | Action::ObserveCustodyDeposit { .. }
         | Action::WithdrawCustody(_)
         | Action::SwapCustody(_)
-        | Action::TransferCustody(_) => custody::apply(state, ctx, signer, &tx_id, action),
+        | Action::TransferCustody(_)
+        | Action::WithdrawCustodyStable(_) => custody::apply(state, ctx, signer, &tx_id, action),
         Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => {
             arbitration::apply(state, signer, action)
         }
