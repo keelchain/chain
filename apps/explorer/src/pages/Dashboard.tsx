@@ -58,7 +58,13 @@ interface ClientRecord {
   earned: { asset: string; amount: string }[];
   usage_paid: { asset: string; amount: string }[];
   attested_accounts: number;
-  usage_prices: { address_keel: string; outbound_keel: string };
+  usage_owed?: string;
+  usage_prices: { address_usd_micro: string; outbound_usd_micro: string; fill_usd_micro: string; release_usd_micro: string; ruling_usd_micro: string };
+  billing_asset?: string;
+  locked_keel?: string;
+  tier?: number;
+  plan?: { tier: number; started_at: number; ends_at: number; active: boolean; fee_usd_micro: string; allowance_left_usd_micro: string } | null;
+  tiers?: { tier: number; lock_keel: string; fee_usd_micro: string; allowance_usd_micro: string }[];
 }
 
 const CHAINS = ['Bitcoin', 'Ethereum', 'Tron', 'Bsc', 'Solana'] as const;
@@ -434,6 +440,9 @@ function BillingSection({ w, p }: { w: WalletValue; p: ReturnType<typeof usePart
   const [budget, setBudget] = useState('');
   const c = p.client.data;
   const keel = spendable(p.account.data?.balances, 'KEEL', 6);
+  const bill = c?.billing_asset ?? 'USDT';
+  const usdt = spendable(p.account.data?.balances, bill, 6);
+  const plan = c?.plan ?? null;
   const buy = (e: FormEvent) => {
     e.preventDefault();
     const units = toUnits(budget, 6);
@@ -448,15 +457,49 @@ function BillingSection({ w, p }: { w: WalletValue; p: ReturnType<typeof usePart
       <Card title={<h2>Billing</h2>}>
         <KV
           rows={[
+            ['Plan', plan ? (plan.active ? `Tier ${plan.tier}, until ${new Date(plan.ends_at * 1000).toLocaleDateString()}` : `Tier ${plan.tier}, ended ${new Date(plan.ends_at * 1000).toLocaleDateString()}`) : 'None'],
+            ['Included usage left', plan?.active ? <Amount value={plan.allowance_left_usd_micro} asset={bill} /> : '—'],
+            ['KEEL locked (selects the tier)', c?.locked_keel ? <Amount value={c.locked_keel} asset="KEEL" /> : '—'],
+            ['Tier the lock selects', c?.tier ? `Tier ${c.tier}` : 'None'],
+            [`${bill} balance (pays the plan and usage)`, usdt],
             ['KEEL balance', keel],
-            ['Price per custody address', c ? <Amount value={c.usage_prices.address_keel} asset="KEEL" /> : '—'],
-            ['Price per custody payout or swap', c ? <Amount value={c.usage_prices.outbound_keel} asset="KEEL" /> : '—'],
-            ['Usage paid', c && c.usage_paid.length ? c.usage_paid.map((u) => `${u.amount} ${u.asset}`).join(', ') : '0'],
+            ['Owed', c?.usage_owed && c.usage_owed !== '0' ? <Amount value={c.usage_owed} asset={bill} /> : '0'],
+            ['Per deposit address', c ? <Amount value={c.usage_prices.address_usd_micro} asset={bill} /> : '—'],
+            ['Per payout or swap', c ? <Amount value={c.usage_prices.outbound_usd_micro} asset={bill} /> : '—'],
+            ['Per filled order', c ? <Amount value={c.usage_prices.fill_usd_micro} asset={bill} /> : '—'],
+            ['Per escrow release', c ? <Amount value={c.usage_prices.release_usd_micro} asset={bill} /> : '—'],
+            ['Per dispute ruling', c ? <Amount value={c.usage_prices.ruling_usd_micro} asset={bill} /> : '—'],
+            ['Paid so far', c && c.usage_paid.length ? c.usage_paid.map((u) => `${u.amount} ${u.asset}`).join(', ') : '0'],
             ['Earned (retail fees)', c && c.earned.length ? c.earned.map((u) => `${u.amount} ${u.asset}`).join(', ') : '0'],
             ['Attested accounts', c ? formatInt(c.attested_accounts) : '—'],
           ]}
         />
-        <p className="text-2 small">Everything Keel charges is paid in KEEL from your deposit balance; there is no invoice. Buy KEEL on the chain's own book with USDT.</p>
+        {c?.tiers && c.tiers.length > 0 && (
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Tier</th>
+                <th>KEEL locked</th>
+                <th>Per period</th>
+                <th>Usage included</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.tiers.map((t) => (
+                <tr key={t.tier}>
+                  <td>{t.tier}</td>
+                  <td><Amount value={t.lock_keel} asset="KEEL" /></td>
+                  <td><Amount value={t.fee_usd_micro} asset={bill} /></td>
+                  <td><Amount value={t.allowance_usd_micro} asset={bill} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="text-2 small">
+          Prices are in dollars and paid in {bill} from your deposit balance; there is no invoice. The KEEL you lock selects your tier and comes back in full when you unlock it. A plan period starts at an epoch boundary once the lock
+          meets a tier and the balance covers its fee; while it runs your users pay no protocol fees and usage draws on the included amount first. Lock KEEL from the wallet's Home page.
+        </p>
       </Card>
       <Card title={<h2>Buy KEEL</h2>}>
         <form className="form" onSubmit={buy}>

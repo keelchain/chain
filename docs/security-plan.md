@@ -93,12 +93,13 @@ that shape, not from any one machine:
   node can state-sync from any peer and detect a lie. Bitcoin checkpoints
   through governance anchor the chain's history in a system I do not
   control, so rewriting the past would show.
-- **Flooding is priced without gas.** Every action spends from a
-  per-address budget, and an address must hold `budget.activation_keel`
-  before its budget counts (section 7 of `how-it-works.md`), so a flood
-  costs KEEL per key, not per keypair generation; capacity beyond the free
-  budget comes from locking KEEL, and governance can switch the chain to a
-  per-action fee (`budget.base` = 0, `docs/governance.md`). A spammer's own
+- **Flooding is priced without gas.** Every action spends capacity that
+  only locked KEEL grants (section 7 of `how-it-works.md`): 100 actions a
+  day per KEEL, with the KEEL tied up for the three-day unlock delay, so a
+  flood's size is the KEEL committed to it whatever the number of keys.
+  There is no free budget per address to collect by generating keys or by
+  moving one coin between them, and governance can add a per-action fee
+  (`budget.action_fee_keel`, `docs/governance.md`). A spammer's own
   addresses run dry first. Validators and observers post bonds; slashing is
   specified.
 - **Custody is threshold.** The vault key exists only as `t`-of-`n` shares

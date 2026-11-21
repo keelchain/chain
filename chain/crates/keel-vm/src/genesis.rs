@@ -150,7 +150,20 @@ pub fn convert_decimals(amount: Amount, from: u32, to: u32) -> Amount {
     }
 }
 
+/// Free actions per address on a devnet. A network has none.
+pub const DEVNET_FREE_ACTIONS: u64 = 500;
+
 impl Genesis {
+    /// Devnet parameters: the defaults plus a free budget per address, so
+    /// local scripts and tests act without locking first. A network is
+    /// built from `Params::default()` (`keel genesis-build`,
+    /// `genesis-from-export`), where `budget.base` is 0.
+    pub fn devnet_params() -> Params {
+        let mut p = Params::default();
+        p.budget.base = DEVNET_FREE_ACTIONS;
+        p
+    }
+
     /// A devnet genesis: KEEL, the unified `USDT`, the vault assets, a USDT
     /// book for KEEL and for every non-USDT vault asset, funded accounts.
     pub fn devnet(chain_id: u32, funded: &[Address], validators: Vec<GenesisValidator>) -> Self {
@@ -181,7 +194,7 @@ impl Genesis {
         }
         Self {
             chain_id,
-            params: Params::default(),
+            params: Self::devnet_params(),
             assets: vec![
                 (keel.clone(), 6, tokens::AssetKind::Native),
                 (usds.clone(), 6, tokens::AssetKind::Stable),

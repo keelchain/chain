@@ -2,6 +2,7 @@
 import { fromWire, toWire, type RuntimeUiMessage } from '../core/protocol';
 import type { UiState } from '../background/wallet';
 import type { ChainDepositRow } from '@keelchain/sdk';
+import { NO_CAPACITY, parseCapacity, type Capacity } from '../core/capacity';
 
 export type { UiState };
 
@@ -25,6 +26,8 @@ export interface AccountResponse {
   nonce: number;
   balances: Balance[];
   tier?: number;
+  /** Action capacity from the payload's `budget`; absent when the node sent none. */
+  capacity?: Capacity;
 }
 
 /** The account's deposit address on one chain, or null when none was assigned yet. */
@@ -55,8 +58,9 @@ export async function fetchParams(rpc: string): Promise<Record<string, unknown>>
 /** GET <rpc>/v1/accounts/<addr>; an unknown account (404) is an empty one. */
 export async function fetchAccount(rpc: string, address: string): Promise<AccountResponse> {
   const res = await fetch(`${rpc.replace(/\/$/, '')}/v1/accounts/${address}`);
-  if (res.status === 404) return { nonce: 0, balances: [] };
+  if (res.status === 404) return { nonce: 0, balances: [], capacity: NO_CAPACITY };
   if (!res.ok) throw new Error(`RPC ${res.status}`);
   const j = (await res.json()) as Partial<AccountResponse>;
-  return { nonce: Number(j.nonce ?? 0), balances: Array.isArray(j.balances) ? j.balances : [], ...(j.tier !== undefined ? { tier: j.tier } : {}) };
+  const capacity = parseCapacity(j);
+  return { nonce: Number(j.nonce ?? 0), balances: Array.isArray(j.balances) ? j.balances : [], ...(j.tier !== undefined ? { tier: j.tier } : {}), ...(capacity ? { capacity } : {}) };
 }

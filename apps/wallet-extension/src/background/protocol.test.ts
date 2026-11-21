@@ -390,3 +390,33 @@ test('move to Keel builds a Bitcoin spend from the own address to the vault depo
     vi.unstubAllGlobals();
   }
 });
+
+test('send locks and unlocks KEEL for action capacity, and words BUDGET_EXHAUSTED', async () => {
+  const h = harness();
+  await setup(h);
+  const posted: string[] = [];
+  let refuse = false;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/v1/accounts/')) return Response.json({ nonce: 2 });
+    if (url.endsWith('/v1/actions') && init?.method === 'POST') {
+      posted.push(String(init.body));
+      return refuse ? Response.json({ admitted: false, code: 'BUDGET_EXHAUSTED', error: 'action budget exhausted' }, { status: 429 }) : Response.json({ admitted: true });
+    }
+    if (url.includes('/v1/receipts/')) return Response.json({ ok: false, error: { code: 'BUDGET_EXHAUSTED', message: 'action budget exhausted' } });
+    return new Response('not found', { status: 404 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const r = (await h.wallet.handleUi('send', { kind: 'lock-budget', asset: 'KEEL', to: '', amount: '1000000' })) as { txId: string; ok: boolean; error: string | null };
+    expect(JSON.parse(posted[0]!).envelope.action).toEqual({ LockBudget: { amount: 1000000 } });
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('This account has no action capacity. Lock 1 KEEL on Home to get 100 actions a day.');
+    refuse = true;
+    await expect(h.wallet.handleUi('send', { kind: 'unlock-budget', asset: 'KEEL', to: '', amount: '500000' })).rejects.toThrow(/no action capacity/);
+    expect(JSON.parse(posted[1]!).envelope.action).toEqual({ UnlockBudget: { amount: 500000 } });
+    await expect(h.wallet.handleUi('send', { kind: 'lock-budget', asset: 'USDT', to: '', amount: '1000000' })).rejects.toThrow(/locked in KEEL/);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

@@ -4,6 +4,7 @@ import { call, fetchAccount, type AccountResponse, type UiState } from '../ui';
 import type { DepositAddressInfo, SelfAddresses } from '../../background/wallet';
 import { Address } from '../components/Address';
 import { SiteAccessBanner } from '../components/SiteAccess';
+import { CapacityCard } from '../components/Capacity';
 import { accountTypeLabel, decimalsOf, formatAmount } from '../../core/format';
 import { explorerAccountUrl } from '../../core/networks';
 import { DEPOSIT_CHAINS, externalName } from '../external';
@@ -106,6 +107,9 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
         )}
         {account && <p className="muted small">nonce {account.nonce}{account.tier !== undefined ? ` · tier ${account.tier}` : ''}</p>}
       </div>
+      {!network.placeholder && address && account?.capacity && (
+        <CapacityCard network={network} capacity={account.capacity} spendable={account.balances.find((b) => b.asset === 'KEEL' && b.account_type === 'deposit')?.balance ?? 0} onChanged={() => setRefreshKey((k) => k + 1)} />
+      )}
       {!network.placeholder && address && (
         <div className="card">
           <div className="label">Receive</div>

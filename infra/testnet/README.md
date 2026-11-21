@@ -66,8 +66,9 @@ Variables:
 | `EXPLORER_NETWORKS` | JSON network list baked into the explorer build |
 | `KEEL_FAUCET_KEEL`, `KEEL_FAUCET_USDT` | optional; coins per claim (default 100 each). Cooldown per address 24 h, 5 claims per IP per day |
 | `KEEL_FAUCET_FLOAT_CLAIMS` | optional; how many claims' worth of each asset the faucet should hold (default 500). Every deploy of host 0 tops the faucet up from the genesis account when it holds less than half of that, so it works again after a reset |
+| `KEEL_OPERATOR_LOCK_KEEL`, `KEEL_FAUCET_LOCK_KEEL` | optional; whole KEEL each host's operator key (default 100) and the faucet (default 50) keep locked for action capacity. A network has no free action budget, so every deploy runs `keel ensure-capacity` for both; it locks the difference or does nothing |
 | `AGE_RECIPIENT` | optional; an `age` public key; backups are encrypted to it (keep the identity off the boxes) |
-| `KEEL_CLIENTS` | optional; JSON list of clients to re-onboard after a reset and to pre-approve in governance votes: `[{"address":"<hex>","attester":true,"keel":100000,"kusd":100000}]` |
+| `KEEL_CLIENTS` | optional; JSON list of clients to re-onboard after a reset and to pre-approve in governance votes: `[{"address":"<hex>","attester":true,"keel":150000,"kusd":100000}]` (the defaults: enough KEEL to lock tier 1 and USDT for the plan and usage) |
 | `KEEL_MONITORING` | `1` to run Prometheus, Alertmanager and Grafana on host 0 (`infra/testnet/monitoring`), scraping every host's node_exporter over the mesh |
 | `ALERT_SMTP_HOST`, `ALERT_SMTP_FROM`, `ALERT_SMTP_USER`, `ALERT_TO` | where alerts are mailed |
 
@@ -270,6 +271,12 @@ other hosts' vote timers do not cover client proposals yet, so run the
 workflow while the proposal is open and vote from the other hosts'
 accounts by hand, or lower `quorum_bps` on the testnet. The current role
 sets are public at `/rpc/v1/gov/roles`.
+
+The client then locks KEEL on its operator account itself (`keel send
+--secret … lock-budget <orcas>`, or the wallet): at least 1 KEEL to act at
+all, 100,000 KEEL for plan tier 1. Its plan starts at the next epoch
+boundary and is paid from the USDT sent here; until then its users pay the
+protocol fees (`docs/clients.md`, Pricing).
 
 ## Rotating
 

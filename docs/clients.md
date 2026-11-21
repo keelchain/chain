@@ -30,21 +30,27 @@ keelchain.com/docs, and `@keelchain/sdk` on npm tracks them.
   client its roles and a starting balance of KEEL and USDT; on mainnet the
   same goes through a governance proposal. `GET /v1/gov/roles` shows the
   current sets.
-- **Budget, not gas.** Every account gets a free action budget to onboard
-  with (`budget.base`, 500 actions by default); an account that signs at
-  volume, yours or a user's, locks KEEL for capacity (`LockBudget`: 100
-  actions a day per KEEL, refundable) or buys it (`BuyBudget`). Capacity is
+- **Capacity, not gas.** No action costs a fee, and no account has a free
+  budget: an account acts on the capacity of the KEEL it has locked
+  (`LockBudget`: 100 actions a day per KEEL, the first day's worth at
+  once, the KEEL back in full three days after `UnlockBudget`). That holds
+  for your operator account and for every user account that signs. A
+  `LockBudget` of at least 1 KEEL is accepted from an account with no
+  capacity, so the first lock needs nothing but the KEEL. Capacity is
   linear in KEEL and additive across addresses, so spreading work over
-  many accounts does not change what you lock in total. `GET /v1/accounts/{addr}` shows the budget left and whether
-  the account is `activated`.
-- **Activation dust.** An account's budget counts only once it holds
-  `budget.activation_keel` KEEL (0.1 KEEL by default; `GET /v1/params`),
-  which keeps the free budget from being a free budget per keypair. Send
-  that amount to each account you attest, in the same onboarding step as
-  `Attest`; until then every action from it but a cancel is refused with
-  `NOT_ACTIVATED`. Governance can change the floor, the budget, and can
-  switch the chain to a per-action fee (`docs/governance.md`); read the
-  three values at startup rather than hard-coding them.
+  many accounts does not change what you lock in total. `GET
+  /v1/accounts/{addr}` shows `budget.remaining`, `budget.locked` and
+  whether the account is `activated`.
+- **Onboarding a user is three steps:** `Attest` the account, send it the
+  KEEL for its lock (1 KEEL covers a retail user), and have its first
+  action be `LockBudget`. Until it has locked, every action from it but a
+  cancel is refused with `BUDGET_EXHAUSTED` (or `NOT_ACTIVATED` while it
+  holds less than `budget.activation_keel`, 0.1 KEEL). The KEEL is the
+  user's and comes back when they unlock; if you hold the user's key or a
+  session key, your service signs the lock. Governance can change these
+  numbers (`docs/governance.md`); read `budget.free_lock_min_keel`,
+  `budget.per_locked_keel_per_day` and `budget.activation_keel` from `GET
+  /v1/params` at startup rather than hard-coding them.
 
 ## The per-network switch
 
@@ -188,25 +194,53 @@ replays from the last height. Details in the `ws` reference.
 
 ## Pricing
 
-Everything Keel charges is paid in KEEL, bought on the chain's own order
-book with USDT, BTC or TRX; there is no invoice.
+A client pays a plan and usage, both priced in dollars and paid in USDT
+from the operator account's deposit balance. There is no invoice: the
+chain takes each charge when it falls due, and turns what it collects
+into KEEL on its own order book. Nothing is a share of your own fees.
 
-- **Custodial clients** pay usage: per deposit address issued in their
-  vault, per outbound batch built and broadcast, per network watched, plus
-  a service tier chosen by locking KEEL. Nothing is a share of the client's
-  own fees.
-- **P2P clients** pay usage per flow of their users: `clients.usage_fill_keel`
-  per order that filled, `usage_release_keel` per escrow release,
-  `usage_ruling_keel` per dispute ruling, `usage_outbound_keel` per
-  withdrawal. Their users pay no protocol fee (0.2.0); the client sets its
-  own retail fee (`SetClientFee`, uncapped), which the chain pays into the
-  client's account in the same posting. A per-flow charge the client cannot
-  pay is owed (`UsageOwed`), collected from its next KEEL, and blocks new
-  addresses and withdrawals for its accounts until paid; `GET
-  /v1/clients/{addr}` shows `usage_owed`.
-- **Service tiers** come from locked KEEL on the client's operator account:
-  higher limits, webhooks and a revenue dashboard. `tokenomics.md` has the
-  schedule and the governance parameters behind it.
+| Tier | KEEL locked on the operator account | Plan fee per 30 days | Usage included |
+|---|---|---|---|
+| 1 | 100,000 | $300 | $300 |
+| 2 | 500,000 | $1,000 | $1,200 |
+| 3 | 2,000,000 | $3,000 | $4,000 |
+
+| Usage | Price |
+|---|---|
+| Deposit address issued to one of your accounts | $0.02 |
+| Withdrawal queued, or a float swap | $0.10 |
+| Order of one of your users that filled | $0.002 |
+| Escrow release | $0.05 |
+| Dispute ruling | $1 |
+
+All of these are governance parameters (`docs/governance.md`); `GET
+/v1/clients/{addr}` returns the live tier table and prices with your
+`tier`, `plan` (`ends_at`, `allowance_left_usd_micro`), `usage_paid` and
+`usage_owed`.
+
+- **The lock selects the tier.** Lock the tier's KEEL on the operator
+  account with `LockBudget` (the same lock that gives the account its
+  action capacity). It is yours and comes back in full three days after
+  `UnlockBudget`. You are in the highest tier the lock meets.
+- **A period starts at an epoch boundary** once the lock meets a tier and
+  the operator account holds the fee in USDT (`ClientPlanStarted`). It
+  runs for 30 days and renews the same way at the first boundary after it
+  ends, at whatever tier the lock then selects. If the account cannot pay
+  the fee there is no plan until it can; the fee is never carried as debt.
+- **While a period runs, your users pay no protocol fee** on fills, escrow
+  releases, dispute rulings and the withdrawal flat fee, and you set your
+  own retail fee (`SetClientFee`, uncapped), which the chain pays into your
+  account in the same posting. Without a plan you are still an attester,
+  but your users pay the protocol fees like anyone else.
+- **Usage draws on the allowance first** (`UsageCovered`), then on your
+  USDT (`UsageCharged`). A deposit address or a withdrawal you cannot pay
+  for is refused. A fill, release or ruling is never blocked: what you
+  cannot pay is owed (`UsageOwed`), collected from your next USDT, and
+  until it is paid no new address or withdrawal is issued to your accounts
+  and your users pay the protocol fees again.
+- **What to keep on the operator account:** the tier's KEEL locked, and
+  USDT for the next plan fee plus the usage you expect beyond the
+  allowance.
 
 ## Testnet policy
 

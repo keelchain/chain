@@ -76,7 +76,7 @@ sleep 2
 POOL_SHARES=$(curl -s "$RPC0/v1/liquidity" | python3 -c 'import sys,json;print(json.load(sys.stdin)["pool"]["total_shares"])')
 MY_SHARES=$(curl -s "$RPC0/v1/liquidity/$ALICE" | python3 -c 'import sys,json;print(json.load(sys.stdin)["shares"])')
 [[ "$POOL_SHARES" == "1000000000" && "$MY_SHARES" == "1000000000" ]] || { say "pool shares mismatch: pool=$POOL_SHARES alice=$MY_SHARES"; exit 1; }
-curl -s "$RPC0/v1/params" | python3 -c 'import sys,json;p=json.load(sys.stdin);assert p["liquidity"]["protocol_share_bps"]==5000 and "usage_fill_keel" in p["clients"]'
+curl -s "$RPC0/v1/params" | python3 -c 'import sys,json;p=json.load(sys.stdin);assert p["liquidity"]["protocol_share_bps"]==5000 and "usage_fill_usd_micro" in p["clients"] and len(p["clients"]["tiers"])==3'
 say "liquidity pool: $POOL_SHARES shares, params exposed"
 
 # State hash agreement at a common height: read node 0's receipts height, then compare hashes when both pass it.

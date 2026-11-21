@@ -13,8 +13,8 @@ question: **who holds the funds and who signs the withdrawals.**
 | Who signs withdrawals | The client's own signer | The observer set (2-of-3 on the testnet) |
 | Who signs user actions | The client, as custodian | The user, with Keel Wallet |
 | What users can verify | Proof of reserves for that client: vault addresses, reserve against the sum of balances, every movement with a transaction id | Their own account and every action they signed |
-| Client fees and margin | **Untouched.** Keel charges usage, never a share of the client's fees | **Untouched** (0.2.0). The chain waives its protocol fee for the client's users; the client sets its own retail fee and receives it in the same posting, and pays usage in KEEL per fill, release, ruling and withdrawal |
-| How Keel is paid | In KEEL, bought on the chain's own order book | In KEEL, the same way |
+| Client fees and margin | **Untouched.** Keel charges usage, never a share of the client's fees | **Untouched.** While the client's plan runs the chain waives its protocol fee for the client's users; the client sets its own retail fee and receives it in the same posting, and pays usage per fill, release, ruling and withdrawal |
+| How Keel is paid | A plan every 30 days and usage, priced in dollars and paid in USDT, which the chain buys into KEEL; plus KEEL the client locks and gets back | The same way |
 
 A client can run both models at once: custodial accounts in its own vault,
 wallet users on the network vault. It can also switch a network from one
@@ -142,7 +142,7 @@ points at it and through nothing else. The reasons:
 A pending rotation can be dropped with `CancelCustodyRotation`;
 `GET /v1/custody/{client}` lists every live generation (`gen`, `status`,
 `drain_until`, `reported_empty`) and any pending rotation. A rotation is
-billed as `pools.usage_rotation_keel`.
+billed as `pools.usage_rotation_usd_micro`.
 
 **What changes and what does not, from the exchange's side.** "Address"
 means two different things here, and a rotation touches only one of them.
@@ -199,7 +199,7 @@ address moves custody float into network float; `Withdraw` from its
 address). Two-way user flow nets out, so external transactions shrink to the
 net drift and batch like any payout. `GET /v1/custody/{client}` shows both
 floats per asset. A swap is billed as rails usage like a payout
-(`clients.usage_outbound_keel`).
+(`clients.usage_outbound_usd_micro`).
 
 **What Keel does**
 
@@ -227,11 +227,12 @@ floats per asset. A swap is billed as rails usage like a payout
   user, the client signs as custodian, users see their balance on the
   explorer).
 
-**What Keel charges** (all in KEEL, set by governance): the usage prices
-`clients.usage_address_keel` per custody address issued and
-`clients.usage_outbound_keel` per custody withdrawal, charged to the
-custodian's KEEL balance whoever signed the action, plus a service tier
-chosen by locking KEEL. The client sees every charge as a posting on the explorer, like any
+**What Keel charges** (in dollars, paid in USDT, set by governance): the
+plan fee of the tier the client's locked KEEL selects, every 30 days, and
+the usage prices `clients.usage_address_usd_micro` per custody address
+issued and `clients.usage_outbound_usd_micro` per custody withdrawal,
+drawn from the plan's allowance first and then from the custodian's USDT
+balance whoever signed the action (`docs/clients.md`, Pricing). The client sees every charge as a posting on the explorer, like any
 other. Compared with a custody provider: no invoice, no per-call opacity, no
 vendor that can drop a subscription or a webhook, one API for every network,
 and the same numbers visible to the client's users.
@@ -253,13 +254,17 @@ bridged coins *in their wallet*, under a Bitcoin or Tron key of their own
 derived from the same seed, and move them into Keel only to trade
 (`wallet.md` §5b); nothing about the client's integration changes.
 
-**What Keel charges:** usage in KEEL, per flow (`clients.usage_fill_keel`,
-`usage_release_keel`, `usage_ruling_keel`, `usage_outbound_keel`), never a
-share of the client's fees. The client's users pay no protocol fee; the
-client sets its own retail fee (`SetClientFee`), and the chain pays that
-fee into the client's account in the same posting as the release. A usage
-charge never blocks a user's trade: what the client cannot pay is owed and
-collected from its next KEEL, and the rails (addresses, withdrawals) stay
+**What Keel charges:** the plan fee of the client's tier every 30 days and
+usage per flow (`clients.usage_fill_usd_micro`, `usage_release_usd_micro`,
+`usage_ruling_usd_micro`, `usage_outbound_usd_micro`), in dollars paid in
+USDT, never a share of the client's fees. While the plan runs the client's
+users pay no protocol fee; the client sets its own retail fee
+(`SetClientFee`), and the chain pays that fee into the client's account in
+the same posting as the release. Each user account locks 1 KEEL for its
+action capacity, which the client sends at onboarding and the user gets
+back on unlocking. A usage charge never blocks a user's trade: what the
+client cannot pay is owed and
+collected from its next USDT, and the rails (addresses, withdrawals) stay
 closed meanwhile. `clients.md` has the numbers.
 
 **Where the trust is.** In Model A the client holds its own key and signer;

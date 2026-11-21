@@ -132,6 +132,8 @@ pub fn build(args: &Args, chain_id: u32) -> anyhow::Result<Genesis> {
         .map(|s| validator(s))
         .collect::<anyhow::Result<_>>()?;
     let mut g = Genesis::devnet(chain_id, &[], Vec::new());
+    // A network, not a devnet: no free budget unless the overrides say so.
+    g.params = Params::default();
     let observers = if args.observers.is_empty() {
         validators.iter().map(|v| v.address).collect()
     } else {

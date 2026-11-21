@@ -208,6 +208,17 @@ if [ "$SIGNER_MODE" = tss ]; then
   sudo systemctl restart "keel-tss@$N" 2>/dev/null || true
 fi
 sudo systemctl restart "keel-observer@$N"
+# A network has no free action budget: this host's operator key (its votes,
+# the checkpoint proposals, the faucet top-up, client onboarding) acts on
+# the capacity of KEEL it has locked. Idempotent; 100 KEEL is 10,000
+# actions a day.
+OPS=$(sudo sed -n 's/^KEEL_OBSERVER_SECRET=//p' "$ETC/observer-$N.env")
+if "$BIN/keel" --rpc "$RPC" --chain-id "$CHAIN_ID" ensure-capacity --secret "$OPS" --keel "${KEEL_OPERATOR_LOCK_KEEL:-100}" >/dev/null; then
+  echo "operator key holds its capacity lock"
+else
+  echo "could not lock KEEL for the operator key: its votes and transfers are refused (BUDGET_EXHAUSTED) until it locks at least 1 KEEL"
+fi
+unset OPS
 sudo systemctl start keel-vote.timer keel-probe.timer keel-backup.timer
 sudo systemctl stop keel-btc-checkpoint-vote.timer 2>/dev/null || true; sudo systemctl disable keel-btc-checkpoint-vote.timer 2>/dev/null || true
 if [ "$IS_HOST0" = true ]; then
@@ -239,6 +250,16 @@ if [ "$IS_HOST0" = true ]; then
       fi
     done
     unset FS
+    # The faucet sends two transfers per claim and needs capacity for them
+    # like any account: 50 KEEL locked is 5,000 actions a day.
+    sleep 8
+    FKEY=$(sudo sed -n 's/^KEEL_FAUCET_SECRET=//p' "$ETC/indexer.env")
+    if [ -n "$FKEY" ] && "$BIN/keel" --rpc "$RPC" --chain-id "$CHAIN_ID" ensure-capacity --secret "$FKEY" --keel "${KEEL_FAUCET_LOCK_KEEL:-50}" >/dev/null; then
+      echo "faucet holds its capacity lock"
+    else
+      echo "could not lock KEEL for the faucet: claims fail with BUDGET_EXHAUSTED until it locks at least 1 KEEL"
+    fi
+    unset FKEY
   else
     echo "indexer did not answer /v1/faucet; the faucet was not topped up (faucet off, or the indexer is still starting)"
   fi
@@ -255,7 +276,7 @@ if [ "$IS_HOST0" = true ]; then
     python3 -c 'import json,sys
 for c in json.loads(sys.argv[1]):
     a=["--attester"] if c.get("attester", True) else []
-    a+=["--keel", str(c.get("keel", 100000)), "--kusd", str(c.get("kusd", 100000))]
+    a+=["--keel", str(c.get("keel", 150000)), "--kusd", str(c.get("kusd", 100000))]
     print(c["address"], " ".join(a))' "$KEEL_CLIENTS" | while read -r ADDRC ARGSC; do
       # shellcheck disable=SC2086
       sudo systemd-run --unit "keel-onboard-${ADDRC:0:8}" --collect --quiet /opt/keelchain/onboard-client.sh "$ADDRC" $ARGSC || true

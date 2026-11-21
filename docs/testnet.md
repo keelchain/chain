@@ -63,10 +63,14 @@ sends are plain transfers on the explorer. Scripted: `POST https://testnet.keelc
 holds, `GET /v1/faucet/claims` for history. Clients' operator accounts are
 funded through onboarding, not the faucet.
 
-The faucet is also the first thing a new address needs: the chain refuses
-every action from an address holding less than `budget.activation_keel`
-(0.1 KEEL) with `NOT_ACTIVATED`, including the request for a deposit
-address, so claim KEEL before anything else (`docs/governance.md`).
+The faucet is also the first thing a new address needs. There is no free
+action budget: an address acts on the capacity of KEEL it has locked, so
+claim KEEL, then lock 1 KEEL from the wallet's *Action capacity* card
+(a hundred actions a day, returned in full after unlocking). Before that
+the chain refuses every action, including the request for a deposit
+address, with `BUDGET_EXHAUSTED`, or `NOT_ACTIVATED` while the address
+holds less than `budget.activation_keel` (0.1 KEEL)
+(`docs/governance.md`).
 
 ## Operations
 

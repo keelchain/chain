@@ -519,11 +519,29 @@ pub enum Event {
         value_per_share: u128,
     },
     /// A client could not pay a usage price when it fell due; it is owed
-    /// and collected from the client's next KEEL.
+    /// (in the stable asset) and collected from the client's next balance.
     UsageOwed {
         client: Address,
         amount: Amount,
         kind: String,
+    },
+    /// A usage price (or part of one) paid out of the client's plan
+    /// allowance: `amount` USD micro for `kind`.
+    UsageCovered {
+        client: Address,
+        amount: Amount,
+        kind: String,
+    },
+    /// A client's plan period started: it paid `fee` of `asset` for tier
+    /// `tier` and holds `allowance` USD micro of usage until `ends_at`
+    /// (block time, seconds).
+    ClientPlanStarted {
+        client: Address,
+        tier: u8,
+        asset: Asset,
+        fee: Amount,
+        allowance: Amount,
+        ends_at: u64,
     },
     // ---- recovery
     RecoveryRequested {

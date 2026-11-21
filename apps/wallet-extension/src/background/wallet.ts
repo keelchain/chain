@@ -10,6 +10,7 @@ import { decryptVault, encryptVault, WrongPasswordError } from '../core/vault';
 import { accountAddress, generateMnemonic, mnemonicToSeed, normalizeMnemonic, validateMnemonic } from '../core/keys';
 import { sessionAction, validateEnvelope, validateSessionRequest } from '../core/actions';
 import { decodeAction, sessionSentence, type DecodedAction } from '../core/decode';
+import { actionErrorText, lockBudgetAction, NO_CAPACITY_MESSAGE, unlockBudgetAction } from '../core/capacity';
 import { signAction, signMessage } from '../core/sign';
 import { broadcastBtc, btcFeeRate, btcUtxos, buildBtcTransfer, externalApis, extNetwork, selfKey, tronBalances, tronBroadcast, tronCreateTrc20, tronCreateTrx, tronSign, type ExtNetwork, type SelfChain, type SelfKey } from '../core/selfcustody';
 import type { Action } from '../inpage/types';
@@ -101,6 +102,7 @@ function refusal(what: 'action' | 'request', outcome: { code?: unknown; error?: 
     const keel = m ? (Number(m[1]) / 1_000_000).toString() : 'a small amount of';
     return new UiError(`This address holds no KEEL yet. It needs at least ${keel} KEEL before the chain accepts anything from it: use the faucet, or receive a transfer, then try again.`);
   }
+  if (outcome.code === 'BUDGET_EXHAUSTED') return new UiError(NO_CAPACITY_MESSAGE);
   return new UiError(`The node refused the ${what}: ${JSON.stringify(outcome.error ?? status)}`);
 }
 
@@ -388,6 +390,8 @@ export class Wallet {
    * Send from the popup: a `Transfer` (kind `transfer`, to a Keel address)
    * or a `Withdraw` (kind `withdraw`, to an external address on the asset's
    * chain), signed with the active key and posted to the network's RPC.
+   * The kinds `lock-budget` and `unlock-budget` move KEEL into and out of
+   * the lock that grants action capacity.
    * `amount` is in the asset's smallest units. No site is involved, so the
    * form is the approval; the popup shows the decoded summary first.
    */
@@ -420,6 +424,10 @@ export class Wallet {
       // The float swap (docs/models.md): custody <-> the chain's market, no coins moving.
       if (!asset.includes('.')) throw new UiError(`${asset} is a Keel asset; only bridged assets sit in custody.`);
       action = { SwapCustody: { asset, amount, to: kind === 'swap-to-market' ? 'deposit' : 'custody', on_behalf_of: null } } as unknown as Action;
+    } else if (kind === 'lock-budget' || kind === 'unlock-budget') {
+      // Action capacity (core/capacity.ts): KEEL into the lock, or on its way back out.
+      if (asset !== 'KEEL') throw new UiError('Action capacity is locked in KEEL.');
+      action = kind === 'lock-budget' ? lockBudgetAction(amount) : unlockBudgetAction(amount);
     } else {
       throw new UiError(`Unknown send kind ${kind}`);
     }
@@ -436,8 +444,8 @@ export class Wallet {
       await new Promise((r) => setTimeout(r, 750));
       const rr = await fetch(`${rpc}/v1/receipts/${txId}`);
       if (rr.ok) {
-        const receipt = (await rr.json()) as { ok?: boolean; error?: { message?: string } | null };
-        return { txId, ok: Boolean(receipt.ok), error: receipt.ok ? null : (receipt.error?.message ?? 'rejected') };
+        const receipt = (await rr.json()) as { ok?: boolean; error?: { code?: string; message?: string } | null };
+        return { txId, ok: Boolean(receipt.ok), error: receipt.ok ? null : actionErrorText(receipt.error?.code, receipt.error?.message) };
       }
     }
     return { txId, ok: true, error: 'submitted; the receipt did not arrive in time' };
@@ -486,8 +494,8 @@ export class Wallet {
       await new Promise((r) => setTimeout(r, 750));
       const rr = await fetch(`${rpc}/v1/receipts/${txId}`);
       if (rr.ok) {
-        const receipt = (await rr.json()) as { ok?: boolean; error?: { message?: string } | null };
-        return { txId, ok: Boolean(receipt.ok), error: receipt.ok ? null : (receipt.error?.message ?? 'rejected') };
+        const receipt = (await rr.json()) as { ok?: boolean; error?: { code?: string; message?: string } | null };
+        return { txId, ok: Boolean(receipt.ok), error: receipt.ok ? null : actionErrorText(receipt.error?.code, receipt.error?.message) };
       }
     }
     return { txId, ok: true, error: 'submitted; the receipt did not arrive in time' };

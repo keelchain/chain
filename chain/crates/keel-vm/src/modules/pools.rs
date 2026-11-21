@@ -91,15 +91,15 @@ pub struct Pool {
 pub struct PoolsParams {
     /// Blocks a draining generation is kept at least.
     pub grace_blocks: u64,
-    /// KEEL charged to the custodian per rotation.
-    pub usage_rotation_keel: u128,
+    /// USD micro charged to the custodian per rotation.
+    pub usage_rotation_usd_micro: u128,
 }
 
 impl Default for PoolsParams {
     fn default() -> Self {
         Self {
             grace_blocks: 1_000,
-            usage_rotation_keel: 0,
+            usage_rotation_usd_micro: 0,
         }
     }
 }
@@ -112,13 +112,13 @@ pub struct PoolsState {
     pub batch_gen: BTreeMap<u64, u64>,
 }
 
-pub const PARAM_KEYS: &[&str] = &["pools.grace_blocks", "pools.usage_rotation_keel"];
+pub const PARAM_KEYS: &[&str] = &["pools.grace_blocks", "pools.usage_rotation_usd_micro"];
 
 pub fn get_param(state: &State, key: &str) -> Option<u128> {
     let p = &state.pools.params;
     Some(match key {
         "pools.grace_blocks" => p.grace_blocks as u128,
-        "pools.usage_rotation_keel" => p.usage_rotation_keel,
+        "pools.usage_rotation_usd_micro" => p.usage_rotation_usd_micro,
         _ => return None,
     })
 }
@@ -133,7 +133,7 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
                 .filter(|b| *b >= 1)
                 .ok_or_else(|| VmError::Invalid(format!("{key} must be >= 1")))?
         }
-        "pools.usage_rotation_keel" => p.usage_rotation_keel = value,
+        "pools.usage_rotation_usd_micro" => p.usage_rotation_usd_micro = value,
         _ => return Err(VmError::Invalid(format!("cannot set {key}"))),
     }
     Ok(vec![Event::ParamChanged {

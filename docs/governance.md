@@ -21,35 +21,43 @@ basis points (100 bps = 1%). USD values are in micro-dollars
 Read the live values at `GET /v1/params` on any node; the explorer shows
 them on the Governance page with the proposal that last changed each.
 
-## The two levers that decide what an action costs
+## What an action costs
 
-Keel has no gas. What it has instead are three governance parameters that
-together define the cost of acting, and the design intent is that they are
-tuned by vote, not by code:
+Keel has no gas and no fee per action. An address acts on the capacity of
+the KEEL it has locked, and the parameters below define that capacity.
+They are tuned by vote, not by code:
 
 | Key | Default | What it does |
 |---|---|---|
-| `budget.base` | 500 | Free actions every address gets, once: enough to onboard (receive, request addresses, first trades), not a lifetime allowance. Capacity at volume comes from locked KEEL (below), which is linear in KEEL and additive across addresses, so splitting work over many addresses buys nothing. **Set to 0 and the chain is in fee mode**: there is no free budget, and an address pays `budget.action_fee_keel` for every action it has no earned or locked capacity for. |
-| `budget.action_fee_keel` | 1,000 (0.001 KEEL) | The price of one action in fee mode. Routed through the fee split like every other fee. In fee mode a value of 0 means an address may act only on earned or locked capacity. Dormant while `budget.base` is above 0. |
+| `budget.per_locked_keel_per_day` | 100 | Actions per day granted per whole KEEL locked with `LockBudget`. The first day's worth is there when the lock lands (scaled down if the unlock delay is under a day), then the pool refills linearly over 24 h. Capacity is linear in KEEL and additive across addresses, so splitting work over many addresses buys nothing. |
+| `budget.unlock_delay_secs` | 259,200 (3 days) | Delay before `UnlockBudget` returns the KEEL, in full. At most one year. This is what makes capacity cost something: the KEEL behind an action cannot be moved to another key for this long. |
+| `budget.free_lock_min_keel` | 1,000,000 (1 KEEL) | A `LockBudget` of at least this many orcas, which the signer holds in full, is accepted from an address with no capacity. It is the way in for a new address. 0: no lock is free, and a new address needs earned capacity first. |
+| `budget.base` | 0 | Free actions every address gets, once. **0 on every network**: a grant per address is a grant per keypair, and it cannot be priced (see below). A devnet started with `keel-node --devnet` sets it to 500 so local scripts act without locking. |
+| `budget.action_fee_keel` | 0 | With `budget.base` at 0 and this above 0 the chain is in *fee mode*: an address with no earned or locked capacity left pays this many orcas per action, through the fee split. At 0 such an address is refused (`BUDGET_EXHAUSTED`). |
 | `budget.activation_keel` | 100,000 (0.1 KEEL) | The least KEEL an address must hold before any budget-spending action from it is accepted (`NOT_ACTIVATED` otherwise). Spendable, locked, unlocking and bonded KEEL and the refundable offer and proposal deposits all count; trade escrow does not. Observer actions, cancels and a session key revoking itself are exempt. 0 turns the floor off. |
 
-Why the floor exists: a free budget per address is a free budget per
-keypair, and keypairs cost nothing. With the floor, every identity in a
-flood has to be funded first, so the attacker pays in KEEL per key while a
-real user, who arrives through a deposit, the faucet or a client's
-onboarding transfer, never notices. Why the fee switch exists: the free
-budget is the attractive part of Keel and the default, and governance can
-keep it, raise it, lower it, or move to a fee at any time without a code
-change. The other budget knobs stay in effect in both modes:
+Why there is no free grant. Until 2026-11-21 every address started with
+500 free actions, and the activation floor was meant to price them: a key
+had to hold 0.1 KEEL before its grant counted. But holding is not paying.
+One coin could be walked from key to key, each new key spending its grant
+and using its last action to pass the coin on, so the same 0.1 KEEL
+bought free actions without end. A lock does not have that hole: the KEEL
+that grants capacity stays where it is for the unlock delay. A user needs
+1 KEEL, locks it once, has a hundred actions a day and gets the coin back
+whenever they leave. What a new address needs is that first KEEL: from the
+faucet on the testnet, from a deposit or a purchase, or from the client
+that onboards it.
+
+The floor stays as a second line: an address with nothing can only send
+actions that are refused before they cost the chain anything. The other
+budget knobs:
 
 | Key | Default | What it does |
 |---|---|---|
 | `budget.per_usd_filled` | 1 | Actions earned per whole USD an address fills on a USDT-quoted pair, taker or maker. |
 | `budget.cancel_bonus` | 100,000 | Cancels draw on `min(limit + cancel_bonus, 2 × limit)`, so a capped address can always unwind. |
-| `budget.max_per_block` | 200 | Most actions one address may put in one block (`BLOCK_CAP`). |
+| `budget.max_per_block` | 200 | Most actions one address may put in one block (`BLOCK_CAP`). A free lock counts. |
 | `budget.price_per_action` | 1,000 | Price of one action under `BuyBudget` (adds to `earned`). |
-| `budget.per_locked_keel_per_day` | 100 | Actions per day granted per whole KEEL locked with `LockBudget`; the pool refills linearly over 24 h. |
-| `budget.unlock_delay_secs` | 259,200 (3 days) | Delay before `UnlockBudget` returns the KEEL. At most one year. |
 
 ## Limits that used to be constants
 
@@ -92,31 +100,51 @@ proposals altogether.
 | `fee_split_validators_bps` | 4,000 | Share to validator rewards. |
 | `fee_split_burn_bps` | 1,000 | Share burnt. The three must sum to 10,000. |
 
-Client pricing (`clients.*`, the fee waiver of 0.2.0):
+Client pricing (`clients.*`): the plan, the usage prices and the fee waiver.
+Prices are in USD micro and are paid in USDT (the stable asset), which the
+epoch buyback turns into KEEL.
 
 | Key | Default | What it does |
 |---|---|---|
-| `clients.protocol_fee_waived` | 1 | 1: accounts attested by a live client pay no protocol fee on fills, releases, rulings and withdrawals, and the client pays the usage prices below. 0: the pre-0.2.0 pricing. |
+| `clients.protocol_fee_waived` | 1 | 1: accounts attested by a client with a running plan and nothing owed pay no protocol fee on fills, releases, rulings and withdrawals, and the client pays the usage prices below. 0: protocol fee plus a capped retail fee for everyone. |
 | `clients.fee_cap_p2p_bps` | 200 | Cap on a client's retail P2P fee while the waiver is off. |
 | `clients.fee_cap_taker_bps` | 50 | Cap on a client's retail taker fee while the waiver is off. |
 | `clients.fee_cap_withdraw_bps` | 100 | Cap on a client's retail withdrawal fee while the waiver is off. |
-| `clients.usage_address_keel` | 100,000 (0.1 KEEL) | KEEL a client pays per deposit address issued to one of its accounts. |
-| `clients.usage_outbound_keel` | 100,000 (0.1 KEEL) | KEEL per withdrawal queued for one of its accounts. |
-| `clients.usage_fill_keel` | 10,000 (0.01 KEEL) | KEEL per order of its accounts that filled. |
-| `clients.usage_release_keel` | 100,000 (0.1 KEEL) | KEEL per escrow release. |
-| `clients.usage_ruling_keel` | 1,000,000 (1 KEEL) | KEEL per dispute ruling. |
-
-These five are what Keel earns from a client's flows while the protocol fee
-is waived for its users, and the only revenue the fee split, and so the
-validators, see from them. At zero (the value before 2026-11-15) the waiver
-was a full subsidy. Clients buy KEEL to pay them, which is where KEEL
-demand from exchanges comes from.
+| `clients.plan_period_secs` | 2,592,000 (30 days) | Length of a plan period. Between one day and one year. |
+| `clients.tier1_lock_keel` | 100,000,000,000 (100,000 KEEL) | KEEL the client's operator account must have locked for tier 1. 0 turns a tier off. |
+| `clients.tier1_fee_usd_micro` | 300,000,000 ($300) | What a tier 1 period costs. |
+| `clients.tier1_allowance_usd_micro` | 300,000,000 ($300) | Usage a tier 1 period includes. |
+| `clients.tier2_lock_keel` | 500,000,000,000 (500,000 KEEL) | Lock for tier 2. |
+| `clients.tier2_fee_usd_micro` | 1,000,000,000 ($1,000) | What a tier 2 period costs. |
+| `clients.tier2_allowance_usd_micro` | 1,200,000,000 ($1,200) | Usage a tier 2 period includes. |
+| `clients.tier3_lock_keel` | 2,000,000,000,000 (2,000,000 KEEL) | Lock for tier 3. |
+| `clients.tier3_fee_usd_micro` | 3,000,000,000 ($3,000) | What a tier 3 period costs. |
+| `clients.tier3_allowance_usd_micro` | 4,000,000,000 ($4,000) | Usage a tier 3 period includes. |
+| `clients.usage_address_usd_micro` | 20,000 ($0.02) | Per deposit address issued to one of the client's accounts. |
+| `clients.usage_outbound_usd_micro` | 100,000 ($0.10) | Per withdrawal queued for one of its accounts, and per float swap. |
+| `clients.usage_fill_usd_micro` | 2,000 ($0.002) | Per order of its accounts that filled. |
+| `clients.usage_release_usd_micro` | 50,000 ($0.05) | Per escrow release. |
+| `clients.usage_ruling_usd_micro` | 1,000,000 ($1) | Per dispute ruling. |
 | `clients.buyback_max_slippage_bps` | 500 | The epoch buyback skips an asset whose best ask is further than this above the last price. |
 | `clients.buyback_dust_usd_micro` | 1,000,000 | Balances below this are not swept by the buyback. |
 | `clients.service_dedicated_keel_per_period` | 0 | KEEL per 30 days for a dedicated node (informational for the gateway). |
 
-Other KEEL prices: `pools.usage_rotation_keel` (0) per custody vault
-rotation, `recovery.fee_keel` (0) per recovery request.
+The plan fee and the usage prices are what Keel earns from a client, and
+the only revenue the fee split, and so the validators, see from its flows
+while the protocol fee is waived for its users. They are priced in dollars
+so a client's bill does not move with the price of KEEL, and they recur:
+a plan is paid every period, usage with every flow. The lock is a
+different thing: it is the client's stake and its action capacity, it
+selects the tier, and it comes back in full. `docs/tokenomics.md` has the
+reasoning and `docs/clients.md` the client's side.
+
+A client is in the highest tier whose lock its operator account meets;
+the tiers are expected to ascend but each key is set on its own. The
+dollar figures above are starting values for governance to set against
+what gateways and custody providers charge.
+
+Other prices: `pools.usage_rotation_usd_micro` (0) per custody vault
+rotation, billed like usage; `recovery.fee_keel` (0) per recovery request.
 
 ## Peer-to-peer trading and disputes
 

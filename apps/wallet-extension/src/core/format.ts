@@ -103,6 +103,8 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   arbitrator_bond: 'Arbitrator bond',
   delegation: 'Delegated',
   unbonding: 'Unbonding',
+  budget_lock: 'Locked for action capacity',
+  budget_unlocking: 'Unlocking',
 };
 
 export function accountTypeLabel(type: string): string {

@@ -39,9 +39,10 @@ order.
 
 Three properties shape everything else:
 
-- **No gas.** An action is free to submit. Spam is bounded by a per-address
-  *budget* that every account gets for free, that grows with the volume the
-  address actually trades, and that can be enlarged by locking KEEL.
+- **No gas.** An action costs nothing. Spam is bounded by a per-address
+  *capacity* that comes from KEEL the account has locked (1 KEEL is a
+  hundred actions a day, and the KEEL comes back when it is unlocked) and
+  grows with the volume the address actually trades.
 - **One ledger for everything.** Order fills, escrow, fees, withdrawals and
   rewards are balanced ledger postings. Nothing can go negative, nothing is
   created outside genesis except the stablecoin against its reserve.
@@ -170,8 +171,10 @@ the address from a set. This is listed in section 17.
   which the chain releases on schedule.
 - Demand for KEEL comes from bonds (validator, observer, arbitrator),
   governance weight, the refundable 10 KEEL deposit per live P2P offer, the
-  1,000,000 KEEL proposal deposit, buying action budget, and locking KEEL for
-  action capacity (nothing is paid, the KEEL comes back after three days).
+  1,000,000 KEEL proposal deposit, buying action budget, locking KEEL for
+  action capacity (nothing is paid, the KEEL comes back after three days;
+  every account that acts holds a lock, and a client's lock also selects
+  its plan tier), and the epoch buyback of what clients pay in USDT.
 - Supply shrinks through the burn share of every fee (10% by default),
   vetoed proposal deposits and, once wired, slashed bonds.
 
@@ -283,21 +286,35 @@ Every number is a chain parameter with a default in `keel-vm::Params`:
 | Lightning routing allowance | max(0.5%, 10 sats), unspent part refunded | withdrawer | on settlement |
 | Stablecoin mint / burn | none | — | — |
 | Extra action budget | 0.001 KEEL per action | buyer | `BuyBudget` |
+| Client plan | $300 / $1,000 / $3,000 per 30 days by tier, in USDT | client | epoch boundary, when a period starts |
+| Client usage | dollar price per address, withdrawal, fill, release, ruling, in USDT | client, after its plan allowance | each flow |
 
 Every fee is one balanced posting split into the system accounts
 `treasury` (50%), `validator_rewards` (40%) and `burn` (10%); rounding
 dust goes to the treasury.
 
-**Clients keep their fees (0.2.0).** An account attested by a live client
-pays none of the taker fee, the P2P release fee, the dispute fee or the
-withdrawal flat fee; the chain bills the client a KEEL price per flow
-instead (`clients.usage_fill_keel` per order that filled,
-`usage_release_keel` per release, `usage_ruling_keel` per ruling, and the
-existing `usage_outbound_keel`). Those charges never block the user: what
-the client cannot pay is recorded as owed (`UsageOwed`), collected from its
-next KEEL at the epoch boundary or its next charge, and no new deposit
-address or withdrawal is issued to its accounts while it is owed. With the
-fee waived the client's retail schedule (`SetClientFee`) is uncapped.
+**Clients keep their fees, and pay a plan.** An account attested by a
+client with a running plan pays none of the taker fee, the P2P release
+fee, the dispute fee or the withdrawal flat fee; the chain bills the client
+a dollar price per flow instead (`clients.usage_fill_usd_micro` per order
+that filled, `usage_release_usd_micro` per release, `usage_ruling_usd_micro`
+per ruling, and `usage_outbound_usd_micro` per withdrawal), settled in USDT
+through the fee split. Those charges never block the user: what the client
+cannot pay is recorded as owed (`UsageOwed`), collected from its next USDT
+at the epoch boundary or its next charge, and while it is owed no new
+deposit address or withdrawal is issued to its accounts and its users pay
+the protocol fees again. With the fee waived the client's retail schedule
+(`SetClientFee`) is uncapped.
+
+The plan is what makes that bill recurring. The KEEL a client's operator
+account has locked selects one of three tiers (`clients.tier<N>_lock_keel`).
+At an epoch boundary, a client with a tier and no running period pays that
+tier's fee in USDT (`ClientPlanStarted`) and holds its usage allowance for
+`clients.plan_period_secs` (30 days); the usage prices draw on the
+allowance first (`UsageCovered`) and on the client's USDT after. A client
+that cannot pay the fee has no plan, is tried again at every boundary, and
+meanwhile is an attester whose users pay the protocol fees. A plan fee is
+never owed.
 `clients.protocol_fee_waived = 0` restores the previous pricing. Unattested
 accounts pay the table above. The split must always sum to 100%. USD values
 for the P2P surcharge and withdrawal fee come from the chain's own
@@ -321,7 +338,7 @@ shared test vectors).
 Admission, in order: chain id, signature, signer is not the system address,
 nonce is exactly the next one for that key, session-key resolution, module
 not paused, then either observer authorization (bonded, budget-free
-actions) or one unit of budget. Everything after that runs inside a ledger
+actions) or one unit of budget (none for a first `LockBudget`, section 7). Everything after that runs inside a ledger
 savepoint: if the module refuses (insufficient funds, bad price), the
 savepoint rolls back, the nonce and one budget unit are still consumed, and
 a failure receipt is recorded. Blocks therefore never become invalid
@@ -354,63 +371,69 @@ for a non-custodial user without a wallet popup per click.
 
 ## 7. Quota per address: budgets instead of gas
 
-Every address has a **budget**: `limit = base + earned`, with
-`budget.base` = 500 free actions by default: an onboarding grant (receive,
-request deposit addresses, a first round of trades), not a lifetime
-allowance. Each action, successful or not, spends one unit; observers'
-attestations spend none. `earned` grows by one
-action per whole USD the address fills on an USDT-quoted pair (taker or
-maker) and by purchase (`BuyBudget`, 0.001 KEEL per action, routed through
-the fee split). Cancels (cancel order, close offer, cancel trade) draw on
-a separate ceiling `min(limit + 100,000, 2 × limit)` so a capped address
-can always unwind. A per-block cap (`budget.max_per_block` = 200) bounds
-burst.
+An address acts on **capacity**, and capacity comes from **locking KEEL**
+(the Tron energy model, decided 2026-09-08): each whole KEEL locked with
+`LockBudget` grants `budget.per_locked_keel_per_day` (100) actions per day.
+The first day's worth is in the pool when the lock lands, and the pool
+refills linearly over 24 hours. `UnlockBudget` returns the KEEL in full
+after `budget.unlock_delay_secs` (3 days). Nothing is paid: there is no
+gas and no fee per action. Each action, successful or not, spends one
+unit; observers' attestations spend none.
 
-The free budget does not regenerate. Capacity beyond it comes from
-**locking KEEL** (the Tron energy model, decided 2026-09-08): each
-whole KEEL locked grants `budget.per_locked_keel_per_day` (100) actions per
-day into a pool that refills linearly over 24 hours; the pool is spent
-after the free budget. `UnlockBudget` returns the KEEL in full after
-`budget.unlock_delay_secs` (3 days). Nothing is paid, so it adds demand for
-KEEL without adding a fee. The wallet page shows the capacity card and a
-client's own interface can show each user's lock.
+**There is no free budget (2026-11-21).** `budget.base`, the free actions
+an address starts with, is 0 on every network. It used to be 500, guarded
+by the activation floor below, and the guard did not hold: the floor makes
+a key *hold* 0.1 KEEL, not spend it, so one coin walked from key to key
+collected the grant at every stop, each key using its last free action to
+pass the coin on. A hundred KEEL moved that way bought tens of thousands
+of actions a block; the same hundred KEEL locked buys ten thousand a day.
+A lock cannot be walked: the KEEL behind the capacity stays put for the
+unlock delay.
 
-Why the base is small (2026-11-15): a grant per address is a grant per
-keypair, and the activation floor only makes keypairs cost dust that stays
-the owner's. Had the base stayed at 10,000, an exchange could run any
-volume for free by spreading it over addresses, and no paid path (locking,
-buying) could compete. Locked capacity has the property a per-address grant
-lacks: it is linear in KEEL and additive across addresses, so ten addresses
-with one KEEL each get exactly what one address with ten KEEL gets. A
-retail user who locks two or three KEEL has a few hundred actions a day for
-as long as the lock stands; an exchange locks in proportion to its volume
-however it splits its keys.
+**The first lock is free.** An address with no capacity could not send the
+`LockBudget` that gives it some, so a lock of at least
+`budget.free_lock_min_keel` (1 KEEL) that the signer holds in full spends
+no budget. A lock the ledger would refuse is not free, and a free lock
+still counts against the per-block cap. So a new user needs one KEEL (from
+the faucet on the testnet, a deposit, a purchase, or the client that
+onboards them), locks it, and has a hundred actions a day for as long as
+the lock stands. The wallet shows the capacity card with the lock and
+unlock controls.
+
+Capacity from a lock is linear in KEEL and additive across addresses: ten
+addresses with one KEEL each get exactly what one address with ten KEEL
+gets. A retail user locks one or two KEEL; an exchange locks in proportion
+to its volume however it splits its keys, and its operator account's lock
+also selects its plan tier (section 5).
+
+Two smaller sources add to the lock. `earned` grows by one action per
+whole USD the address fills on a USDT-quoted pair (taker or maker) and by
+purchase (`BuyBudget`, 0.001 KEEL per action, through the fee split), and
+is spent before the lock pool. Cancels (cancel order, close offer, cancel
+trade) draw on a separate ceiling so a capped address can always unwind.
+A per-block cap (`budget.max_per_block` = 200) bounds burst.
 
 Other per-address caps: at most 500 open orders (currently counted across
 pairs, see section 17) and a P2P offer allowance that starts at 2 live
 offers and grows by 2 for every 10 completed trades.
 
-**A key must hold KEEL before its budget counts (2026-11-15).** A free
-budget per address is a free budget per keypair, and keypairs are free, so
-on its own the budget would let anyone fill blocks with failing actions
-from fresh keys. The chain therefore refuses every budget-spending action
-from an address holding less than `budget.activation_keel` (0.1 KEEL by
-default; spendable, locked, unlocking and bonded KEEL and the offer and
-proposal deposits all count) with `NotActivated`. Observer actions,
-cancels and a session key revoking itself are exempt. A real user never
-meets the floor by accident: the faucet hands out whole coins, a deposit
-followed by one trade buys far more, and a client sends the dust to each
-account it attests (`docs/clients.md`). A flood pays it per key.
+**A key must hold KEEL before it can act (2026-11-15).** The chain refuses
+every budget-spending action from an address holding less than
+`budget.activation_keel` (0.1 KEEL by default; spendable, locked,
+unlocking and bonded KEEL and the offer and proposal deposits all count)
+with `NotActivated`. Observer actions, cancels and a session key revoking
+itself are exempt. An address that has locked its first KEEL is always
+above the floor.
 
-**No fee by default, a fee by vote.** The free budget is the deliberate
-choice and the default. Governance can change its size (`budget.base`), and
-setting it to 0 puts the chain in *fee mode*: there is no free budget, and
-an address with no earned or locked capacity left pays
-`budget.action_fee_keel` (0.001 KEEL by default) for each action, through
-the fee split, taken before the module runs and kept if the action is
-refused. Both numbers, the activation floor, and every other cap in this
-section are governance parameters (`docs/governance.md`); none is a
-constant in the code.
+**No fee by default, a fee by vote.** With `budget.base` at 0, governance
+can set `budget.action_fee_keel` above 0 and put the chain in *fee mode*:
+an address with no earned or locked capacity left pays that fee for each
+action, through the fee split, taken before the module runs and kept if
+the action is refused. At the default of 0 such an address is refused.
+Every number in this section is a governance parameter
+(`docs/governance.md`); none is a constant in the code. A devnet
+(`keel-node --devnet`) sets `budget.base` to 500 so local scripts and
+tests act without locking; a network genesis does not.
 
 When a budget is exhausted the chain answers `BudgetExhausted`; when the
 per-block cap is hit, `BlockCap`; when the activation floor is not met,
@@ -984,8 +1007,9 @@ to its operator keys.
 - Disputes: `ruling_window_secs` unused; no appeal from a named arbitrator
   to the elected set.
 - `max_open_orders_per_pair` is applied per owner across pairs.
-- The mempool has no global size cap and no per-peer cap; the activation
-  floor prices the flood on chain, the node-side bound is still to do.
+- The mempool has no global size cap and no per-peer cap; the lock and the
+  activation floor bound the flood on chain, the node-side bound is still
+  to do.
 - No crypto-collateralized stablecoin path; no on-chain swap/AMM.
 - Network vault rotation and observer-set changes are manual governance
   steps, not an automatic per-epoch rekey (custody vaults rotate on their

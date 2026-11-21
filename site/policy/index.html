@@ -40,10 +40,10 @@
   <p>Each network's reserve has a target share of the USDT Keel holds. Withdrawing through a network whose reserve is <em>below</em> its target pays a premium of up to <code>stable.rebalance_max_premium_bps</code> (1% by default) of the amount, in proportion to how far below target it is; a network at or above target charges nothing. Premiums go into a pool, and a USDT deposit that refills a short network earns the same rate back out of that pool as a rebate. The premium is shown in the wallet before you confirm, is recorded on chain, and goes to the users who rebalance the reserve, never to Keelchain.</p>
 
   <h2>Withdrawals</h2>
-  <p>A withdrawal pays the network fee of the actual outbound transaction, passed through at cost with any overpayment refunded, plus a flat fee (<code>withdraw_flat_fee_usd_micro</code>, one dollar by default) that is waived for users of a live client. Withdrawals are batched and paid by the observers' threshold signer, or by your exchange's signer from its own vault; the chain refuses a payout whenever a vault's reserves would fall below what its users are owed.</p>
+  <p>A withdrawal pays the network fee of the actual outbound transaction, passed through at cost with any overpayment refunded, plus a flat fee (<code>withdraw_flat_fee_usd_micro</code>, one dollar by default) that is waived for users of a client with a running plan. Withdrawals are batched and paid by the observers' threshold signer, or by your exchange's signer from its own vault; the chain refuses a payout whenever a vault's reserves would fall below what its users are owed.</p>
 
   <h2>Action budget and KEEL</h2>
-  <p>There is no gas. Every address has a free action budget (<code>budget.base</code>, 500 actions by default) and may lock KEEL for more capacity. An address must hold a small amount of KEEL (<code>budget.activation_keel</code>, 0.1 KEEL by default) before its first action is accepted; the testnet faucet provides it. Governance can replace the free budget with a per-action fee in KEEL.</p>
+  <p>There is no gas and no fee per action. An address acts on the KEEL it has locked: each KEEL locked gives a hundred actions a day (<code>budget.per_locked_keel_per_day</code>), and it is returned in full three days after you unlock it. A new address therefore needs 1 KEEL and locks it first; the testnet faucet provides it. There is no free allowance per address. Governance can add a per-action fee in KEEL for addresses with no capacity.</p>
 
   <h2>What Keelchain never does</h2>
   <ul>

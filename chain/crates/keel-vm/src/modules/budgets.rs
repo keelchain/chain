@@ -46,7 +46,8 @@ pub fn apply_buy(
 //
 // The Tron energy model: lock KEEL, receive a daily action allowance in
 // proportion, unlock with a delay and get every unit back. Nothing is paid.
-// The free base budget is untouched, so a retail trader never locks.
+// With no free base budget (the default since 2026-11-21) this is where
+// every address gets its capacity; 1 KEEL covers a retail user.
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use keel_ledger::{AccountKey, Record};
@@ -117,6 +118,18 @@ pub fn require_activated(state: &State, owner: Address) -> Result<(), VmError> {
             need: state.limits.activation_keel,
         })
     }
+}
+
+/// Whether `action` is a `LockBudget` the chain admits without spending
+/// budget: it locks at least `budget.free_lock_min_keel` and `owner` holds
+/// the whole amount, so the lock is certain to post. A lock that would be
+/// refused is not free, or a key could send failing locks for nothing.
+pub fn is_free_lock(state: &State, owner: Address, action: &keel_actions::Action) -> bool {
+    let keel_actions::Action::LockBudget { amount } = action else {
+        return false;
+    };
+    let min = state.limits.free_lock_min_keel;
+    min > 0 && *amount >= min && tokens::balance(state, owner, &state.tokens.native) >= *amount
 }
 
 fn lock_key(owner: Address, native: &keel_types::Asset) -> AccountKey {

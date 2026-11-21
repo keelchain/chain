@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct BudgetParams {
-    /// Free actions every address starts with.
+    /// Free actions every address starts with. 0 on a network (the
+    /// default): capacity comes from locked KEEL only.
     pub base: u64,
     /// Extra actions earned per whole USD of filled volume.
     pub per_usd_filled: u64,
@@ -28,11 +29,14 @@ pub struct BudgetParams {
 impl Default for BudgetParams {
     fn default() -> Self {
         Self {
-            // Onboarding size, not a lifetime allowance (2026-11-15): a
-            // per-address grant is a per-keypair grant, so anything an
-            // address does at volume comes from KEEL locked (linear in KEEL,
-            // additive across addresses, refundable) or earned by filling.
-            base: 500,
+            // No free grant (2026-11-21). A grant per address is a grant
+            // per keypair, and the activation floor does not price it: the
+            // KEEL an address must hold is not spent, so one coin walked
+            // from key to key collected the grant at every stop. Capacity
+            // comes from KEEL locked (linear in KEEL, additive across
+            // addresses, tied up for the unlock delay) or earned by
+            // filling; the first lock itself is free (`apply.rs`).
+            base: 0,
             per_usd_filled: 1,
             cancel_bonus: 100_000,
             max_per_block: 200,
@@ -103,9 +107,23 @@ impl Budget {
         self.lock_updated_ms = now_ms;
     }
 
+    /// Add to the lock. The new KEEL's first day of capacity is there at
+    /// once, so an address can act right after its first lock. It is
+    /// scaled down when the unlock delay is shorter than a day: locking,
+    /// spending, unlocking and locking again must never yield more than
+    /// leaving the KEEL locked does.
     pub fn lock(&mut self, p: &BudgetParams, now_ms: u64, amount: u128) {
         self.regen(p, now_ms);
         self.locked = self.locked.saturating_add(amount);
+        let per_day = amount.saturating_mul(u128::from(p.per_locked_keel_per_day)) / KEEL_UNIT;
+        let delay_ms = u128::from(p.unlock_delay_secs)
+            .saturating_mul(1_000)
+            .min(DAY_MS);
+        let granted = per_day.saturating_mul(delay_ms) / DAY_MS;
+        self.lock_pool = self
+            .lock_pool
+            .saturating_add(granted.min(u128::from(u64::MAX)) as u64)
+            .min(self.lock_cap(p));
     }
 
     /// Reduce the lock; the pool is clipped to the new ceiling.
@@ -234,11 +252,14 @@ mod tests {
             ..Default::default()
         };
         let mut b = Budget::default();
-        // 2 KEEL locked at t=0 → cap 200 actions/day; the pool starts empty
-        // and fills at 200 per 24 h.
+        // 2 KEEL locked at t=0 → cap 200 actions/day; the first day's 200
+        // are there at once, then the pool refills at 200 per 24 h.
         b.lock(&p, 0, 2 * KEEL_UNIT);
-        assert_eq!(b.lock_cap(&p), 200);
+        assert_eq!((b.lock_cap(&p), b.lock_pool), (200, 200));
         b.spend(&p, 1, 0, false).unwrap(); // the free one
+        for _ in 0..200 {
+            b.spend(&p, 1, 0, false).unwrap();
+        }
         assert_eq!(b.spend(&p, 1, 0, false), Err(BudgetError::Exhausted));
         // Six hours later: 50 actions available.
         let six_h = 6 * 3_600_000;
@@ -261,8 +282,27 @@ mod tests {
     }
 
     #[test]
+    fn a_short_unlock_delay_scales_the_capacity_a_lock_grants_at_once() {
+        let mut p = BudgetParams {
+            per_locked_keel_per_day: 100,
+            unlock_delay_secs: 6 * 3_600,
+            ..Default::default()
+        };
+        let mut b = Budget::default();
+        // Six hours of delay: a quarter of the day's 100, which is what
+        // six hours of staying locked would have refilled.
+        b.lock(&p, 0, KEEL_UNIT);
+        assert_eq!(b.lock_pool, 25);
+        p.unlock_delay_secs = 0;
+        let mut c = Budget::default();
+        c.lock(&p, 0, KEEL_UNIT);
+        assert_eq!(c.lock_pool, 0);
+    }
+
+    #[test]
     fn per_block_cap_resets_each_block() {
         let p = BudgetParams {
+            base: 500,
             max_per_block: 2,
             ..Default::default()
         };

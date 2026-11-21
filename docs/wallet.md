@@ -192,9 +192,17 @@ shows: Keel (default) or your wallet. Nothing already deposited changes.
 The card carries the one warning that matters: coins in your wallet have
 no observer set behind them, so a lost phrase loses them.
 
-The popup is five tabs: **Home** (address, balances in Keel, Receive),
+The popup is five tabs: **Home** (address, balances in Keel, Action
+capacity, Receive),
 **Send**, **Deposits** (every incoming deposit and its stage), **Wallet**
 (coins in your wallet) and **Settings**.
+
+**Action capacity** (the *Home* tab): actions available now, KEEL locked,
+actions per day and pending unlocks, with Lock and Unlock. An account acts
+on the KEEL it has locked (1 KEEL is a hundred actions a day and comes
+back in full after unlocking), so a new account locks here before its
+first transfer, order or deposit-address request; a refused action with
+`BUDGET_EXHAUSTED` points back to this card.
 
 **Move to Keel** (the *Wallet* tab): the background derives the
 key, builds the transaction to the account's vault deposit address (Bitcoin:

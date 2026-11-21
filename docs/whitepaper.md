@@ -7,8 +7,8 @@ books, peer-to-peer fiat offers, escrow, disputes, custody of assets on
 other chains, a USD stablecoin and the platform's own fee flow all live in
 one deterministic state machine replicated by a Byzantine-fault-tolerant
 validator set. There is no gas: placing an order, posting an offer or
-stepping a trade forward is a signed action admitted under a per-address
-budget that grows with the volume the address actually fills. Revenue is
+stepping a trade forward is a signed action admitted on the capacity of
+KEEL the address has locked and gets back. Revenue is
 earned only when value moves, and it is split by governance between the
 DAO treasury, the operators who secure the chain, and a burn. No company,
 server, custodian or API provider can stop it, freeze a balance, or change
@@ -69,15 +69,23 @@ applied atomically per action through ledger savepoints.
 
 ## 4. Actions, budgets, and why there is no gas
 
-Every address starts with a free allowance of actions and earns one more
-per USD it fills on the book, plus a fixed bonus for cancels so a capped
-address can always unwind, plus a per-block cap. Heavy users lock KEEL
-for more capacity (`LockBudget`): a locked KEEL grants a daily allowance
-that regenerates linearly over 24 hours and is spent after the free
-budget, and `UnlockBudget` returns the KEEL in full after a delay, the
-Tron energy model. Additional budget can also be bought in KEEL at a
+An address acts on the KEEL it has locked (`LockBudget`): a locked KEEL
+grants a daily allowance of a hundred actions, there at once and
+regenerating linearly over 24 hours, and `UnlockBudget` returns the KEEL
+in full after a delay, the Tron energy model. There is no free allowance
+per address: a grant per key is a grant per keypair, and holding a coin
+does not price it, since the coin can be passed from key to key. The
+first lock of an address is admitted without capacity, so a user needs
+one KEEL and nothing else. An address also earns an action per USD it
+fills on the book, has a bonus for cancels so a capped address can always
+unwind, and a per-block cap. Additional budget can be bought in KEEL at a
 nominal price; that revenue flows to the treasury. Observer-signers'
 attestations are budget-free but bonded.
+
+Businesses that put their users on the chain pay differently: a plan per
+30 days, chosen by the KEEL they lock, and a dollar price per flow, both
+paid in the stablecoin and bought into KEEL by the chain every epoch
+(`docs/tokenomics.md`).
 
 Fees are charged only on:
 
@@ -161,8 +169,10 @@ is planned so the coin can outlive its reserve issuers.
 ## 7. KEEL
 
 KEEL has a hard cap of 21,000,000,000. It is the bond for validators,
-observers and arbitrators; the governance vote; the price of extra action
-budget and of listing an offer; and the asset burned from every fee. Genesis
+observers and arbitrators; the governance vote; what every account locks
+to act and what a client locks for its plan tier; the price of listing an
+offer; what the chain buys with its fee and plan income; and the asset
+burned from every fee. Genesis
 honours every reward the platform has already promised.
 
 ## 8. Governance

@@ -362,6 +362,7 @@ async fn account(
             "activation_balance": keel_vm::modules::budgets::activation_balance(&s, address).to_string(),
             "fee_mode": keel_vm::modules::limits::fee_mode(&s),
             "action_fee_keel": s.limits.action_fee_keel.to_string(),
+            "free_lock_min_keel": s.limits.free_lock_min_keel.to_string(),
             "used": meta.budget.used,
             "limit": meta.budget.limit(p),
             "cancel_limit": meta.budget.cancel_limit(p),
@@ -1423,6 +1424,12 @@ async fn client(
             .map(|((_, asset), amount)| json!({ "asset": asset.to_string(), "amount": amount.to_string() }))
             .collect()
     };
+    let now = s.timestamp / 1000;
+    let locked = s
+        .account_ref(&address)
+        .map(|m| m.budget.locked)
+        .unwrap_or(0);
+    let plan = c.plans.get(&address);
     Ok(Json(json!({
         "address": address.to_hex(),
         "attester": s.attest.attesters.contains(&address),
@@ -1438,12 +1445,30 @@ async fn client(
         "attested_accounts": c.attested_by.values().filter(|a| **a == address).count(),
         "protocol_fee_waived": c.params.protocol_fee_waived == 1,
         "usage_prices": {
-            "address_keel": c.params.usage_address_keel.to_string(),
-            "outbound_keel": c.params.usage_outbound_keel.to_string(),
-            "fill_keel": c.params.usage_fill_keel.to_string(),
-            "release_keel": c.params.usage_release_keel.to_string(),
-            "ruling_keel": c.params.usage_ruling_keel.to_string(),
+            "address_usd_micro": c.params.usage_address_usd_micro.to_string(),
+            "outbound_usd_micro": c.params.usage_outbound_usd_micro.to_string(),
+            "fill_usd_micro": c.params.usage_fill_usd_micro.to_string(),
+            "release_usd_micro": c.params.usage_release_usd_micro.to_string(),
+            "ruling_usd_micro": c.params.usage_ruling_usd_micro.to_string(),
         },
+        "billing_asset": s.tokens.stable.to_string(),
+        "locked_keel": locked.to_string(),
+        "tier": keel_vm::modules::clients::tier_for_lock(&c.params, locked),
+        "plan": plan.map(|p| json!({
+            "tier": p.tier,
+            "started_at": p.started_secs,
+            "ends_at": p.ends_secs,
+            "active": now < p.ends_secs,
+            "fee_usd_micro": p.fee_usd_micro.to_string(),
+            "allowance_left_usd_micro": p.allowance_left_usd_micro.to_string(),
+        })),
+        "plan_period_secs": c.params.plan_period_secs,
+        "tiers": c.params.tiers.iter().enumerate().map(|(i, t)| json!({
+            "tier": i + 1,
+            "lock_keel": t.lock_keel.to_string(),
+            "fee_usd_micro": t.fee_usd_micro.to_string(),
+            "allowance_usd_micro": t.allowance_usd_micro.to_string(),
+        })).collect::<Vec<_>>(),
     })))
 }
 

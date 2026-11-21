@@ -1,6 +1,8 @@
 //! Action capacity by locking KEEL (2026-09-08, the Tron energy model),
 //! the activation floor a fresh key must meet before its budget counts
-//! (2026-11-15), and fee mode: no free budget, pay per action.
+//! (2026-11-15), fee mode (no free budget, pay per action), and the
+//! network default since 2026-11-21: no free budget and no fee, capacity
+//! from the lock only, with the first lock admitted for free.
 
 mod common;
 
@@ -17,8 +19,8 @@ const KEEL: u128 = 1_000_000;
 #[test]
 fn locked_keel_grants_capacity_and_comes_back_after_the_delay() {
     let (mut state, mut alice, _bob, _v) = setup(0);
-    // Tiny free budget so the lock is what carries alice.
-    state.params.budget.base = 2;
+    // No free budget, as on a network: the lock is what carries alice.
+    state.params.budget.base = 0;
     state.params.budget.cancel_bonus = 0;
     state.params.budget.per_locked_keel_per_day = 100;
     state.params.budget.unlock_delay_secs = 3 * 86_400;
@@ -54,8 +56,9 @@ fn locked_keel_grants_capacity_and_comes_back_after_the_delay() {
         (10 * KEEL, 1_000)
     );
 
-    // The lock action itself spent 1 of the 2 free actions. One more free,
-    // then the pool: after 12 h it holds 500.
+    // The lock itself was free and its first day of capacity is there at
+    // once.
+    assert_eq!(b.lock_pool, 1_000);
     let (r, _) = c.block_at_secs(
         1_001,
         &[alice.act(Action::Transfer(keel_actions::Transfer {
@@ -66,6 +69,9 @@ fn locked_keel_grants_capacity_and_comes_back_after_the_delay() {
         }))],
     );
     ok(&r[0]);
+    // With the pool spent it refills over the day: nothing a second
+    // later, half of it after 12 h.
+    c.state.account(alice.addr()).budget.lock_pool = 0;
     let (r, _) = c.block_at_secs(
         1_002,
         &[alice.act(Action::Transfer(keel_actions::Transfer {
@@ -77,7 +83,7 @@ fn locked_keel_grants_capacity_and_comes_back_after_the_delay() {
     );
     assert!(
         matches!(err(&r[0]), VmError::BudgetExhausted),
-        "free budget gone, pool still empty"
+        "pool spent, a second refills nothing"
     );
     let half_day = 1_000 + 12 * 3_600;
     let (r, _) = c.block_at_secs(
@@ -289,12 +295,13 @@ fn a_fresh_key_needs_the_activation_floor_before_its_budget_counts() {
 fn fee_mode_charges_keel_per_action_once_the_free_budget_is_zero() {
     let (state, mut alice, mut bob, _v) = setup(0);
     let mut c = Chain::new(state);
-    let fee = c.state.limits.action_fee_keel;
-    assert_eq!(fee, limits::DEFAULT_ACTION_FEE_KEEL);
-    assert!(!limits::fee_mode(&c.state));
+    assert_eq!(limits::DEFAULT_ACTION_FEE_KEEL, 0, "no fee by default");
+    assert!(!limits::fee_mode(&c.state), "a devnet has a free budget");
 
-    // Governance removes the free budget: fee mode.
+    // Governance removes the free budget and prices an action: fee mode.
+    let fee = 1_000;
     set_param(&mut c.state, "budget.base", 0).expect("param");
+    set_param(&mut c.state, "budget.action_fee_keel", fee).expect("param");
     assert!(limits::fee_mode(&c.state));
 
     // bob has no earned capacity: every action now costs the fee, routed
@@ -384,4 +391,138 @@ fn every_former_constant_is_a_governance_parameter() {
         kind: keel_actions::ProposalKind::Text,
     }))]);
     assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("length")));
+}
+
+/// A network's parameters on the test genesis: no free budget, no fee.
+fn network(state: &mut keel_vm::State) {
+    state.params = keel_vm::Params::default();
+    assert_eq!(state.params.budget.base, 0);
+    assert_eq!(state.limits.action_fee_keel, 0);
+}
+
+#[test]
+fn without_a_free_budget_the_first_lock_is_the_way_in() {
+    let (mut state, mut alice, bob, _v) = setup(0);
+    network(&mut state);
+    let mut c = Chain::new(state);
+    let min = c.state.limits.free_lock_min_keel;
+    assert_eq!(min, KEEL);
+
+    // Funded and activated, alice still cannot act: there is nothing free.
+    let sa = alice.act(transfer(bob.addr(), 1));
+    assert!(matches!(
+        check_admission(&c.state, &sa),
+        Err(VmError::BudgetExhausted)
+    ));
+    let (r, _) = c.block(&[sa]);
+    assert!(matches!(err(&r[0]), VmError::BudgetExhausted));
+
+    // A lock below the minimum is an action like any other.
+    let (r, _) = c.block(&[alice.act(Action::LockBudget { amount: min - 1 })]);
+    assert!(matches!(err(&r[0]), VmError::BudgetExhausted));
+
+    // The minimum is admitted with no capacity at all, and 1 KEEL is a
+    // day's hundred actions, there at once.
+    let sa = alice.act(Action::LockBudget { amount: min });
+    check_admission(&c.state, &sa).expect("the first lock is admitted");
+    let (r, _) = c.block(&[sa]);
+    ok(&r[0]);
+    let b = &c.state.account_ref(&alice.addr()).expect("alice").budget;
+    assert_eq!((b.locked, b.lock_pool, b.used), (KEEL, 100, 0));
+    let (r, _) = c.block(&[alice.act(transfer(bob.addr(), 1))]);
+    ok(&r[0]);
+    assert_eq!(
+        c.state
+            .account_ref(&alice.addr())
+            .expect("alice")
+            .budget
+            .lock_pool,
+        99
+    );
+
+    // The free lock still counts against the per-block cap.
+    c.state.params.budget.max_per_block = 2;
+    let (r, _) = c.block(&[
+        alice.act(Action::LockBudget { amount: min }),
+        alice.act(Action::LockBudget { amount: min }),
+        alice.act(Action::LockBudget { amount: min }),
+    ]);
+    ok(&r[0]);
+    ok(&r[1]);
+    assert!(matches!(err(&r[2]), VmError::BlockCap));
+
+    // 0 turns the free lock off.
+    set_param(&mut c.state, "budget.free_lock_min_keel", 0).expect("param");
+    let mut carol = Actor::new(31);
+    c.state.account(alice.addr()).budget.lock_pool = 10;
+    let (r, _) = c.block(&[alice.act(transfer(carol.addr(), 5 * KEEL))]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[carol.act(Action::LockBudget { amount: KEEL })]);
+    assert!(matches!(err(&r[0]), VmError::BudgetExhausted));
+    audit_clean(&c.state);
+}
+
+#[test]
+fn a_lock_the_signer_cannot_pay_is_not_free() {
+    let (mut state, mut alice, _bob, _v) = setup(0);
+    network(&mut state);
+    let mut c = Chain::new(state);
+    // carol holds the activation floor and half a KEEL: a 1 KEEL lock
+    // would be refused by the ledger, so it is not admitted for free and
+    // a flood of such locks costs capacity carol does not have.
+    let mut carol = Actor::new(31);
+    let (r, _) = c.block(&[alice.act(Action::LockBudget { amount: KEEL })]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[alice.act(transfer(carol.addr(), KEEL / 2))]);
+    ok(&r[0]);
+    let sa = carol.act(Action::LockBudget { amount: KEEL });
+    assert!(matches!(
+        check_admission(&c.state, &sa),
+        Err(VmError::BudgetExhausted)
+    ));
+    let (r, _) = c.block(&[sa]);
+    assert!(matches!(err(&r[0]), VmError::BudgetExhausted));
+    audit_clean(&c.state);
+}
+
+#[test]
+fn walking_keel_from_key_to_key_buys_no_capacity() {
+    // The flood the free grant allowed: one coin, moved to a fresh key
+    // whenever the previous key's grant ran out. With capacity coming from
+    // the lock, the coin a key locked cannot be walked on: it is tied up
+    // for the unlock delay, and what the next key can do is bounded by
+    // what it locks itself.
+    let (mut state, mut alice, _bob, _v) = setup(0);
+    network(&mut state);
+    let mut c = Chain::new(state);
+    let (r, _) = c.block(&[alice.act(Action::LockBudget { amount: KEEL })]);
+    ok(&r[0]);
+
+    let mut first = Actor::new(51);
+    let mut second = Actor::new(52);
+    let (r, _) = c.block(&[alice.act(transfer(first.addr(), 2 * KEEL))]);
+    ok(&r[0]);
+    // Holding KEEL grants nothing.
+    let (r, _) = c.block(&[first.act(transfer(second.addr(), 2 * KEEL))]);
+    assert!(matches!(err(&r[0]), VmError::BudgetExhausted));
+    // Locking 1 KEEL lets the key move on only the KEEL it did not lock.
+    let (r, _) = c.block(&[first.act(Action::LockBudget { amount: KEEL })]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[first.act(transfer(second.addr(), 2 * KEEL))]);
+    assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
+    let (r, _) = c.block(&[first.act(transfer(second.addr(), KEEL))]);
+    ok(&r[0]);
+    // The locked coin comes back only after the delay, so the capacity of
+    // a walk is the capacity of the KEEL it leaves behind, per day.
+    let (r, _) = c.block(&[first.act(Action::UnlockBudget { amount: KEEL })]);
+    ok(&r[0]);
+    assert_eq!(acct(&c.state, first.addr(), &keel(), "deposit"), 0);
+    assert_eq!(
+        acct(&c.state, first.addr(), &keel(), "budget_unlocking"),
+        KEEL as i128
+    );
+    let (r, _) = c.block(&[second.act(Action::LockBudget { amount: KEEL })]);
+    ok(&r[0]);
+    assert_eq!(acct(&c.state, second.addr(), &keel(), "deposit"), 0);
+    audit_clean(&c.state);
 }

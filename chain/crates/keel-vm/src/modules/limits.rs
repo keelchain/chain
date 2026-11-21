@@ -20,9 +20,12 @@ use serde::{Deserialize, Serialize};
 /// 0.1 KEEL: dust for a user (the faucet hands out whole coins, a client
 /// sends it with the attestation), a real cost per key for a flood.
 pub const DEFAULT_ACTIVATION_KEEL: u128 = 100_000;
-/// 0.001 KEEL per action once governance sets `budget.base` to 0 (the same
-/// figure as `budget.price_per_action`).
-pub const DEFAULT_ACTION_FEE_KEEL: u128 = 1_000;
+/// No per-action fee: an address without earned or locked capacity cannot
+/// act, it does not pay. Governance may set a price instead.
+pub const DEFAULT_ACTION_FEE_KEEL: u128 = 0;
+/// 1 KEEL: the least a `LockBudget` must lock to be admitted without
+/// spending budget (how a fresh address gets its first capacity).
+pub const DEFAULT_FREE_LOCK_MIN_KEEL: u128 = keel_types::ORCAS_PER_KEEL;
 pub const DEFAULT_MAX_SESSIONS_PER_PRINCIPAL: u32 = 16;
 pub const DEFAULT_MAX_SESSION_SECS: u64 = 30 * 86_400;
 pub const DEFAULT_MIN_PAYMENT_WINDOW_SECS: u32 = 300;
@@ -49,6 +52,12 @@ pub struct LimitsState {
     /// has no earned or locked capacity left. 0 in fee mode = an address
     /// may act only on earned or locked capacity.
     pub action_fee_keel: u128,
+    /// `budget.free_lock_min_keel`: a `LockBudget` of at least this many
+    /// orcas, which the signer can pay in full, is admitted without
+    /// spending budget. That is the way in for an address with no
+    /// capacity; each free lock ties its KEEL up for the unlock delay, so
+    /// it cannot be repeated for nothing. 0 = no lock is free.
+    pub free_lock_min_keel: u128,
     /// `sessions.max_per_principal`: live session keys one account may hold.
     pub max_sessions_per_principal: u32,
     /// `sessions.max_secs`: longest life of a session key.
@@ -75,6 +84,7 @@ impl Default for LimitsState {
         Self {
             activation_keel: DEFAULT_ACTIVATION_KEEL,
             action_fee_keel: DEFAULT_ACTION_FEE_KEEL,
+            free_lock_min_keel: DEFAULT_FREE_LOCK_MIN_KEEL,
             max_sessions_per_principal: DEFAULT_MAX_SESSIONS_PER_PRINCIPAL,
             max_session_secs: DEFAULT_MAX_SESSION_SECS,
             min_payment_window_secs: DEFAULT_MIN_PAYMENT_WINDOW_SECS,
@@ -91,6 +101,7 @@ impl Default for LimitsState {
 pub const PARAM_KEYS: &[&str] = &[
     "budget.activation_keel",
     "budget.action_fee_keel",
+    "budget.free_lock_min_keel",
     "sessions.max_per_principal",
     "sessions.max_secs",
     "p2p.min_payment_window_secs",
@@ -107,6 +118,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
     Some(match key {
         "budget.activation_keel" => l.activation_keel,
         "budget.action_fee_keel" => l.action_fee_keel,
+        "budget.free_lock_min_keel" => l.free_lock_min_keel,
         "sessions.max_per_principal" => l.max_sessions_per_principal as u128,
         "sessions.max_secs" => l.max_session_secs as u128,
         "p2p.min_payment_window_secs" => l.min_payment_window_secs as u128,
@@ -134,6 +146,7 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
     match key {
         "budget.activation_keel" => l.activation_keel = value,
         "budget.action_fee_keel" => l.action_fee_keel = value,
+        "budget.free_lock_min_keel" => l.free_lock_min_keel = value,
         "sessions.max_per_principal" => {
             l.max_sessions_per_principal = u32_in(key, value, 1, 1_000)?
         }

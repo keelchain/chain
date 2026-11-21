@@ -429,6 +429,24 @@ pub fn flatten_params(v: &Value) -> Map<String, Value> {
         match v {
             Value::Object(m) => {
                 for (k, x) in m {
+                    // The plan tiers are a list in the node's JSON and
+                    // three keys each in governance
+                    // (`clients.tier1_lock_keel`, ...).
+                    if let (true, Value::Array(tiers)) = (k == "tiers", x) {
+                        for (i, tier) in tiers.iter().enumerate() {
+                            let base = if prefix.is_empty() {
+                                format!("tier{}", i + 1)
+                            } else {
+                                format!("{prefix}.tier{}", i + 1)
+                            };
+                            if let Value::Object(fields) = tier {
+                                for (field, value) in fields {
+                                    walk(&format!("{base}_{field}"), value, out);
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     let key = if prefix.is_empty() {
                         k.clone()
                     } else {
@@ -498,5 +516,12 @@ mod tests {
         assert_eq!(p["taker_fee_bps"], json!("10"));
         assert_eq!(p["name"], json!("x"));
         assert!(!p.contains_key("none"));
+        let p = flatten_params(&json!({"clients": {"tiers": [
+            {"lock_keel": "100", "fee_usd_micro": "3"},
+            {"lock_keel": "500", "fee_usd_micro": "10"},
+        ]}}));
+        assert_eq!(p["clients.tier1_lock_keel"], json!("100"));
+        assert_eq!(p["clients.tier2_fee_usd_micro"], json!("10"));
+        assert!(!p.contains_key("clients.tiers"));
     }
 }

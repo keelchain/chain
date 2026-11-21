@@ -6,6 +6,9 @@
 # key) in the arbitrator set.
 # Roles go through governance (propose, vote with the genesis validator, wait
 # for the timelock, execute); funds are plain transfers from the genesis account.
+# The client then locks KEEL itself (`keel send lock-budget`, or the wallet):
+# the lock is its action capacity and selects its plan tier, and the plan
+# and usage are paid from the USDT sent here (docs/clients.md).
 set -euo pipefail
 ADDR=${1:?address}; shift
 ATTESTER=0; ARBITRATOR=""; KEEL_AMT=0; USDT_AMT=0

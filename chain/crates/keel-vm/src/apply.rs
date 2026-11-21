@@ -2,13 +2,20 @@
 //! activation (the signer holds `budget.activation_keel`), budget (or
 //! observer authorization), then the module. Nonce and budget are consumed
 //! even when the module refuses the action, so a failed action can neither
-//! be replayed nor spam for free; and because a key needs KEEL before its
-//! budget counts, a flood of fresh keys costs KEEL per key.
+//! be replayed nor spam for free.
 //!
-//! Fee mode: when governance sets `budget.base` to 0 there is no free
-//! budget, and an address that has no earned or locked capacity left pays
-//! `budget.action_fee_keel` per action instead, through the fee split. The
-//! fee is taken before the module runs and stays taken if it refuses.
+//! There is no free budget on a network (`budget.base` is 0): an address
+//! acts on the capacity its locked KEEL grants, or on what it earned by
+//! filling. The way in is the lock itself: a `LockBudget` of at least
+//! `budget.free_lock_min_keel` that the signer can pay in full spends no
+//! budget (`budgets::is_free_lock`). It cannot be repeated for nothing,
+//! because every such lock ties its KEEL up for the unlock delay.
+//!
+//! Fee mode: with `budget.base` at 0 and `budget.action_fee_keel` above 0,
+//! an address that has no earned or locked capacity left pays that fee per
+//! action instead, through the fee split. The fee is taken before the
+//! module runs and stays taken if it refuses. At the default fee of 0 such
+//! an address is refused (`BUDGET_EXHAUSTED`).
 
 use crate::{
     context::BlockContext,
@@ -71,6 +78,9 @@ pub fn check_admission(state: &State, sa: &SignedAction) -> Result<(), VmError> 
         .unwrap_or(None)
         .unwrap_or(sa.envelope.signer);
         budgets::require_activated(state, principal)?;
+    }
+    if budgets::is_free_lock(state, sa.envelope.signer, &sa.envelope.action) {
+        return Ok(());
     }
     let p = &state.params.budget;
     let limit = if sa.envelope.action.is_cancel() {
@@ -213,11 +223,16 @@ fn apply_one(
             BudgetError::Exhausted => VmError::BudgetExhausted,
             BudgetError::BlockCap => VmError::BlockCap,
         };
-        let spent =
+        let spent = if budgets::is_free_lock(state, signer, action) {
+            // The first capacity an address gets: only the per-block cap
+            // counts against it.
+            state.account(signer).budget.take_block_slot(&p, ctx.height)
+        } else {
             state
                 .account(signer)
                 .budget
-                .spend(&p, ctx.height, ctx.timestamp, action.is_cancel());
+                .spend(&p, ctx.height, ctx.timestamp, action.is_cancel())
+        };
         match spent {
             Ok(()) => {}
             Err(BudgetError::Exhausted) if limits::fee_mode(state) => {

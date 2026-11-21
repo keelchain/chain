@@ -151,6 +151,10 @@ pub(crate) fn event_addresses(e: &Event) -> Vec<Address> {
         | Event::CustodySwapped {
             custodian, owner, ..
         } => vec![*owner, *custodian],
+        Event::UsageCharged { client, .. }
+        | Event::UsageOwed { client, .. }
+        | Event::UsageCovered { client, .. }
+        | Event::ClientPlanStarted { client, .. } => vec![*client],
         Event::TradeArbitratorBound { arbitrator, .. } => vec![*arbitrator],
         Event::ArbitratorBanned { member } => vec![*member],
         Event::PoolRotationScheduled { custodian, .. }

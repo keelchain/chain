@@ -40,11 +40,13 @@ still mint the two rewards up to the default caps.
 The project funds itself by selling KEEL (the team allocation as it vests,
 and treasury KEEL by proposal) and earns a recurring revenue in the fees:
 half of every protocol fee reaches the treasury in the asset it was paid
-in, clients pay KEEL per flow for their users' waived fees, and the
-liquidity pool pays half its gain. The epoch buyback turns that revenue
-into KEEL. What holds the price while KEEL is sold is what the chain makes
-people hold or buy: KEEL locked for action capacity (linear in volume),
-bonds, the activation dust, and the usage prices. Against those stand the
+in, clients pay a plan every 30 days and a dollar price per flow for
+their users' waived fees, and the liquidity pool pays half its gain. The
+epoch buyback turns that revenue into KEEL. What holds the price while
+KEEL is sold is what the chain makes people hold or buy: KEEL locked for
+action capacity by every account that acts (linear in volume), the lock
+that selects a client's plan tier, bonds, and the buyback of the plan and
+usage income. Against those stand the
 sellers: the treasury and vesting, validators selling block rewards to
 cover costs, and community reward recipients. That is why issuance is kept
 modest and halving, and why community rewards are earned on fees rather
@@ -55,17 +57,19 @@ than dripped on a calendar.
 - Validator bond (min 100,000 KEEL), observer bond (500,000), arbitrator
   bond (50,000); slashed on misconduct.
 - Governance vote weight.
-- Action capacity by locking (the Tron energy model):
-  each whole KEEL locked grants `budget.per_locked_keel_per_day` actions per
-  day (default 100) on top of a free base that is only an onboarding grant
-  (`budget.base`, 500 actions; a per-address grant is a per-keypair grant,
-  so volume cannot be free); unlocking returns the KEEL
-  in full after `budget.unlock_delay_secs` (default 3 days). Nothing is
-  paid, so it adds demand without adding a fee, and the demand is linear
-  in use: an exchange locks in proportion to its volume however many
-  addresses it spreads it over. Buying budget (0.001 KEEL per action)
-  stays as the no-wait fallback. An address also needs
-  `budget.activation_keel` (0.1 KEEL) before any action counts.
+- Action capacity by locking (the Tron energy model): each whole KEEL
+  locked grants `budget.per_locked_keel_per_day` actions per day (default
+  100), and there is no free base (`budget.base` is 0), so every account
+  that acts holds a lock: one KEEL for a retail user, in proportion to its
+  volume for an exchange, however many addresses it spreads it over.
+  Unlocking returns the KEEL in full after `budget.unlock_delay_secs`
+  (default 3 days). Nothing is paid, so it adds demand without adding a
+  fee. Buying budget (0.001 KEEL per action) stays as a fallback.
+- The plan tier lock: a client's operator account locks 100,000, 500,000
+  or 2,000,000 KEEL for tier 1, 2 or 3. Refundable, and held for as long
+  as the client is one.
+- The buyback: plan fees and usage are paid in USDT and bought into KEEL
+  on the chain's own book every epoch, in proportion to what clients use.
 - Offer listing deposit: 10 KEEL per live offer (refundable).
 - Proposal deposit: 1,000,000 KEEL (refunded on pass or reject; burned on veto).
 - Fee tier discounts for stakers (planned parameter).
@@ -89,10 +93,11 @@ lists every key).
 | Dispute | 1% of escrow | losing side |
 | Liquidity pool profit share | 50% of the pool's gain above its high-water mark, in kind, each epoch | the pool (depositors) |
 
-Accounts attested by a live client pay none of the first four; their
-client pays usage in KEEL instead (below): 0.01 KEEL per filled order,
-0.1 KEEL per release, per withdrawal and per deposit address, 1 KEEL per
-ruling by default (all governance parameters).
+Accounts attested by a client with a running plan pay none of the first
+four; their client pays the plan and usage instead (below), in dollars
+settled in USDT: $0.002 per filled order, $0.05 per release, $0.10 per
+withdrawal, $0.02 per deposit address, $1 per ruling by default (all
+governance parameters).
 
 Split: 50% treasury, 40% validators + observers + delegators (observers
 take 25% of that share first), 10% burn. All splits are on-chain ledger
@@ -111,9 +116,67 @@ coins per time, not a value: what it is worth follows the demand sinks
 above. `GET /v1/supply` shows the rate, the next halving, and what remains
 of both caps.
 
+## Two kinds of user, two ways of paying
+
+**A user pays nothing to act and locks one KEEL.** Someone who arrives
+with a wallet to post an offer, place a limit order or move KEEL needs a
+handful of actions. They lock 1 KEEL, which is a hundred actions a day,
+and get it back in full three days after they unlock it. That lock is the
+whole spam defence: an attacker's capacity is the KEEL they tie up, per
+day, whatever the number of keys. What a user does pay is a share of the
+value they move (the fee table above), not a price per transaction.
+
+**An exchange pays a plan.** A gateway and a ledger are what an exchange
+rents elsewhere for hundreds or thousands of dollars a month, and a lock
+alone would be a one-time, refundable purchase: it takes KEEL off the
+market once and pays the validators and the treasury nothing. So a client
+pays three things, and only the first is a deposit:
+
+| Part | What it is | Recurs |
+|---|---|---|
+| Operator lock | KEEL locked on the client's operator account: its action capacity and what selects its tier. Returned in full on unlock | no |
+| Plan fee | a dollar price per 30-day period, paid in USDT, which includes a usage allowance | every period |
+| Usage | a dollar price per deposit address, withdrawal, filled order, escrow release and ruling, drawn from the allowance first and from the client's USDT after | with every flow |
+
+| Tier | Lock | Plan fee per 30 days | Usage included |
+|---|---|---|---|
+| 1 | 100,000 KEEL | $300 | $300 |
+| 2 | 500,000 KEEL | $1,000 | $1,200 |
+| 3 | 2,000,000 KEEL | $3,000 | $4,000 |
+
+These are the defaults in code and every one is a `ParamChange` key
+(`clients.tier<N>_lock_keel`, `_fee_usd_micro`, `_allowance_usd_micro`,
+`clients.plan_period_secs`, `clients.usage_*_usd_micro`). They are
+starting values to be set against what gateways and custody providers
+charge, not a price list I consider final.
+
+Why dollars and USDT. A price fixed in KEEL makes the service dearer when
+KEEL rises and the revenue smaller when it falls, and an exchange budgets
+in dollars. Paying in USDT needs no price oracle for KEEL: the chain
+collects the stable asset through the ordinary fee split and the buyback
+(below) converts it on its own order book, so the income is demand for
+KEEL in proportion to use, every epoch. The exchange holds KEEL for its
+lock and USDT for its bill.
+
+Why an exchange does not skip the plan. Without one it is still an
+attester, but its users are not waived: each of them pays the protocol
+fees (10 bps on a fill, 1% on a release, $1 on a withdrawal), which at any
+real volume is more than the plan. The plan is the cheaper way to be a
+client, and it is the only way to keep all of one's own fees.
+
+How a period runs. At an epoch boundary, a client whose lock meets a tier
+and that has no running period pays the tier's fee and holds its allowance
+until the period ends. If it cannot pay, it has no plan and is tried again
+at every boundary; a plan fee is never carried as debt. Usage beyond the
+allowance comes out of its USDT; the per-flow charges never block a user's
+trade, so what the client cannot pay then is owed, and while anything is
+owed no new address or withdrawal is issued to its accounts and its users
+pay the protocol fees again. `GET /v1/clients/{address}` shows the tier,
+the period, the allowance left, what was paid and what is owed.
+
 ## Wholesale and retail: how clients and Keel are paid
 
-Every payment to Keel is a purchase of KEEL; nothing is invoiced in fiat.
+Every payment to Keel ends as a purchase of KEEL; nothing is invoiced.
 
 **Protocol fees** (governance parameters) are collected in the asset of the
 flow: `p2p_seller_fee_bps` on an escrow release, `taker_fee_bps` on a fill,
@@ -122,29 +185,24 @@ flow: `p2p_seller_fee_bps` on an escrow release, `taker_fee_bps` on a fill,
 at collection into the `treasury`, `validator_rewards` and `burn` system
 accounts (`fee_split_*_bps`).
 
-**Clients keep all their fees (0.2.0).** A client is an attester: the
-account that vouched for a user's tier. An account attested by a live
-client pays no protocol fee on fills, escrow releases, dispute rulings or
+**Clients keep all their fees.** A client is an attester: the account that
+vouched for a user's tier. An account attested by a client with a running
+plan pays no protocol fee on fills, escrow releases, dispute rulings or
 the withdrawal flat fee. The client publishes its own schedule with
 `SetClientFee` (`p2p_bps`, `taker_bps`, `withdraw_bps`, uncapped while the
 waiver is on), and the chain charges that retail fee to the client's user
 in the same block and credits it to the client's deposit account, up to
-what the payer holds. `GET /rpc/v1/clients/{address}` shows a client's
-schedule, what it has earned per asset, its usage paid and anything it
-owes. A user with no attester pays the protocol fees and no retail fee.
+what the payer holds. A user with no attester, or whose attester has no
+plan, pays the protocol fees.
 
-**Usage** is what a client pays Keel for the rails, in KEEL through the
-protocol fee split: `clients.usage_address_keel` per deposit address
-issued, `clients.usage_outbound_keel` per withdrawal queued,
-`clients.usage_fill_keel` per order of its users that filled,
-`clients.usage_release_keel` per escrow release and
-`clients.usage_ruling_keel` per dispute ruling. The three per-flow charges
-never block the user's trade: what the client cannot pay is owed, collected
-from its next KEEL (at the epoch boundary or on its next charge), and no
-new address or withdrawal is issued to its accounts while it is owed. All
-five prices are zero until governance sets them; every one is a
-`ParamChange` key. `clients.protocol_fee_waived = 0` restores the earlier
-pricing (protocol fee plus a capped retail fee).
+**The plan and usage** are what a client pays Keel, through the same fee
+split: the plan fee when a period starts, then `clients.usage_address_usd_micro`
+per deposit address issued, `clients.usage_outbound_usd_micro` per
+withdrawal queued, `clients.usage_fill_usd_micro` per order of its users
+that filled, `clients.usage_release_usd_micro` per escrow release and
+`clients.usage_ruling_usd_micro` per dispute ruling. `clients.protocol_fee_waived
+= 0` switches the waiver off for everyone (protocol fee plus a capped
+retail fee).
 
 **The buyback.** At every epoch boundary the chain sweeps the non-KEEL
 balances of the three system accounts: for each asset with a `KEEL-<asset>`
@@ -158,6 +216,5 @@ epoch. Validators are therefore paid in KEEL, the treasury holds KEEL, and
 fee income is demand for KEEL on the chain's own market. `GET
 /rpc/v1/treasury` shows the balances and the last buyback per asset.
 
-**Service tiers** are read from the KEEL a client's operator account has
-locked (`LockBudget`), and a dedicated node is paid by a KEEL transfer to
-the treasury (`clients.service_dedicated_keel_per_period` per 30 days).
+**A dedicated node** is paid by a KEEL transfer to the treasury
+(`clients.service_dedicated_keel_per_period` per 30 days).

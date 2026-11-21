@@ -56,7 +56,7 @@ Read `plan.md` first. These rules keep parallel work from colliding.
 ## Parameters and module state
 - `Params` keeps its layout: a new knob for a module goes into that module's
   own state (`state.clients.params` is the pattern) and is reached through
-  `ParamChange` with a dotted key (`clients.usage_address_keel`),
+  `ParamChange` with a dotted key (`clients.usage_address_usd_micro`),
   routed in `gov::set_param`. New module states are appended at the end of
   `State`, which is a schema bump (see above).
 - No numeric limit is a constant in a module. A cap, a floor, a window or a

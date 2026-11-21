@@ -79,6 +79,20 @@ enum Cmd {
         #[command(subcommand)]
         action: ActionCmd,
     },
+    /// Make sure an account has at least `keel` whole KEEL locked for
+    /// action capacity: locks the difference, or does nothing. For service
+    /// accounts (a faucet, a validator's operator key) on a network, where
+    /// there is no free budget.
+    EnsureCapacity {
+        #[arg(long)]
+        secret: String,
+        /// Whole KEEL that must be locked.
+        #[arg(long)]
+        keel: u64,
+        /// Poll until the receipt is available (seconds).
+        #[arg(long, default_value_t = 30)]
+        wait: u64,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -123,6 +137,16 @@ enum ActionCmd {
     },
     BuyBudget {
         actions: u64,
+    },
+    /// Lock KEEL (in orcas) for action capacity; the first lock of an
+    /// address is free when it locks at least `budget.free_lock_min_keel`.
+    LockBudget {
+        amount: Amount,
+    },
+    /// Start returning locked KEEL (in orcas); it arrives after
+    /// `budget.unlock_delay_secs`.
+    UnlockBudget {
+        amount: Amount,
     },
     /// Lightning pool operations for an observer key (2026-09-10).
     #[command(subcommand)]
@@ -613,6 +637,8 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
             valid_until,
         }),
         ActionCmd::BuyBudget { actions } => Action::BuyBudget { actions },
+        ActionCmd::LockBudget { amount } => Action::LockBudget { amount },
+        ActionCmd::UnlockBudget { amount } => Action::UnlockBudget { amount },
         ActionCmd::Liquidity(LiquidityCmd::Deposit { asset, amount }) => Action::DepositLiquidity {
             asset: Asset::new(asset),
             amount,
@@ -674,6 +700,35 @@ fn keypair(secret: &str) -> anyhow::Result<Keypair> {
         .try_into()
         .map_err(|_| anyhow!("secret must be 32 bytes"))?;
     Ok(Keypair::from_secret(secret))
+}
+
+/// Submit a signed action and, when `wait` is above 0, poll for its
+/// receipt and print it; exits with status 2 when the action failed.
+fn submit(client: &Client, sa: &SignedAction, wait: u64) -> anyhow::Result<()> {
+    let resp = client.post("/v1/actions", &serde_json::to_value(sa)?)?;
+    if resp["admitted"] != Value::Bool(true) {
+        bail!("refused: {resp}");
+    }
+    let tx_id = hex::encode(sa.id());
+    if wait == 0 {
+        println!("{}", json!({ "tx_id": tx_id }));
+        return Ok(());
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(wait);
+    loop {
+        let (code, v) = client.get_status(&format!("/v1/receipts/{tx_id}"))?;
+        if code == 200 {
+            println!("{}", serde_json::to_string_pretty(&v)?);
+            if v["ok"] != Value::Bool(true) {
+                std::process::exit(2);
+            }
+            return Ok(());
+        }
+        if std::time::Instant::now() > deadline {
+            bail!("timed out waiting for receipt {tx_id}");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -767,30 +822,32 @@ fn main() -> anyhow::Result<()> {
                 None => client.nonce(&kp.address())?,
             };
             let sa = SignedAction::sign(&kp, nonce, cli.chain_id, build_action(action)?);
-            let resp = client.post("/v1/actions", &serde_json::to_value(&sa)?)?;
-            if resp["admitted"] != Value::Bool(true) {
-                bail!("refused: {resp}");
-            }
-            let tx_id = hex::encode(sa.id());
-            if wait == 0 {
-                println!("{}", json!({ "tx_id": tx_id }));
+            submit(&client, &sa, wait)?;
+        }
+        Cmd::EnsureCapacity { secret, keel, wait } => {
+            let kp = keypair(&secret)?;
+            let address = kp.address();
+            let account = client.get(&format!("/v1/accounts/{}", address.to_hex()))?;
+            let locked: Amount = account["budget"]["locked"]
+                .as_str()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let want = Amount::from(keel) * keel_types::ORCAS_PER_KEEL;
+            if locked >= want {
+                println!(
+                    "{}",
+                    json!({ "address": address.to_hex(), "locked": locked.to_string(), "changed": false })
+                );
                 return Ok(());
             }
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(wait);
-            loop {
-                let (code, v) = client.get_status(&format!("/v1/receipts/{tx_id}"))?;
-                if code == 200 {
-                    println!("{}", serde_json::to_string_pretty(&v)?);
-                    if v["ok"] != Value::Bool(true) {
-                        std::process::exit(2);
-                    }
-                    return Ok(());
-                }
-                if std::time::Instant::now() > deadline {
-                    bail!("timed out waiting for receipt {tx_id}");
-                }
-                std::thread::sleep(std::time::Duration::from_millis(250));
-            }
+            let nonce = account["nonce"]
+                .as_u64()
+                .ok_or_else(|| anyhow!("no nonce in account response"))?;
+            let action = Action::LockBudget {
+                amount: want - locked,
+            };
+            let sa = SignedAction::sign(&kp, nonce, cli.chain_id, action);
+            submit(&client, &sa, wait.max(1))?;
         }
     }
     Ok(())

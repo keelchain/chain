@@ -19,16 +19,18 @@ BNB Smart Chain and Ethereum share one address: the chain derives both from
 the same key path, so the `0x…` string you get for BSC is the one you would
 get for Ethereum, and a deposit index assigned on one is the other's too.
 
-## 0. Hold a little KEEL first
+## 0. Lock one KEEL first
 
-A fresh address cannot act until it holds `budget.activation_keel` KEEL
-(0.1 KEEL on the testnet; `GET /v1/params`), the floor that keeps the free
-action budget from being a free budget per keypair (`governance.md`). The
-request for a deposit address is an action like any other, so do this
-first: on the testnet, `faucet.keelchain.com` sends 100 KEEL and 100 USDT
-to any address; a client's user gets the dust from the client with its
-attestation; anyone else receives a transfer. Until then the chain answers
-`NOT_ACTIVATED`, and the wallet says so with the amount.
+An address acts on the capacity of the KEEL it has locked; there is no
+free action budget and no fee per action (`governance.md`). The request
+for a deposit address is an action like any other, so do this first: get
+at least 1 KEEL (on the testnet, `faucet.keelchain.com` sends 100 KEEL and
+100 USDT to any address; a client's user gets it from the client with its
+attestation; anyone else receives a transfer), then lock 1 KEEL from the
+wallet's *Action capacity* card. That is a hundred actions a day, and the
+KEEL comes back in full three days after you unlock it. Until then the
+chain answers `BUDGET_EXHAUSTED` (or `NOT_ACTIVATED` to an address holding
+less than 0.1 KEEL), and the wallet says so.
 
 ## 1. Get your deposit address
 
@@ -37,7 +39,7 @@ The chain assigns the address; it is not derived in the wallet. Three ways:
 **Keel Wallet.** Open the wallet, card *Receive*, press *Bitcoin*, *Tron*,
 *BNB Smart Chain* or *Solana*.
 The wallet asks the chain for an address the first time (a signed action
-from the free budget, no site involved) and shows it with a copy button from
+on your locked capacity, no site involved) and shows it with a copy button from
 then on.
 
 **CLI.**
