@@ -17,7 +17,7 @@ const KEEL: u128 = 1_000_000;
 const USDT: u128 = 1_000_000;
 
 /// Give `client` a running plan with `allowance` USD micro of included
-/// usage, without the lock and the epoch boundary that start one.
+/// usage, without the lock and the purchase that start one.
 fn give_plan(state: &mut State, client: keel_types::Address, allowance: u128) {
     state.clients.plans.insert(
         client,
@@ -26,7 +26,9 @@ fn give_plan(state: &mut State, client: keel_types::Address, allowance: u128) {
             started_secs: T0,
             ends_secs: T0 + 10_000_000,
             fee_usd_micro: 0,
+            allowance_usd_micro: allowance,
             allowance_left_usd_micro: allowance,
+            ..Default::default()
         },
     );
 }
@@ -335,10 +337,21 @@ fn client(c: &mut Chain, from: &mut Actor, keel_amount: u128, usdt_amount: u128)
     carol
 }
 
+fn lock(c: &mut Chain, who: &mut Actor, amount: u128) {
+    let (r, _) = c.block(&[who.act(Action::LockBudget { amount })]);
+    ok(&r[0]);
+}
+
+fn plan_started(events: &[Event]) -> Option<(u8, u128)> {
+    events.iter().find_map(|e| match e {
+        Event::ClientPlanStarted { tier, fee, .. } => Some((*tier, *fee)),
+        _ => None,
+    })
+}
+
 #[test]
-fn a_plan_starts_at_an_epoch_boundary_and_its_allowance_pays_first() {
+fn a_plan_is_bought_starts_at_once_and_its_allowance_pays_first() {
     let (mut state, mut alice, mut bob, mut v) = setup(0);
-    state.params.epoch_length_blocks = 10;
     state.clients.params.plan_period_secs = 45;
     state.clients.params.usage_fill_usd_micro = 100 * USDT;
     let tier1 = state.clients.params.tiers[0].clone();
@@ -350,33 +363,39 @@ fn a_plan_starts_at_an_epoch_boundary_and_its_allowance_pays_first() {
         3 * tier1.fee_usd_micro,
     );
     attest(&mut c, &mut carol, &alice, T0 + 1_000_000);
-    // Deep enough that the epoch buyback of the plan fees leaves asks.
     rest_sell(&mut c, &mut bob, 10_000 * KEEL);
 
-    // No lock, no plan: alice pays the protocol fee like anyone else.
-    let events = c.advance_to(10);
-    assert!(!events
-        .iter()
-        .any(|e| matches!(e, Event::ClientPlanStarted { .. })));
+    // Nothing starts by itself: without a purchase alice pays the protocol
+    // fee like anyone else, however long carol waits.
+    let events = c.advance_to(20);
+    assert_eq!(plan_started(&events), None);
     let r = market_buy(&mut c, &mut alice, KEEL);
     ok(&r);
     assert_eq!(fill_fee(&r), KEEL * 10 / 10_000);
-    assert!(!r
-        .events
-        .iter()
-        .any(|e| matches!(e, Event::UsageCharged { .. })));
 
-    // carol locks the first tier's KEEL: at the next boundary it pays the
-    // period's fee in USDT and holds the allowance.
-    let (r, _) = c.block(&[carol.act(Action::LockBudget {
-        amount: tier1.lock_keel,
-    })]);
-    ok(&r[0]);
+    // The fee alone does not buy a plan: the tier's KEEL must be locked.
     let before = acct(&c.state, carol.addr(), &usds(), "deposit");
-    let events = c.advance_to(20);
-    let started = T0 + 20;
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 1 })]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("locked")));
+    assert_eq!(acct(&c.state, carol.addr(), &usds(), "deposit"), before);
+    // Nor does anyone but a client buy one.
+    let (r, _) = c.block(&[alice.act(Action::BuyPlan { tier: 1 })]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 4 })]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+
+    // Lock and buy in one block: the period starts in that block.
+    let (r, _) = c.block(&[
+        carol.act(Action::LockBudget {
+            amount: tier1.lock_keel,
+        }),
+        carol.act(Action::BuyPlan { tier: 1 }),
+    ]);
+    ok(&r[0]);
+    ok(&r[1]);
+    let started = T0 + c.height;
     assert!(
-        events.contains(&Event::ClientPlanStarted {
+        r[1].events.contains(&Event::ClientPlanStarted {
             client: carol.addr(),
             tier: 1,
             asset: usds(),
@@ -384,12 +403,16 @@ fn a_plan_starts_at_an_epoch_boundary_and_its_allowance_pays_first() {
             allowance: tier1.allowance_usd_micro,
             ends_at: started + 45,
         }),
-        "{events:?}"
+        "{:?}",
+        r[1].events
     );
     assert_eq!(
         acct(&c.state, carol.addr(), &usds(), "deposit"),
         before - tier1.fee_usd_micro as i128
     );
+    // The same tier cannot be bought twice over.
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 1 })]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("runs until")));
 
     // Waived now, and the fill usage comes out of the allowance: carol's
     // balance does not move.
@@ -403,10 +426,6 @@ fn a_plan_starts_at_an_epoch_boundary_and_its_allowance_pays_first() {
         kind: "fill".into(),
     }));
     assert_eq!(acct(&c.state, carol.addr(), &usds(), "deposit"), before);
-    assert_eq!(
-        c.state.clients.plans[&carol.addr()].allowance_left_usd_micro,
-        tier1.allowance_usd_micro - 100 * USDT
-    );
 
     // Two more fills use the allowance up; the next one comes out of
     // carol's USDT.
@@ -426,58 +445,260 @@ fn a_plan_starts_at_an_epoch_boundary_and_its_allowance_pays_first() {
         kind: "fill".into(),
     }));
 
-    // The period ends between boundaries: no waiver until the next one
-    // renews it, and the renewal is paid again.
-    c.advance_to(66);
-    let r = market_buy(&mut c, &mut alice, KEEL);
-    ok(&r);
-    assert_eq!(fill_fee(&r), KEEL * 10 / 10_000);
+    // The period ends: the block it ends in renews it, paid again, so
+    // there is no gap in which alice pays the protocol fee.
     let before = acct(&c.state, carol.addr(), &usds(), "deposit");
-    let events = c.advance_to(70);
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, Event::ClientPlanStarted { tier: 1, .. })));
+    let last = started - T0 + 44;
+    let events = c.advance_to(last);
+    assert_eq!(plan_started(&events), None);
+    let (_, events) = c.block(&[]);
+    assert_eq!(plan_started(&events), Some((1, tier1.fee_usd_micro)));
     assert_eq!(
         acct(&c.state, carol.addr(), &usds(), "deposit"),
         before - tier1.fee_usd_micro as i128
     );
+    let r = market_buy(&mut c, &mut alice, KEEL);
+    ok(&r);
+    assert_eq!(fill_fee(&r), 0);
     audit_clean(&c.state);
 }
 
 #[test]
 fn a_client_that_cannot_pay_the_fee_has_no_plan_until_it_can() {
     let (mut state, _alice, _bob, mut v) = setup(0);
-    state.params.epoch_length_blocks = 10;
+    state.clients.params.plan_period_secs = 30;
     let tier2 = state.clients.params.tiers[1].clone();
     let mut c = Chain::new(state);
     let mut carol = client(&mut c, &mut v, tier2.lock_keel + KEEL, 0);
-    let (r, _) = c.block(&[carol.act(Action::LockBudget {
-        amount: tier2.lock_keel,
-    })]);
-    ok(&r[0]);
-    let events = c.advance_to(10);
-    assert!(!events
-        .iter()
-        .any(|e| matches!(e, Event::ClientPlanStarted { .. })));
+    lock(&mut c, &mut carol, tier2.lock_keel);
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 2 })]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(m) if m.contains("holds 0")));
     assert!(c.state.clients.plans.is_empty());
     assert!(
         c.state.clients.usage_owed.is_empty(),
         "a plan fee is never owed"
     );
 
-    let (r, _) = c.block(&[v.act(Action::Transfer(keel_actions::Transfer {
+    // Funded for exactly one period: the purchase goes through, and the
+    // lock that meets tier 2 can also buy tier 1.
+    let pay = |c: &mut Chain, v: &mut Actor, to, amount| {
+        let (r, _) = c.block(&[v.act(Action::Transfer(keel_actions::Transfer {
+            to,
+            asset: usds(),
+            amount,
+            memo: None,
+        }))]);
+        ok(&r[0]);
+    };
+    pay(&mut c, &mut v, carol.addr(), tier2.fee_usd_micro);
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 2 })]);
+    ok(&r[0]);
+    assert_eq!(plan_started(&r[0].events), Some((2, tier2.fee_usd_micro)));
+    assert_eq!(acct(&c.state, carol.addr(), &usds(), "deposit"), 0);
+
+    // At the end of the period carol cannot pay: no plan, nothing owed,
+    // and the first block after the money arrives renews it.
+    let ends = c.state.clients.plans[&carol.addr()].ends_secs - T0;
+    let events = c.advance_to(ends + 5);
+    assert_eq!(plan_started(&events), None);
+    assert!(
+        keel_vm::modules::clients::active_plan(&c.state, &carol.addr(), T0 + c.height).is_none()
+    );
+    assert!(c.state.clients.usage_owed.is_empty());
+    let (r, events) = c.block(&[v.act(Action::Transfer(keel_actions::Transfer {
         to: carol.addr(),
         asset: usds(),
         amount: tier2.fee_usd_micro,
         memo: None,
     }))]);
     ok(&r[0]);
-    let events = c.advance_to(20);
-    // The lock selects the second tier, the highest it meets.
-    assert!(events
-        .iter()
-        .any(|e| matches!(e, Event::ClientPlanStarted { tier: 2, .. })));
-    assert_eq!(acct(&c.state, carol.addr(), &usds(), "deposit"), 0);
+    assert_eq!(plan_started(&events), Some((2, tier2.fee_usd_micro)));
+    audit_clean(&c.state);
+}
+
+#[test]
+fn an_upgrade_takes_what_the_running_period_has_left_off_the_fee() {
+    let (mut state, _alice, _bob, mut v) = setup(0);
+    state.clients.params.plan_period_secs = 100;
+    let (tier1, tier2) = (
+        state.clients.params.tiers[0].clone(),
+        state.clients.params.tiers[1].clone(),
+    );
+    let mut c = Chain::new(state);
+    let mut carol = client(&mut c, &mut v, tier2.lock_keel + KEEL, 2_000 * USDT);
+    lock(&mut c, &mut carol, tier2.lock_keel);
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 1 })]);
+    ok(&r[0]);
+    let bought = c.height;
+
+    // Half the period later, nothing of the allowance used: half the
+    // first tier's fee comes off the second's, and a full period starts.
+    c.advance_to(bought + 49);
+    let before = acct(&c.state, carol.addr(), &usds(), "deposit");
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 2 })]);
+    ok(&r[0]);
+    let fee = tier2.fee_usd_micro - tier1.fee_usd_micro / 2;
+    assert_eq!(plan_started(&r[0].events), Some((2, fee)));
+    assert_eq!(
+        acct(&c.state, carol.addr(), &usds(), "deposit"),
+        before - fee as i128
+    );
+    let plan = &c.state.clients.plans[&carol.addr()];
+    assert_eq!(
+        (plan.tier, plan.ends_secs, plan.allowance_left_usd_micro),
+        (2, T0 + c.height + 100, tier2.allowance_usd_micro)
+    );
+    // A downgrade is not a purchase; it is what the plan renews at.
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 1 })]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    audit_clean(&c.state);
+}
+
+#[test]
+fn a_used_allowance_earns_no_upgrade_credit() {
+    let (mut state, _alice, _bob, mut v) = setup(0);
+    let (tier1, tier2) = (
+        state.clients.params.tiers[0].clone(),
+        state.clients.params.tiers[1].clone(),
+    );
+    state.clients.params.usage_address_usd_micro = tier1.allowance_usd_micro;
+    let mut c = Chain::new(state);
+    let mut carol = client(&mut c, &mut v, tier2.lock_keel + KEEL, 2_000 * USDT);
+    lock(&mut c, &mut carol, tier2.lock_keel);
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 1 })]);
+    ok(&r[0]);
+    keel_vm::modules::clients::charge_usage_to(&mut c.state, carol.addr(), "address", &[7u8; 32])
+        .unwrap();
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 2 })]);
+    ok(&r[0]);
+    assert_eq!(plan_started(&r[0].events), Some((2, tier2.fee_usd_micro)));
+    audit_clean(&c.state);
+}
+
+#[test]
+fn unlocking_below_the_tier_suspends_the_plan_and_renewal_can_be_stopped() {
+    let (mut state, alice, _bob, mut v) = setup(0);
+    state.clients.params.plan_period_secs = 40;
+    let tier1 = state.clients.params.tiers[0].clone();
+    let mut c = Chain::new(state);
+    let mut carol = client(
+        &mut c,
+        &mut v,
+        tier1.lock_keel + KEEL,
+        3 * tier1.fee_usd_micro,
+    );
+    attest(&mut c, &mut carol, &alice, T0 + 1_000_000);
+    let (r, _) = c.block(&[carol.act(Action::SetPlanRenewal { tier: 0 })]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    lock(&mut c, &mut carol, tier1.lock_keel);
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 1 })]);
+    ok(&r[0]);
+    let now = |c: &Chain| T0 + c.height;
+    assert_eq!(
+        keel_vm::modules::clients::waives_fee(&c.state, c.height, &alice.addr(), now(&c)),
+        Some(carol.addr())
+    );
+
+    // One orca under the tier: the plan no longer counts. Locking it back
+    // restores what is left of the period.
+    let (r, _) = c.block(&[carol.act(Action::UnlockBudget { amount: 1 })]);
+    ok(&r[0]);
+    assert_eq!(
+        keel_vm::modules::clients::waives_fee(&c.state, c.height, &alice.addr(), now(&c)),
+        None
+    );
+    lock(&mut c, &mut carol, 1);
+    assert_eq!(
+        keel_vm::modules::clients::waives_fee(&c.state, c.height, &alice.addr(), now(&c)),
+        Some(carol.addr())
+    );
+
+    // Renewal switched off: the period ends and nothing is charged.
+    let (r, _) = c.block(&[carol.act(Action::SetPlanRenewal { tier: 0 })]);
+    ok(&r[0]);
+    assert!(r[0].events.contains(&Event::ClientPlanRenewalSet {
+        client: carol.addr(),
+        tier: 0,
+    }));
+    let before = acct(&c.state, carol.addr(), &usds(), "deposit");
+    let ends = c.state.clients.plans[&carol.addr()].ends_secs - T0;
+    let events = c.advance_to(ends + 3);
+    assert_eq!(plan_started(&events), None);
+    assert_eq!(acct(&c.state, carol.addr(), &usds(), "deposit"), before);
+    // Switched back on, the next block renews.
+    let (r, events) = c.block(&[carol.act(Action::SetPlanRenewal { tier: 1 })]);
+    ok(&r[0]);
+    assert_eq!(plan_started(&events), Some((1, tier1.fee_usd_micro)));
+    audit_clean(&c.state);
+}
+
+#[test]
+fn a_plan_pays_for_the_actions_of_the_clients_users() {
+    let (mut state, _alice, bob, mut v) = setup(0);
+    state.clients.params.tiers[0].user_actions_per_day = 3;
+    state.clients.params.user_actions_per_user_per_day = 2;
+    let tier1 = state.clients.params.tiers[0].clone();
+    let mut c = Chain::new(state);
+    let mut carol = client(&mut c, &mut v, tier1.lock_keel + KEEL, tier1.fee_usd_micro);
+    lock(&mut c, &mut carol, tier1.lock_keel);
+    // Two users who hold USDT and not one orca of KEEL.
+    let (mut dave, mut erin) = (Actor::new(41), Actor::new(42));
+    for who in [&dave, &erin] {
+        let (r, _) = c.block(&[v.act(Action::Transfer(keel_actions::Transfer {
+            to: who.addr(),
+            asset: usds(),
+            amount: 10 * USDT,
+            memo: None,
+        }))]);
+        ok(&r[0]);
+        attest(&mut c, &mut carol, who, T0 + 1_000_000);
+    }
+    // A network: no free budget.
+    c.state.params.budget.base = 0;
+    let send = |who: &mut Actor| {
+        who.act(Action::Transfer(keel_actions::Transfer {
+            to: bob.addr(),
+            asset: usds(),
+            amount: 1,
+            memo: None,
+        }))
+    };
+
+    // Attested, but the client has no plan: dave is an address without
+    // KEEL like any other.
+    let sa = send(&mut dave);
+    assert!(matches!(
+        keel_vm::check_admission(&c.state, &sa),
+        Err(VmError::NotActivated { .. })
+    ));
+    let (r, _) = c.block(&[sa]);
+    assert!(matches!(err(&r[0]), VmError::NotActivated { .. }));
+
+    let (r, _) = c.block(&[carol.act(Action::BuyPlan { tier: 1 })]);
+    ok(&r[0]);
+    // With the plan, dave acts with no KEEL and no lock, up to his share.
+    for _ in 0..2 {
+        let sa = send(&mut dave);
+        keel_vm::check_admission(&c.state, &sa).expect("the plan pays");
+        let (r, _) = c.block(&[sa]);
+        ok(&r[0]);
+    }
+    let (r, _) = c.block(&[send(&mut dave)]);
+    assert!(matches!(err(&r[0]), VmError::NotActivated { .. }));
+    // The pool is the client's whole allowance for the day: erin gets the
+    // one action left in it.
+    let (r, _) = c.block(&[send(&mut erin)]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[send(&mut erin)]);
+    assert!(matches!(err(&r[0]), VmError::NotActivated { .. }));
+    assert_eq!(c.state.clients.plans[&carol.addr()].user_actions_used, 3);
+
+    // The next day both are back.
+    c.height += 86_400;
+    let (r, _) = c.block(&[send(&mut dave), send(&mut erin)]);
+    ok(&r[0]);
+    ok(&r[1]);
+    assert_eq!(c.state.clients.plans[&carol.addr()].user_actions_used, 2);
     audit_clean(&c.state);
 }
 

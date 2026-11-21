@@ -63,7 +63,7 @@ Variables:
 | `TRON_API_URL`, `TRON_USDT_CONTRACT` | `https://nile.trongrid.io`, the Nile USDT contract |
 | `SOLANA_RPC_URL`, `SOLANA_USDC_MINT` | optional; a Solana JSON-RPC and the USDC mint. Defaults: the public devnet RPC (`https://api.devnet.solana.com`) and devnet USDC `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`. The Solana vault is an Ed25519 key: the ceremony's second (FROST) share, or the development signer's Ed25519 key in `local` mode |
 | `BSC_RPC_URL`, `BSC_USDT_CONTRACT` | optional; a BNB Smart Chain JSON-RPC and the chain's USDT (BEP-20) contract. Defaults: the public BSC testnet RPC (`https://data-seed-prebsc-1-s1.bnbchain.org:8545`, chain id 97) and its USDT `0x337610d27c682E347C9cD60BD4b3b107C9d34dDd`. The BSC vault is registered with the same key as the other chains, so an account's BSC address is its Ethereum address |
-| `EXPLORER_NETWORKS` | JSON network list baked into the explorer build |
+| `EXPLORER_NETWORKS` | JSON network list baked into the explorer and Harbor builds |
 | `KEEL_FAUCET_KEEL`, `KEEL_FAUCET_USDT` | optional; coins per claim (default 100 each). Cooldown per address 24 h, 5 claims per IP per day |
 | `KEEL_FAUCET_FLOAT_CLAIMS` | optional; how many claims' worth of each asset the faucet should hold (default 500). Every deploy of host 0 tops the faucet up from the genesis account when it holds less than half of that, so it works again after a reset |
 | `KEEL_OPERATOR_LOCK_KEEL`, `KEEL_FAUCET_LOCK_KEEL` | optional; whole KEEL each host's operator key (default 100) and the faucet (default 50) keep locked for action capacity. A network has no free action budget, so every deploy runs `keel ensure-capacity` for both; it locks the difference or does nothing |
@@ -75,7 +75,7 @@ Variables:
 ## What a deploy does
 
 1. `binaries`: builds `keel-node`, `keel-indexer`, `keel-observer`, `keel`, `keel-tss`.
-2. `web`: builds the explorer, the site, the docs pages and the wallet packages.
+2. `web`: builds the explorer, Harbor, the site, the docs pages and the wallet packages.
 3. `genesis`: derives every host's public identity from its seed
    (`keel-node --print-identity`), writes `identities.json`, and builds
    `genesis.json` with `keel genesis-build`: the hosts as validators and
@@ -274,9 +274,10 @@ sets are public at `/rpc/v1/gov/roles`.
 
 The client then locks KEEL on its operator account itself (`keel send
 --secret … lock-budget <orcas>`, or the wallet): at least 1 KEEL to act at
-all, 100,000 KEEL for plan tier 1. Its plan starts at the next epoch
-boundary and is paid from the USDT sent here; until then its users pay the
-protocol fees (`docs/clients.md`, Pricing).
+all, 100,000 KEEL for plan tier 1. It then buys the plan in Keel Harbor
+(`https://harbor.keelchain.com`) or with `keel send --secret … buy-plan
+1`, paid from the USDT sent here; until then its users pay the protocol
+fees (`docs/clients.md`, Pricing).
 
 ## Rotating
 

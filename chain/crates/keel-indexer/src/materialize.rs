@@ -487,6 +487,7 @@ pub fn module_of_kind(kind: &str) -> &'static str {
         | "Withdraw"
         | "RegisterVault" => "vaults",
         "MintStable" | "BurnStable" => "stable",
+        "SetClientFee" | "BuyPlan" | "SetPlanRenewal" => "clients",
         "Bond" | "Unbond" | "Delegate" | "Undelegate" | "ClaimRewards" => "staking",
         "Propose" | "Vote" | "ExecuteProposal" => "gov",
         "Attest" => "attest",

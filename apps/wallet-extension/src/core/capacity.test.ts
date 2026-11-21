@@ -11,7 +11,7 @@ describe('parseCapacity', () => {
       nonce: 4,
       budget: { used: 0, limit: 0, remaining: 60, earned: 0, locked: '2000000', lock_cap_per_day: 200, lock_pool: 75, unlocking: [{ ready_at: 2_000, amount: '500000' }, { ready_at: 1_000, amount: '250000' }] },
     });
-    expect(c).toEqual({ available: 75, locked: 2n * KEEL, perDay: 200, unlocking: [{ readyAt: 1_000, amount: 250_000n }, { readyAt: 2_000, amount: 500_000n }] });
+    expect(c).toEqual({ available: 75, locked: 2n * KEEL, perDay: 200, unlocking: [{ readyAt: 1_000, amount: 250_000n }, { readyAt: 2_000, amount: 500_000n }], sponsored: 0 });
   });
 
   it('adds the free budget left to the refilled pool', () => {
@@ -21,7 +21,7 @@ describe('parseCapacity', () => {
 
   it('treats every field as optional', () => {
     expect(parseCapacity({ budget: {} })).toEqual(NO_CAPACITY);
-    expect(parseCapacity({ budget: { remaining: 9 } })).toEqual({ available: 9, locked: 0n, perDay: 0, unlocking: [] });
+    expect(parseCapacity({ budget: { remaining: 9 } })).toEqual({ available: 9, locked: 0n, perDay: 0, unlocking: [], sponsored: 0 });
     expect(parseCapacity({ budget: { locked: 'x', lock_cap_per_day: -1, remaining: null, unlocking: 'no' } })).toEqual(NO_CAPACITY);
   });
 
@@ -42,6 +42,13 @@ describe('needsFirstLock', () => {
     expect(needsFirstLock(NO_CAPACITY)).toBe(true);
     expect(needsFirstLock({ ...NO_CAPACITY, locked: KEEL })).toBe(false);
     expect(needsFirstLock({ ...NO_CAPACITY, available: 1 })).toBe(false);
+  });
+
+  it('is false when the client that onboarded the account pays for its actions', () => {
+    const c = parseCapacity({ budget: { remaining: 0, sponsor: { client: 'ab'.repeat(32), left_today: 40 } } });
+    expect(c?.sponsored).toBe(40);
+    expect(c && needsFirstLock(c)).toBe(false);
+    expect(parseCapacity({ budget: { sponsor: null } })?.sponsored).toBe(0);
   });
 });
 
@@ -65,7 +72,7 @@ describe('lock and unlock actions', () => {
 });
 
 describe('capacityChangeProblem', () => {
-  const some: Capacity = { available: 10, locked: 2n * KEEL, perDay: 200, unlocking: [] };
+  const some: Capacity = { available: 10, locked: 2n * KEEL, perDay: 200, unlocking: [], sponsored: 0 };
 
   it('accepts a first lock of 1 KEEL the account can pay', () => {
     expect(capacityChangeProblem('lock', KEEL, NO_CAPACITY, KEEL)).toBeNull();

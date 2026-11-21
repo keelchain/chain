@@ -82,6 +82,8 @@ export type Action =
   | { Vote: { proposal_id: Amount; choice: VoteChoice } }
   | { ExecuteProposal: { proposal_id: Amount } }
   | { LockBudget: { amount: Amount } }
+  | { BuyPlan: { tier: number } }
+  | { SetPlanRenewal: { tier: number } }
   | { UnlockBudget: { amount: Amount } }
   | { AuthorizeSessionKey: { key: Address; scope: number; expires_at: number } }
   | { RevokeSessionKey: { key: Address } }

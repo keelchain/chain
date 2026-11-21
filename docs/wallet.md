@@ -202,7 +202,9 @@ actions per day and pending unlocks, with Lock and Unlock. An account acts
 on the KEEL it has locked (1 KEEL is a hundred actions a day and comes
 back in full after unlocking), so a new account locks here before its
 first transfer, order or deposit-address request; a refused action with
-`BUDGET_EXHAUSTED` points back to this card.
+`BUDGET_EXHAUSTED` points back to this card. An account that an exchange
+with a plan onboarded needs no lock: the card shows the actions the
+exchange pays for today instead.
 
 **Move to Keel** (the *Wallet* tab): the background derives the
 key, builds the transaction to the account's vault deposit address (Bitcoin:

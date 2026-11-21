@@ -405,6 +405,8 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 amount: 25_000_000,
             }),
         ),
+        ("buy_plan", Action::BuyPlan { tier: 2 }),
+        ("set_plan_renewal", Action::SetPlanRenewal { tier: 0 }),
     ]
 }
 

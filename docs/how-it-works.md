@@ -54,6 +54,24 @@ Three properties shape everything else:
   and otherwise signs on behalf of users only while they still choose to
   leave a key with it.
 
+**Users and clients.** The chain knows two kinds of participant, and it
+treats them differently in exactly one respect, how they pay:
+
+| | User | Client (an exchange) |
+|---|---|---|
+| What it is | Any address: a person with Keel Wallet who trades, posts an offer or moves coins for themselves | An address that governance registered as an **attester**: a business that puts its own users on the chain and vouches for their KYC tier |
+| How it becomes one | Generates a key. Nothing to register | A `SetAttesters` governance proposal names its operator address |
+| What it locks | 1 KEEL or so, for its own action capacity. Returned on unlock. Nothing at all if a client with a plan attested it: the plan includes actions for the client's users | The KEEL its plan tier requires, on its operator account (100,000 / 500,000 / 2,000,000 KEEL): one half of the membership, and capacity for that account. Returned on unlock |
+| What it pays to act | Nothing. No gas, no fee per action | Nothing per action either |
+| What it pays on value moved | The protocol fees: 10 bps on a fill it takes, 1% on an escrow release, $1 on a withdrawal | A membership: the plan fee of its tier every 30 days on top of the lock, and a dollar price per flow of its users, in USDT. Its users then pay no protocol fees, and it charges them its own |
+| Who its counterparty is | The chain | The chain; its users are accounts it attested |
+| Where it manages its account | Keel Wallet | Keel Harbor (`harbor.keelchain.com`): plans, payment, usage, lock, fees and vaults, each change an action signed in the wallet |
+
+A user never buys a plan and a plan is never something a user sees. An
+address is a client only because governance put it in the attester set;
+until then, and for every address outside it, the user column applies.
+Sections 5 and 7 have the mechanics, `tokenomics.md` the reasoning.
+
 The rest of this paper walks through each part and ends with the two
 questions about resilience: what happens if a front end is
 forced offline, and what happens if someone labels addresses as tainted.
@@ -173,8 +191,8 @@ the address from a set. This is listed in section 17.
   governance weight, the refundable 10 KEEL deposit per live P2P offer, the
   1,000,000 KEEL proposal deposit, buying action budget, locking KEEL for
   action capacity (nothing is paid, the KEEL comes back after three days;
-  every account that acts holds a lock, and a client's lock also selects
-  its plan tier), and the epoch buyback of what clients pay in USDT.
+  every account that acts on its own holds a lock, and a client keeps
+  locked what its plan tier requires), and the epoch buyback of what clients pay in USDT.
 - Supply shrinks through the burn share of every fee (10% by default),
   vetoed proposal deposits and, once wired, slashed bonds.
 
@@ -286,7 +304,7 @@ Every number is a chain parameter with a default in `keel-vm::Params`:
 | Lightning routing allowance | max(0.5%, 10 sats), unspent part refunded | withdrawer | on settlement |
 | Stablecoin mint / burn | none | — | — |
 | Extra action budget | 0.001 KEEL per action | buyer | `BuyBudget` |
-| Client plan | $300 / $1,000 / $3,000 per 30 days by tier, in USDT | client | epoch boundary, when a period starts |
+| Client plan | $300 / $1,000 / $3,000 per 30 days by tier, in USDT | client | `BuyPlan`, and each renewal |
 | Client usage | dollar price per address, withdrawal, fill, release, ruling, in USDT | client, after its plan allowance | each flow |
 
 Every fee is one balanced posting split into the system accounts
@@ -306,15 +324,22 @@ deposit address or withdrawal is issued to its accounts and its users pay
 the protocol fees again. With the fee waived the client's retail schedule
 (`SetClientFee`) is uncapped.
 
-The plan is what makes that bill recurring. The KEEL a client's operator
-account has locked selects one of three tiers (`clients.tier<N>_lock_keel`).
-At an epoch boundary, a client with a tier and no running period pays that
-tier's fee in USDT (`ClientPlanStarted`) and holds its usage allowance for
-`clients.plan_period_secs` (30 days); the usage prices draw on the
-allowance first (`UsageCovered`) and on the client's USDT after. A client
-that cannot pay the fee has no plan, is tried again at every boundary, and
-meanwhile is an attester whose users pay the protocol fees. A plan fee is
-never owed.
+The plan is what makes that bill recurring: a membership fee plus a
+lock. There are three tiers; each requires KEEL locked on the client's
+operator account (`clients.tier<N>_lock_keel`) and has a fee per period.
+The client buys one with `BuyPlan { tier }`, from Keel Harbor
+(`harbor.keelchain.com`) or any other signer: the chain checks the lock,
+takes the fee in USDT and starts the period in that block
+(`ClientPlanStarted`). For `clients.plan_period_secs` (30 days) the client
+holds the tier's usage allowance, which the usage prices draw on first
+(`UsageCovered`) before the client's USDT, and a daily pool of actions for
+the accounts it attested, so its users need no KEEL of their own
+(section 7). A higher tier can be bought mid-period, with what the running
+period has left taken off the fee. When the period ends the plan renews in
+the same block at the tier the client set (`SetPlanRenewal`, 0 to stop). A
+client that cannot pay then has no plan until it can, and meanwhile is an
+attester whose users pay the protocol fees; a plan fee is never owed.
+Unlocking below the tier suspends the plan until the KEEL is locked again.
 `clients.protocol_fee_waived = 0` restores the previous pricing. Unattested
 accounts pay the table above. The split must always sum to 100%. USD values
 for the P2P surcharge and withdrawal fee come from the chain's own
@@ -400,11 +425,23 @@ onboards them), locks it, and has a hundred actions a day for as long as
 the lock stands. The wallet shows the capacity card with the lock and
 unlock controls.
 
+**A client's plan pays for its users.** An account attested by a client
+with a running plan needs none of this. Its own capacity is used first if
+it has any; after that each action comes out of the plan's daily pool for
+the client's users (`clients.tier<N>_user_actions_per_day`: 10,000, 50,000
+or 250,000), up to `clients.user_actions_per_user_per_day` (100) per
+account, and the activation floor does not apply to it. This is not the
+free budget back: the pool is finite and paid for, and only accounts a
+registered client vouched for draw on it, so a keypair alone still gets
+nothing. When the pool or the account's share is used up for the day
+(UTC), or the client owes usage, or its plan lapses, the account is an
+address like any other again.
+
 Capacity from a lock is linear in KEEL and additive across addresses: ten
 addresses with one KEEL each get exactly what one address with ten KEEL
 gets. A retail user locks one or two KEEL; an exchange locks in proportion
 to its volume however it splits its keys, and its operator account's lock
-also selects its plan tier (section 5).
+is also what its plan tier requires (section 5).
 
 Two smaller sources add to the lock. `earned` grows by one action per
 whole USD the address fills on a USDT-quoted pair (taker or maker) and by

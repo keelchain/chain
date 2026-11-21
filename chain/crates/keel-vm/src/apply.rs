@@ -11,6 +11,12 @@
 //! budget (`budgets::is_free_lock`). It cannot be repeated for nothing,
 //! because every such lock ties its KEEL up for the unlock delay.
 //!
+//! An account attested by a client with a running plan has a second source:
+//! once its own capacity is used up, its actions come out of the plan's
+//! daily pool for the client's users (`clients::sponsor_of`), up to a
+//! per-user share. Such an account needs no KEEL at all, so the activation
+//! floor does not apply to it while the plan can pay.
+//!
 //! Fee mode: with `budget.base` at 0 and `budget.action_fee_keel` above 0,
 //! an address that has no earned or locked capacity left pays that fee per
 //! action instead, through the fee split. The fee is taken before the
@@ -77,7 +83,9 @@ pub fn check_admission(state: &State, sa: &SignedAction) -> Result<(), VmError> 
         )
         .unwrap_or(None)
         .unwrap_or(sa.envelope.signer);
-        budgets::require_activated(state, principal)?;
+        if clients::sponsor_of(state, &principal, state.timestamp / 1000).is_none() {
+            budgets::require_activated(state, principal)?;
+        }
     }
     if budgets::is_free_lock(state, sa.envelope.signer, &sa.envelope.action) {
         return Ok(());
@@ -89,6 +97,10 @@ pub fn check_admission(state: &State, sa: &SignedAction) -> Result<(), VmError> 
         meta.budget.limit(p)
     };
     if meta.budget.used >= limit && meta.budget.lock_pool == 0 {
+        // The signer's client pays from its plan.
+        if clients::sponsor_of(state, &sa.envelope.signer, state.timestamp / 1000).is_some() {
+            return Ok(());
+        }
         // Fee mode: the action is admitted if the signer can pay for it.
         let fee = state.limits.action_fee_keel;
         if limits::fee_mode(state)
@@ -215,7 +227,11 @@ fn apply_one(
             return Err(VmError::Unauthorized);
         }
     } else {
-        if !exempt_from_activation(action, signer) {
+        // An account whose client's plan can pay for the action needs no
+        // KEEL of its own: the client vouched for it and the plan's pool
+        // bounds what all its users can send.
+        let sponsor = clients::sponsor_of(state, &signer, ctx.seconds());
+        if !exempt_from_activation(action, signer) && sponsor.is_none() {
             budgets::require_activated(state, signer)?;
         }
         let p = state.params.budget.clone();
@@ -233,9 +249,19 @@ fn apply_one(
                 .budget
                 .spend(&p, ctx.height, ctx.timestamp, action.is_cancel())
         };
-        match spent {
-            Ok(()) => {}
-            Err(BudgetError::Exhausted) if limits::fee_mode(state) => {
+        match (spent, sponsor) {
+            (Ok(()), _) => {}
+            (Err(BudgetError::Exhausted), Some(client)) => {
+                // The signer's own capacity goes first; after it, the
+                // client's plan pays.
+                state
+                    .account(signer)
+                    .budget
+                    .take_block_slot(&p, ctx.height)
+                    .map_err(map)?;
+                clients::take_user_action(state, client, signer, ctx.seconds());
+            }
+            (Err(BudgetError::Exhausted), None) if limits::fee_mode(state) => {
                 // Fee mode: pay for the action instead. Taken before the
                 // savepoint below, so a refused action still paid.
                 let fee = state.limits.action_fee_keel;
@@ -262,7 +288,7 @@ fn apply_one(
                     amount: fee,
                 });
             }
-            Err(e) => return Err(map(e)),
+            (Err(e), _) => return Err(map(e)),
         }
     }
 
@@ -322,6 +348,8 @@ fn apply_one(
             expires_at,
         } => attest::apply_attest(state, ctx, signer, *subject, *tier, *expires_at),
         Action::SetClientFee(fee) => clients::apply_set_fee(state, ctx.height, signer, fee),
+        Action::BuyPlan { tier } => clients::apply_buy_plan(state, ctx, signer, &tx_id, *tier),
+        Action::SetPlanRenewal { tier } => clients::apply_set_renewal(state, signer, *tier),
         Action::RegisterCustodyVault(_)
         | Action::RequestCustodyAddress { .. }
         | Action::ObserveCustodyDeposit { .. }

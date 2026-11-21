@@ -17,12 +17,17 @@
 //!   client that cannot pay has no new addresses or withdrawals issued to
 //!   its users; that is its bill.
 //!
-//! - **The plan (2026-11-21).** A client's bill has a floor. The KEEL its
-//!   operator account has locked (`LockBudget`) selects a tier; at an epoch
-//!   boundary a client with a tier and no running period pays that tier's
-//!   fee for `plan_period_secs` (30 days) and receives its usage
-//!   allowance, which the usage prices draw on before the client's
-//!   balance. A client that cannot pay the fee has no plan until it can.
+//! - **The plan (2026-11-21).** A client's bill has a floor: a membership
+//!   fee plus a lock. The client buys a tier (`BuyPlan`): its operator
+//!   account must have that tier's KEEL locked (`LockBudget`), the tier's
+//!   fee is taken in the stable asset, and the period (`plan_period_secs`,
+//!   30 days) starts in that block. The fee includes a usage allowance,
+//!   which the usage prices draw on before the client's balance, and a
+//!   daily pool of actions for the accounts the client attested, so its
+//!   users need no KEEL of their own. When the period ends the plan
+//!   renews by itself at the tier the client chose (`SetPlanRenewal`), in
+//!   the first block in which the client can pay. A plan counts only
+//!   while the lock it was bought with stays in place.
 //!
 //! - **Waived protocol fees.** An account attested by a client with a
 //!   running plan and nothing owed pays no protocol fee on fills, escrow
@@ -64,6 +69,9 @@ pub struct PlanTier {
     pub fee_usd_micro: u128,
     /// USD micro of usage the period includes.
     pub allowance_usd_micro: u128,
+    /// Actions per day the client's attested accounts may take from the
+    /// plan, all of them together.
+    pub user_actions_per_day: u64,
 }
 
 /// How many tiers a network has (`clients.tier1_*` .. `clients.tier3_*`).
@@ -102,6 +110,9 @@ pub struct ClientParams {
     /// The plan tiers, lowest first. A client is in the highest tier whose
     /// lock its operator account meets.
     pub tiers: [PlanTier; TIERS],
+    /// Actions per day one attested account may take from its client's
+    /// plan, so one user cannot use up the pool.
+    pub user_actions_per_user_per_day: u64,
 }
 
 impl Default for ClientParams {
@@ -129,18 +140,22 @@ impl Default for ClientParams {
                     lock_keel: 100_000 * ORCAS_PER_KEEL,
                     fee_usd_micro: 300_000_000,
                     allowance_usd_micro: 300_000_000,
+                    user_actions_per_day: 10_000,
                 },
                 PlanTier {
                     lock_keel: 500_000 * ORCAS_PER_KEEL,
                     fee_usd_micro: 1_000_000_000,
                     allowance_usd_micro: 1_200_000_000,
+                    user_actions_per_day: 50_000,
                 },
                 PlanTier {
                     lock_keel: 2_000_000 * ORCAS_PER_KEEL,
                     fee_usd_micro: 3_000_000_000,
                     allowance_usd_micro: 4_000_000_000,
+                    user_actions_per_day: 250_000,
                 },
             ],
+            user_actions_per_user_per_day: 100,
         }
     }
 }
@@ -155,10 +170,21 @@ pub struct Plan {
     /// Block time (seconds) the period started and ends at.
     pub started_secs: u64,
     pub ends_secs: u64,
-    /// USD micro the period cost.
+    /// USD micro the tier cost when the period started.
     pub fee_usd_micro: u128,
-    /// USD micro of included usage left.
+    /// USD micro of usage the period included, and what is left of it.
+    pub allowance_usd_micro: u128,
     pub allowance_left_usd_micro: u128,
+    /// Orcas the tier required locked when the period started. The plan
+    /// counts only while the client's lock is at least this.
+    pub lock_keel: u128,
+    /// The tier the plan renews at when the period ends; 0 = it does not.
+    pub renew_tier: u8,
+    /// Actions per day the client's users may take from the plan, and how
+    /// many they took on `user_actions_day` (block time in whole days).
+    pub user_actions_per_day: u64,
+    pub user_actions_used: u64,
+    pub user_actions_day: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -183,7 +209,7 @@ pub struct ClientsState {
     /// protocol fee was waived at trade start.
     pub waived_trades: BTreeMap<u64, Address>,
     /// Client -> its plan period (kept after it ends, until the next one
-    /// replaces it or the client drops below every tier).
+    /// replaces it).
     pub plans: BTreeMap<Address, Plan>,
 }
 
@@ -210,6 +236,10 @@ pub const PARAM_KEYS: &[&str] = &[
     "clients.tier3_lock_keel",
     "clients.tier3_fee_usd_micro",
     "clients.tier3_allowance_usd_micro",
+    "clients.tier1_user_actions_per_day",
+    "clients.tier2_user_actions_per_day",
+    "clients.tier3_user_actions_per_day",
+    "clients.user_actions_per_user_per_day",
 ];
 
 /// `clients.tier<N>_<field>` -> (index, field).
@@ -228,6 +258,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
             "lock_keel" => Some(t.lock_keel),
             "fee_usd_micro" => Some(t.fee_usd_micro),
             "allowance_usd_micro" => Some(t.allowance_usd_micro),
+            "user_actions_per_day" => Some(t.user_actions_per_day as u128),
             _ => None,
         };
     }
@@ -245,6 +276,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
         "clients.usage_release_usd_micro" => p.usage_release_usd_micro,
         "clients.usage_ruling_usd_micro" => p.usage_ruling_usd_micro,
         "clients.plan_period_secs" => p.plan_period_secs as u128,
+        "clients.user_actions_per_user_per_day" => p.user_actions_per_user_per_day as u128,
         _ => return None,
     })
 }
@@ -268,6 +300,10 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
             "lock_keel" => t.lock_keel = value,
             "fee_usd_micro" => t.fee_usd_micro = value,
             "allowance_usd_micro" => t.allowance_usd_micro = value,
+            "user_actions_per_day" => {
+                t.user_actions_per_day =
+                    u64::try_from(value).map_err(|_| VmError::Invalid("too large".into()))?
+            }
             _ => return Err(VmError::Invalid(format!("cannot set {key}"))),
         }
         return Ok(vec![Event::ParamChanged {
@@ -304,6 +340,10 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
                     VmError::Invalid(format!("{key} must be within one day..=one year"))
                 })?
         }
+        "clients.user_actions_per_user_per_day" => {
+            p.user_actions_per_user_per_day =
+                u64::try_from(value).map_err(|_| VmError::Invalid("too large".into()))?
+        }
         _ => return Err(VmError::Invalid(format!("cannot set {key}"))),
     }
     Ok(vec![Event::ParamChanged {
@@ -323,13 +363,243 @@ pub fn tier_for_lock(p: &ClientParams, locked: u128) -> u8 {
         .unwrap_or(0)
 }
 
-/// `client`'s plan while its period runs.
+fn locked_keel(state: &State, client: &Address) -> u128 {
+    state
+        .account_ref(client)
+        .map(|m| m.budget.locked)
+        .unwrap_or(0)
+}
+
+/// `client`'s plan while its period runs and the lock it was bought with
+/// is in place. Unlocking below the tier suspends the plan; locking again
+/// brings back what is left of the period.
 pub fn active_plan<'a>(state: &'a State, client: &Address, now_secs: u64) -> Option<&'a Plan> {
     state
         .clients
         .plans
         .get(client)
-        .filter(|p| now_secs < p.ends_secs)
+        .filter(|p| now_secs < p.ends_secs && locked_keel(state, client) >= p.lock_keel)
+}
+
+/// What is left of a running period when the client upgrades: the share
+/// of its fee for the time not used, and no more than the share of the
+/// allowance not used.
+fn upgrade_credit(plan: &Plan, now_secs: u64) -> u128 {
+    let length = u128::from(plan.ends_secs.saturating_sub(plan.started_secs));
+    let left = u128::from(plan.ends_secs.saturating_sub(now_secs));
+    if length == 0 {
+        return 0;
+    }
+    let by_time = mul_div_floor(plan.fee_usd_micro, left, length).unwrap_or(0);
+    let by_usage = if plan.allowance_usd_micro == 0 {
+        by_time
+    } else {
+        mul_div_floor(
+            plan.fee_usd_micro,
+            plan.allowance_left_usd_micro,
+            plan.allowance_usd_micro,
+        )
+        .unwrap_or(0)
+    };
+    by_time.min(by_usage)
+}
+
+/// Take `fee` (and first whatever the client owes) from the client's
+/// stable balance and start a period at `tier` now. The caller has checked
+/// the tier and the lock. Nothing is taken when the balance does not cover
+/// both.
+fn start_plan(
+    state: &mut State,
+    client: Address,
+    tier: u8,
+    fee: u128,
+    now_secs: u64,
+    external_id: &str,
+) -> Result<Vec<Event>, VmError> {
+    let stable = state.tokens.stable.clone();
+    let from = tokens::deposit_key(client, &stable);
+    let owed = state.clients.usage_owed.get(&client).copied().unwrap_or(0);
+    let have = state.ledger.balance(&from).max(0) as Amount;
+    let need = owed.saturating_add(fee);
+    if have < need {
+        return Err(VmError::Invalid(format!(
+            "tier {tier} costs {need} {stable} micro now ({fee} fee, {owed} owed); the account holds {have}"
+        )));
+    }
+    let mut events = Vec::new();
+    if owed > 0 {
+        fees::collect(
+            state,
+            &format!("{external_id}:owed"),
+            TxType::BudgetPurchase,
+            None,
+            from.clone(),
+            &stable,
+            owed,
+        )?;
+        state.clients.usage_owed.remove(&client);
+        note_paid(state, client, &stable, owed);
+        events.push(Event::UsageCharged {
+            client,
+            asset: stable.clone(),
+            amount: owed,
+            kind: "owed".into(),
+        });
+    }
+    if fee > 0 {
+        fees::collect(
+            state,
+            external_id,
+            TxType::BudgetPurchase,
+            None,
+            from,
+            &stable,
+            fee,
+        )?;
+        note_paid(state, client, &stable, fee);
+    }
+    let t = state.clients.params.tiers[tier as usize - 1].clone();
+    let ends_secs = now_secs.saturating_add(state.clients.params.plan_period_secs);
+    state.clients.plans.insert(
+        client,
+        Plan {
+            tier,
+            started_secs: now_secs,
+            ends_secs,
+            fee_usd_micro: t.fee_usd_micro,
+            allowance_usd_micro: t.allowance_usd_micro,
+            allowance_left_usd_micro: t.allowance_usd_micro,
+            lock_keel: t.lock_keel,
+            renew_tier: tier,
+            user_actions_per_day: t.user_actions_per_day,
+            user_actions_used: 0,
+            user_actions_day: now_secs / 86_400,
+        },
+    );
+    events.push(Event::ClientPlanStarted {
+        client,
+        tier,
+        asset: stable,
+        fee,
+        allowance: t.allowance_usd_micro,
+        ends_at: ends_secs,
+    });
+    Ok(events)
+}
+
+fn check_tier(p: &ClientParams, tier: u8) -> Result<&PlanTier, VmError> {
+    (1..=TIERS as u8)
+        .contains(&tier)
+        .then(|| &p.tiers[tier as usize - 1])
+        .filter(|t| t.lock_keel > 0)
+        .ok_or_else(|| VmError::Invalid(format!("there is no plan tier {tier}")))
+}
+
+/// `BuyPlan`: an attester buys a period at `tier`, starting now. With a
+/// period running, only a higher tier can be bought: the upgrade starts a
+/// fresh period and what the old one had left is taken off its fee.
+pub fn apply_buy_plan(
+    state: &mut State,
+    ctx: &crate::context::BlockContext,
+    signer: Address,
+    tx_id: &[u8; 32],
+    tier: u8,
+) -> Result<Vec<Event>, VmError> {
+    if !state.attest.attesters.contains(&signer) {
+        return Err(VmError::Unauthorized);
+    }
+    let t = check_tier(&state.clients.params, tier)?.clone();
+    let locked = locked_keel(state, &signer);
+    if locked < t.lock_keel {
+        return Err(VmError::Invalid(format!(
+            "tier {tier} needs {} orcas locked; {locked} are locked",
+            t.lock_keel
+        )));
+    }
+    let now = ctx.seconds();
+    let mut fee = t.fee_usd_micro;
+    if let Some(plan) = state
+        .clients
+        .plans
+        .get(&signer)
+        .filter(|p| now < p.ends_secs)
+    {
+        if tier <= plan.tier {
+            return Err(VmError::Invalid(format!(
+                "a tier {} plan runs until {}; only a higher tier can be bought before then",
+                plan.tier, plan.ends_secs
+            )));
+        }
+        fee = fee.saturating_sub(upgrade_credit(plan, now));
+    }
+    start_plan(
+        state,
+        signer,
+        tier,
+        fee,
+        now,
+        &format!("plan:{}", tokens::hex(tx_id)),
+    )
+}
+
+/// `SetPlanRenewal`: the tier the signer's plan renews at; 0 stops it.
+pub fn apply_set_renewal(
+    state: &mut State,
+    signer: Address,
+    tier: u8,
+) -> Result<Vec<Event>, VmError> {
+    if tier != 0 {
+        check_tier(&state.clients.params, tier)?;
+    }
+    let plan = state
+        .clients
+        .plans
+        .get_mut(&signer)
+        .ok_or_else(|| VmError::Invalid("no plan to renew; buy one first".into()))?;
+    plan.renew_tier = tier;
+    Ok(vec![Event::ClientPlanRenewalSet {
+        client: signer,
+        tier,
+    }])
+}
+
+/// The client whose plan pays for `user`'s next action, if any: `user` has
+/// a live attestation from a client that is not itself, that client's plan
+/// is running with nothing owed, the plan's pool for today is not used up,
+/// and neither is the user's own share of it.
+pub fn sponsor_of(state: &State, user: &Address, now_secs: u64) -> Option<Address> {
+    let client = billing_client_of(state, user, now_secs)?;
+    if client == *user || state.clients.usage_owed.contains_key(&client) {
+        return None;
+    }
+    let plan = active_plan(state, &client, now_secs)?;
+    let day = now_secs / 86_400;
+    let pool_used = if plan.user_actions_day == day {
+        plan.user_actions_used
+    } else {
+        0
+    };
+    let user_used = state
+        .account_ref(user)
+        .map(|m| m.budget.sponsored_on(day))
+        .unwrap_or(0);
+    (pool_used < plan.user_actions_per_day
+        && user_used < state.clients.params.user_actions_per_user_per_day)
+        .then_some(client)
+}
+
+/// Take one action for `user` from `client`'s plan (`sponsor_of` said it
+/// may).
+pub fn take_user_action(state: &mut State, client: Address, user: Address, now_secs: u64) {
+    let day = now_secs / 86_400;
+    if let Some(plan) = state.clients.plans.get_mut(&client) {
+        if plan.user_actions_day != day {
+            plan.user_actions_day = day;
+            plan.user_actions_used = 0;
+        }
+        plan.user_actions_used = plan.user_actions_used.saturating_add(1);
+    }
+    state.account(user).budget.take_sponsored(day);
 }
 
 /// `SetClientFee`: an attester's retail schedule. Capped by governance
@@ -626,14 +896,20 @@ pub fn charge_usage_to(
     Ok(events)
 }
 
-/// Epoch boundary: collect usage owed from clients that hold the stable
-/// asset again, then start a plan period for every client that has a tier
-/// and no running period.
+/// Every block: renew the plans whose period ended. At an epoch boundary,
+/// before that: collect usage owed from clients that hold the stable asset
+/// again.
 pub fn end_block(state: &mut State, ctx: &crate::context::BlockContext) -> Vec<Event> {
     let len = state.params.epoch_length_blocks.max(1);
-    if ctx.height == 0 || !ctx.height.is_multiple_of(len) {
-        return Vec::new();
+    let mut events = Vec::new();
+    if ctx.height != 0 && ctx.height.is_multiple_of(len) {
+        events.extend(collect_owed(state, ctx));
     }
+    events.extend(renew_plans(state, ctx));
+    events
+}
+
+fn collect_owed(state: &mut State, ctx: &crate::context::BlockContext) -> Vec<Event> {
     let mut events = Vec::new();
     let stable = state.tokens.stable.clone();
     let owing: Vec<(Address, Amount)> = state
@@ -678,70 +954,49 @@ pub fn end_block(state: &mut State, ctx: &crate::context::BlockContext) -> Vec<E
             kind: "owed".into(),
         });
     }
-    events.extend(renew_plans(state, ctx));
     events
 }
 
-/// Start a period for every attester whose lock selects a tier and whose
-/// last period (if any) has ended. The fee is paid in full from the
-/// client's stable balance, after anything it owes; a client that cannot
-/// pay has no plan and is tried again at the next epoch boundary.
+/// Start the next period of every plan that ended and is set to renew, at
+/// its renewal tier or the highest tier below it the client's lock still
+/// meets. The fee (and anything owed) is paid in full from the client's
+/// stable balance; a client that cannot pay, or whose lock meets no tier,
+/// has no plan and is tried again every block until it can.
 fn renew_plans(state: &mut State, ctx: &crate::context::BlockContext) -> Vec<Event> {
     let now = ctx.seconds();
-    let stable = state.tokens.stable.clone();
-    let period = state.clients.params.plan_period_secs;
-    let attesters: Vec<Address> = state.attest.attesters.iter().copied().collect();
+    let due: Vec<(Address, u8)> = state
+        .clients
+        .plans
+        .iter()
+        .filter(|(_, p)| p.renew_tier > 0 && now >= p.ends_secs)
+        .map(|(c, p)| (*c, p.renew_tier))
+        .collect();
     let mut events = Vec::new();
-    for client in attesters {
-        if active_plan(state, &client, now).is_some() {
+    for (client, renew_tier) in due {
+        if !state.attest.attesters.contains(&client) {
             continue;
         }
-        let locked = state
-            .account_ref(&client)
-            .map(|m| m.budget.locked)
-            .unwrap_or(0);
-        let tier = tier_for_lock(&state.clients.params, locked);
+        let tier =
+            tier_for_lock(&state.clients.params, locked_keel(state, &client)).min(renew_tier);
         if tier == 0 {
-            state.clients.plans.remove(&client);
             continue;
         }
-        if state.clients.usage_owed.contains_key(&client) {
-            continue;
-        }
-        let t = state.clients.params.tiers[tier as usize - 1].clone();
-        if fees::collect(
+        let fee = state.clients.params.tiers[tier as usize - 1].fee_usd_micro;
+        if let Ok(mut started) = start_plan(
             state,
-            &format!("plan:{}:{}", ctx.height, client),
-            TxType::BudgetPurchase,
-            None,
-            tokens::deposit_key(client, &stable),
-            &stable,
-            t.fee_usd_micro,
-        )
-        .is_err()
-        {
-            continue;
-        }
-        note_paid(state, client, &stable, t.fee_usd_micro);
-        let ends_secs = now.saturating_add(period);
-        state.clients.plans.insert(
-            client,
-            Plan {
-                tier,
-                started_secs: now,
-                ends_secs,
-                fee_usd_micro: t.fee_usd_micro,
-                allowance_left_usd_micro: t.allowance_usd_micro,
-            },
-        );
-        events.push(Event::ClientPlanStarted {
             client,
             tier,
-            asset: stable.clone(),
-            fee: t.fee_usd_micro,
-            allowance: t.allowance_usd_micro,
-            ends_at: ends_secs,
-        });
+            fee,
+            now,
+            &format!("plan:{}:{}", ctx.height, client),
+        ) {
+            // A renewal keeps the tier the client asked to renew at, even
+            // when a smaller lock gave it a lower one this time.
+            if let Some(plan) = state.clients.plans.get_mut(&client) {
+                plan.renew_tier = renew_tier;
+            }
+            events.append(&mut started);
+        }
     }
     events
 }

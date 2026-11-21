@@ -48,6 +48,9 @@ jobs:
       - name: Explorer
         working-directory: apps/explorer
         run: npm ci && npx tsc --noEmit && npm test
+      - name: Harbor
+        working-directory: apps/harbor
+        run: npm ci && npx tsc --noEmit && npm test
       - name: Wallet extension
         working-directory: apps/wallet-extension
         run: npm ci && npm test && npm run build

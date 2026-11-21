@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="32" height="32" role="img" aria-label="Keel">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F2F5B"/><stop offset="1" stop-color="#081C36"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="28" fill="url(#sea)"/>
+  <!-- hull: two flanks meeting at the keel -->
+  <path d="M22 40 Q34 92 64 100 Q94 92 106 40 L96 40 Q86 80 64 86 Q42 80 32 40 Z" fill="#2DD4BF"/>
+  <!-- keel line: the spine that keeps it steady -->
+  <path d="M64 100 L64 112" stroke="#F5C451" stroke-width="8" stroke-linecap="round"/>
+  <path d="M40 112 H88" stroke="#F5C451" stroke-width="8" stroke-linecap="round"/>
+</svg>

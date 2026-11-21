@@ -543,6 +543,11 @@ pub enum Event {
         allowance: Amount,
         ends_at: u64,
     },
+    /// A client chose the tier its plan renews at; 0 = it will not renew.
+    ClientPlanRenewalSet {
+        client: Address,
+        tier: u8,
+    },
     // ---- recovery
     RecoveryRequested {
         id: u64,

@@ -33,9 +33,14 @@ export interface Capacity {
   perDay: number;
   /** Unlocks on their way back, soonest first. */
   unlocking: PendingUnlock[];
+  /**
+   * Actions left today that the plan of the client (the exchange that
+   * onboarded this account) pays for, once the account's own are used up.
+   */
+  sponsored: number;
 }
 
-export const NO_CAPACITY: Capacity = { available: 0, locked: 0n, perDay: 0, unlocking: [] };
+export const NO_CAPACITY: Capacity = { available: 0, locked: 0n, perDay: 0, unlocking: [], sponsored: 0 };
 
 function count(v: unknown): number | null {
   const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN;
@@ -62,6 +67,11 @@ function unlocks(v: unknown): PendingUnlock[] {
   return out.sort((a, b) => a.readyAt - b.readyAt);
 }
 
+function sponsoredLeft(v: unknown): number {
+  if (typeof v !== 'object' || v === null) return 0;
+  return count((v as Record<string, unknown>)['left_today']) ?? 0;
+}
+
 /**
  * The capacity in an account payload, or null when the payload carries no
  * `budget` object. `remaining` counts the lock pool as of the account's last
@@ -85,12 +95,13 @@ export function parseCapacity(payload: unknown): Capacity | null {
     locked: orcas(b['locked']) ?? 0n,
     perDay: count(b['lock_cap_per_day']) ?? 0,
     unlocking: pending.length > 0 ? pending : unlocks(p['unlocking']),
+    sponsored: sponsoredLeft(b['sponsor']),
   };
 }
 
 /** True when the account cannot act and holds no lock: the card then explains the first lock. */
 export function needsFirstLock(c: Capacity): boolean {
-  return c.available === 0 && c.locked === 0n;
+  return c.available === 0 && c.locked === 0n && c.sponsored === 0;
 }
 
 export function lockBudgetAction(amount: bigint): Action {
@@ -109,12 +120,12 @@ export function capacityChangeProblem(kind: 'lock' | 'unlock', amount: bigint | 
   if (amount === null || amount <= 0n) return 'Enter an amount in KEEL, with at most 6 decimals.';
   if (kind === 'lock') {
     if (amount > spendable) return `More than the ${formatAmount(spendable, 6)} KEEL available.`;
-    if (c.available === 0 && amount < FIRST_LOCK_MIN_ORCAS) return `With no capacity left, a lock must be at least ${formatAmount(FIRST_LOCK_MIN_ORCAS, 6)} KEEL.`;
+    if (c.available === 0 && c.sponsored === 0 && amount < FIRST_LOCK_MIN_ORCAS) return `With no capacity left, a lock must be at least ${formatAmount(FIRST_LOCK_MIN_ORCAS, 6)} KEEL.`;
     return null;
   }
   if (c.locked === 0n) return 'Nothing is locked.';
   if (amount > c.locked) return `More than the ${formatAmount(c.locked, 6)} KEEL locked.`;
-  if (c.available === 0) return 'Unlocking is an action too, and none are left right now. The capacity refills over the day.';
+  if (c.available === 0 && c.sponsored === 0) return 'Unlocking is an action too, and none are left right now. The capacity refills over the day.';
   return null;
 }
 

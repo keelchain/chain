@@ -347,6 +347,26 @@ async fn account(
         .map(|(k, sess)| json!({ "key": k.to_hex(), "scope": sess.scope, "expires_at": sess.expires_at }))
         .collect();
     let session_of: Option<Value> = s.sessions.by_key.get(&address).map(|sess| json!({ "principal": sess.principal.to_hex(), "scope": sess.scope, "expires_at": sess.expires_at }));
+    let sponsor: Option<Value> = {
+        use keel_vm::modules::clients;
+        let now = s.timestamp / 1000;
+        let day = now / 86_400;
+        clients::sponsor_of(&s, &address, now).and_then(|client| {
+            let plan = s.clients.plans.get(&client)?;
+            let pool_used = if plan.user_actions_day == day {
+                plan.user_actions_used
+            } else {
+                0
+            };
+            let pool_left = plan.user_actions_per_day.saturating_sub(pool_used);
+            let own_left = s
+                .clients
+                .params
+                .user_actions_per_user_per_day
+                .saturating_sub(meta.budget.sponsored_on(day));
+            Some(json!({ "client": client.to_hex(), "left_today": pool_left.min(own_left) }))
+        })
+    };
     let unlocking: Vec<Value> = keel_vm::modules::budgets::pending_unlocks(&s, address)
         .iter()
         .map(|(t, a)| json!({ "ready_at": t, "amount": a.to_string() }))
@@ -372,6 +392,10 @@ async fn account(
             "lock_cap_per_day": meta.budget.lock_cap(p),
             "lock_pool": lock_pool,
             "unlocking": unlocking,
+            // The client whose plan pays for this account's actions once
+            // its own capacity is used up, and what is left of its share
+            // today.
+            "sponsor": sponsor,
         },
         "tier": tier,
         "tier_expires_at": meta.tier_expires_at,
@@ -1430,6 +1454,8 @@ async fn client(
         .map(|m| m.budget.locked)
         .unwrap_or(0);
     let plan = c.plans.get(&address);
+    let active = keel_vm::modules::clients::active_plan(&s, &address, now).is_some();
+    let day = now / 86_400;
     Ok(Json(json!({
         "address": address.to_hex(),
         "attester": s.attest.attesters.contains(&address),
@@ -1458,16 +1484,25 @@ async fn client(
             "tier": p.tier,
             "started_at": p.started_secs,
             "ends_at": p.ends_secs,
-            "active": now < p.ends_secs,
+            // Running, and the lock it was bought with is in place.
+            "active": active,
+            "suspended": now < p.ends_secs && !active,
             "fee_usd_micro": p.fee_usd_micro.to_string(),
+            "allowance_usd_micro": p.allowance_usd_micro.to_string(),
             "allowance_left_usd_micro": p.allowance_left_usd_micro.to_string(),
+            "lock_keel": p.lock_keel.to_string(),
+            "renew_tier": p.renew_tier,
+            "user_actions_per_day": p.user_actions_per_day,
+            "user_actions_used_today": if p.user_actions_day == day { p.user_actions_used } else { 0 },
         })),
+        "user_actions_per_user_per_day": c.params.user_actions_per_user_per_day,
         "plan_period_secs": c.params.plan_period_secs,
         "tiers": c.params.tiers.iter().enumerate().map(|(i, t)| json!({
             "tier": i + 1,
             "lock_keel": t.lock_keel.to_string(),
             "fee_usd_micro": t.fee_usd_micro.to_string(),
             "allowance_usd_micro": t.allowance_usd_micro.to_string(),
+            "user_actions_per_day": t.user_actions_per_day,
         })).collect::<Vec<_>>(),
     })))
 }

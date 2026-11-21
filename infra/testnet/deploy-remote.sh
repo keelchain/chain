@@ -303,6 +303,7 @@ fi
 if [ "$IS_HOST0" = true ]; then
   log "web"
   sudo rsync -a --delete "$D/explorer/" "$WWW/explorer/"
+  sudo rsync -a --delete "$D/harbor/" "$WWW/harbor/"
   sudo rsync -a --delete "$D/site/" "$WWW/site/"
   sudo rsync -a --delete "$D/site/faucet/" "$WWW/faucet/"
   sudo chown -R root:root "$WWW"; sudo find "$WWW" -type d -exec chmod 755 {} + ; sudo find "$WWW" -type f -exec chmod 644 {} +

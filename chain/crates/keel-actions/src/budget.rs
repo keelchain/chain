@@ -66,6 +66,10 @@ pub struct Budget {
     /// Accrual below one action carried to the next update (cap × ms units,
     /// < one day), so frequent updates do not truncate away capacity.
     pub lock_carry: u64,
+    /// Actions taken from a client's plan today (`sponsored_day` is the
+    /// block time in whole days), against the per-user daily cap.
+    pub sponsored_used: u64,
+    pub sponsored_day: u64,
 }
 
 const DAY_MS: u128 = 86_400_000;
@@ -195,6 +199,21 @@ impl Budget {
         }
         self.used_in_block += 1;
         Ok(())
+    }
+
+    /// Actions this address took from its client's plan on `day`.
+    pub fn sponsored_on(&self, day: u64) -> u64 {
+        if self.sponsored_day == day {
+            self.sponsored_used
+        } else {
+            0
+        }
+    }
+
+    /// Count one action paid by the client's plan on `day`.
+    pub fn take_sponsored(&mut self, day: u64) {
+        self.sponsored_used = self.sponsored_on(day).saturating_add(1);
+        self.sponsored_day = day;
     }
 
     pub fn earn_from_fill(&mut self, p: &BudgetParams, usd_whole: u128) {

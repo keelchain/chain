@@ -65,6 +65,12 @@ jobs:
           VITE_BASE: /
           VITE_NETWORKS: ${{ vars.EXPLORER_NETWORKS || '[{"id":"testnet","name":"Keel testnet","api":"https://testnet.keelchain.com/api"}]' }}
         run: npm ci && npm run build
+      - name: Harbor
+        working-directory: apps/harbor
+        env:
+          VITE_BASE: /
+          VITE_NETWORKS: ${{ vars.EXPLORER_NETWORKS || '[{"id":"testnet","name":"Keel testnet","api":"https://testnet.keelchain.com/api"}]' }}
+        run: npm ci && npm run build
       - name: Wallet packages
         working-directory: apps/wallet-extension
         run: npm ci && npm run package
@@ -87,6 +93,7 @@ jobs:
           ls out/site/wallet/downloads
           cp -r apps/example-client/dist/. out/site/wallet/try/
           cp -r apps/explorer/dist out/explorer
+          cp -r apps/harbor/dist out/harbor
           # The signed Firefox build and its update manifest come from the
           # newest `wallet-v*` release made by publish-wallet.yml, when any.
           TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '[.[] | select(.tagName | startswith("wallet-v"))][0].tagName' 2>/dev/null || true)

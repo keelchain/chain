@@ -1115,6 +1115,36 @@
       "nonce": 45,
       "signature": "90634194c766d7c7c31d429fd54f4cf74d62dce87ada8fb96fc9d21273296ee3baee0835a32fbd84c03007c39c96c41768ee4a26e23325a0ef511b7c485fc802",
       "tx_id": "6954ca00274f10940d86413d1b72f75ad09c916aa0227402051e527384249c2c"
+    },
+    {
+      "action_borsh": "3a02",
+      "action_json": {
+        "BuyPlan": {
+          "tier": 2
+        }
+      },
+      "chain_id": 1,
+      "digest": "5cfaef225a0ec12c2eb203b65b1c1809b8e163f424b0a616865a323ddbe603bd",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff982e00000000000000010000003a02",
+      "name": "buy_plan",
+      "nonce": 46,
+      "signature": "27c6f2627d95dfad0bde858c4c44ea27cd9771c9630820b0ff66f9200fd935c8ce42e79e7793906423eb1d239b4146fd6848a20d11f80e06b5dc7dbd9b986909",
+      "tx_id": "d0cb040e5702f4a5ed6146788385bad23f9e8179a3adfc52d6fb6e9fe5e0479a"
+    },
+    {
+      "action_borsh": "3b00",
+      "action_json": {
+        "SetPlanRenewal": {
+          "tier": 0
+        }
+      },
+      "chain_id": 1,
+      "digest": "434c4411dde088a3f3df3680f33471d20b263cc75167e9182e3339bd42ec5505",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff982f00000000000000010000003b00",
+      "name": "set_plan_renewal",
+      "nonce": 47,
+      "signature": "c68eb81d41302408aef1b64dfe206cac67b6548e93616d6f0dffa1918f3e71dc79670799a5c7e0cb80f3663ed99e4662d181341c0b84f3b5861aafa27f319806",
+      "tx_id": "49df366980782079b1787f59ee4f725fd62ea98bf1d1016aff792c45f62b6c34"
     }
   ]
 }

@@ -44,8 +44,8 @@ in, clients pay a plan every 30 days and a dollar price per flow for
 their users' waived fees, and the liquidity pool pays half its gain. The
 epoch buyback turns that revenue into KEEL. What holds the price while
 KEEL is sold is what the chain makes people hold or buy: KEEL locked for
-action capacity by every account that acts (linear in volume), the lock
-that selects a client's plan tier, bonds, and the buyback of the plan and
+action capacity by every account that acts on its own (linear in volume),
+the lock a client's plan tier requires, bonds, and the buyback of the plan and
 usage income. Against those stand the
 sellers: the treasury and vesting, validators selling block rewards to
 cover costs, and community reward recipients. That is why issuance is kept
@@ -60,14 +60,16 @@ than dripped on a calendar.
 - Action capacity by locking (the Tron energy model): each whole KEEL
   locked grants `budget.per_locked_keel_per_day` actions per day (default
   100), and there is no free base (`budget.base` is 0), so every account
-  that acts holds a lock: one KEEL for a retail user, in proportion to its
-  volume for an exchange, however many addresses it spreads it over.
+  that acts on its own holds a lock: one KEEL for a retail user, in
+  proportion to its volume for anyone larger, however many addresses it
+  spreads it over. The users of a client with a plan act on the plan's
+  pool instead.
   Unlocking returns the KEEL in full after `budget.unlock_delay_secs`
   (default 3 days). Nothing is paid, so it adds demand without adding a
   fee. Buying budget (0.001 KEEL per action) stays as a fallback.
-- The plan tier lock: a client's operator account locks 100,000, 500,000
-  or 2,000,000 KEEL for tier 1, 2 or 3. Refundable, and held for as long
-  as the client is one.
+- The plan tier lock: a client's operator account keeps 100,000, 500,000
+  or 2,000,000 KEEL locked for tier 1, 2 or 3, on top of the fee.
+  Refundable, and held for as long as the plan runs.
 - The buyback: plan fees and usage are paid in USDT and bought into KEEL
   on the chain's own book every epoch, in proportion to what clients use.
 - Offer listing deposit: 10 KEEL per live offer (refundable).
@@ -130,23 +132,24 @@ value they move (the fee table above), not a price per transaction.
 rents elsewhere for hundreds or thousands of dollars a month, and a lock
 alone would be a one-time, refundable purchase: it takes KEEL off the
 market once and pays the validators and the treasury nothing. So a client
-pays three things, and only the first is a deposit:
+pays a membership, which is a lock and a fee together, and usage. Three
+parts, of which only the first is a deposit:
 
 | Part | What it is | Recurs |
 |---|---|---|
-| Operator lock | KEEL locked on the client's operator account: its action capacity and what selects its tier. Returned in full on unlock | no |
-| Plan fee | a dollar price per 30-day period, paid in USDT, which includes a usage allowance | every period |
+| Operator lock | KEEL locked on the client's operator account, as much as its tier requires: its action capacity and its standing in the plan. Returned in full on unlock | no |
+| Plan fee | a dollar price per 30-day period, paid in USDT, which includes a usage allowance and a daily pool of actions for the client's users | every period |
 | Usage | a dollar price per deposit address, withdrawal, filled order, escrow release and ruling, drawn from the allowance first and from the client's USDT after | with every flow |
 
-| Tier | Lock | Plan fee per 30 days | Usage included |
-|---|---|---|---|
-| 1 | 100,000 KEEL | $300 | $300 |
-| 2 | 500,000 KEEL | $1,000 | $1,200 |
-| 3 | 2,000,000 KEEL | $3,000 | $4,000 |
+| Tier | Lock | Plan fee per 30 days | Usage included | Actions a day for its users |
+|---|---|---|---|---|
+| 1 | 100,000 KEEL | $300 | $300 | 10,000 |
+| 2 | 500,000 KEEL | $1,000 | $1,200 | 50,000 |
+| 3 | 2,000,000 KEEL | $3,000 | $4,000 | 250,000 |
 
 These are the defaults in code and every one is a `ParamChange` key
 (`clients.tier<N>_lock_keel`, `_fee_usd_micro`, `_allowance_usd_micro`,
-`clients.plan_period_secs`, `clients.usage_*_usd_micro`). They are
+`_user_actions_per_day`, `clients.plan_period_secs`, `clients.usage_*_usd_micro`). They are
 starting values to be set against what gateways and custody providers
 charge, not a price list I consider final.
 
@@ -164,15 +167,51 @@ fees (10 bps on a fill, 1% on a release, $1 on a withdrawal), which at any
 real volume is more than the plan. The plan is the cheaper way to be a
 client, and it is the only way to keep all of one's own fees.
 
-How a period runs. At an epoch boundary, a client whose lock meets a tier
-and that has no running period pays the tier's fee and holds its allowance
-until the period ends. If it cannot pay, it has no plan and is tried again
-at every boundary; a plan fee is never carried as debt. Usage beyond the
-allowance comes out of its USDT; the per-flow charges never block a user's
-trade, so what the client cannot pay then is owed, and while anything is
-owed no new address or withdrawal is issued to its accounts and its users
-pay the protocol fees again. `GET /v1/clients/{address}` shows the tier,
-the period, the allowance left, what was paid and what is owed.
+Why both a lock and a fee. The fee is the income: it recurs, it scales
+with the tier, and it is what the validators and the treasury are paid
+from. The lock is the commitment: KEEL held off the market for as long as
+the client is a client, in proportion to its size, which a fee alone
+would not ask for. A client that unlocks below its tier has its plan
+suspended at once.
+
+Why the plan carries its users. A lock per user is the right price for a
+person who came on their own, and the wrong chore for an exchange with a
+hundred thousand accounts: it would have to send each one a KEEL and
+manage it. So each tier includes a daily pool of actions for the accounts
+the client attested, capped per user. That is not a free grant to anyone
+with a keypair, which is what made the old free budget a sybil hole: the
+pool is finite, it is paid for, and only accounts a registered client
+vouched for draw on it.
+
+Who enforces it. The plan is part of the state machine, not a billing
+service beside it. The tiers, each client's period, its allowance, its
+users' pool and its debt are chain state; the purchase and the renewal are
+executed in a block like any transfer, and a usage price is charged inside
+the action that incurs it, so every validator applies the same charges by
+executing the same blocks. No validator meters usage or decides anything,
+and no key can waive a charge.
+
+Where it is bought. Keel Harbor (`harbor.keelchain.com`) is the client's
+account: plans, payment, usage against the allowance, the lock, retail
+fees and vaults. It is a static page with no server behind it. A client
+deposits USDT to its operator account, locks the tier's KEEL, and signs
+`BuyPlan`; Harbor only builds the action and shows what the chain
+answers, so there is no second ledger to reconcile and nothing Harbor
+could charge that the chain would not.
+
+How a period runs. `BuyPlan { tier }` from an account whose lock meets the
+tier takes the fee and starts the period in that block. The client holds
+the allowance until the period ends, when the plan renews in the same
+block at the tier it set (`SetPlanRenewal`; 0 stops it). If it cannot pay
+then, it has no plan and is renewed in the first block in which it can; a
+plan fee is never carried as debt. A higher tier can be bought before the
+period ends, with the unused part of the running period taken off the
+fee. Usage beyond the allowance comes out of the client's USDT; the
+per-flow charges never block a user's trade, so what the client cannot pay
+then is owed, and while anything is owed no new address or withdrawal is
+issued to its accounts, its users pay the protocol fees again and its pool
+pays for none of their actions. `GET /v1/clients/{address}` shows the
+tier, the period, the allowance left, what was paid and what is owed.
 
 ## Wholesale and retail: how clients and Keel are paid
 

@@ -244,6 +244,19 @@ pub enum Action {
     /// Redeem USDT into one chain's dollar stablecoin and withdraw it in
     /// one step (2026-11-15): the user never handles the reserve asset.
     WithdrawStable(WithdrawStable),
+    // ---- client plans (2026-11-21)
+    /// A client (attester) buys a plan period at `tier` (1-based). Its
+    /// locked KEEL must meet the tier; the fee is taken in the stable
+    /// asset and the period starts in this block. Buying a higher tier
+    /// while a period runs upgrades it.
+    BuyPlan {
+        tier: u8,
+    },
+    /// The tier the client's plan renews at when its period ends; 0 stops
+    /// renewal.
+    SetPlanRenewal {
+        tier: u8,
+    },
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -356,7 +369,9 @@ impl Action {
             | Action::ClaimRewards => "staking",
             Action::Propose(_) | Action::Vote { .. } | Action::ExecuteProposal { .. } => "gov",
             Action::Attest { .. } => "attest",
-            Action::SetClientFee(_) => "clients",
+            Action::SetClientFee(_) | Action::BuyPlan { .. } | Action::SetPlanRenewal { .. } => {
+                "clients"
+            }
             Action::RegisterCustodyVault(_)
             | Action::RequestCustodyAddress { .. }
             | Action::ObserveCustodyDeposit { .. }

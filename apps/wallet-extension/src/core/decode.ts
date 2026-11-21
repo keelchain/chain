@@ -76,6 +76,8 @@ export const ACTION_LABELS: Record<string, string> = {
   AuthorizeSessionKey: 'Authorize session key',
   RevokeSessionKey: 'Revoke session key',
   SetClientFee: 'Set client fees',
+  BuyPlan: 'Buy client plan',
+  SetPlanRenewal: 'Set plan renewal',
   RegisterCustodyVault: 'Register custody vault',
   RequestCustodyAddress: 'Request custody address',
   WithdrawCustody: 'Withdraw from custody',
@@ -96,6 +98,7 @@ const MOVES_FUNDS: Record<string, string> = {
   Withdraw: 'This sends funds out of the chain to an external address.',
   ReleaseTrade: 'This releases escrowed funds to the buyer. Only approve after you received the payment.',
   LockBudget: 'This locks KEEL in your budget; it can be unlocked later.',
+  BuyPlan: 'This pays the plan fee in USDT from your account now, and again at each renewal.',
   StartTrade: 'This locks the trade amount in escrow.',
   MintStable: 'This converts reserve assets into USDT.',
   BurnStable: 'This converts USDT into a reserve asset.',
@@ -353,6 +356,17 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'P2P releases', field: { k: 'text', value: bps(p['p2p_bps']) } },
         { name: 'Order-book fills', field: { k: 'text', value: bps(p['taker_bps']) } },
         { name: 'Withdrawals', field: { k: 'text', value: bps(p['withdraw_bps']) } },
+      ]);
+    }
+    case 'BuyPlan':
+      return view(`Buy client plan, tier ${amountStr(p['tier'])}`, [
+        { name: 'Tier', field: { k: 'text', value: amountStr(p['tier']) } },
+        { name: 'Paid in', field: { k: 'asset', value: 'USDT' } },
+      ]);
+    case 'SetPlanRenewal': {
+      const tier = Number(p['tier'] ?? 0);
+      return view(tier === 0 ? 'Stop renewing the client plan' : `Renew the client plan at tier ${tier}`, [
+        { name: 'Renews at', field: { k: 'text', value: tier === 0 ? 'Does not renew' : `Tier ${tier}` } },
       ]);
     }
     case 'RegisterCustodyVault': {

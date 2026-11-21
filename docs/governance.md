@@ -120,6 +120,10 @@ epoch buyback turns into KEEL.
 | `clients.tier3_lock_keel` | 2,000,000,000,000 (2,000,000 KEEL) | Lock for tier 3. |
 | `clients.tier3_fee_usd_micro` | 3,000,000,000 ($3,000) | What a tier 3 period costs. |
 | `clients.tier3_allowance_usd_micro` | 4,000,000,000 ($4,000) | Usage a tier 3 period includes. |
+| `clients.tier1_user_actions_per_day` | 10,000 | Actions a day a tier 1 plan pays for, for all the accounts the client attested together. |
+| `clients.tier2_user_actions_per_day` | 50,000 | The same for tier 2. |
+| `clients.tier3_user_actions_per_day` | 250,000 | The same for tier 3. |
+| `clients.user_actions_per_user_per_day` | 100 | The most one attested account takes from its client's pool in a day. |
 | `clients.usage_address_usd_micro` | 20,000 ($0.02) | Per deposit address issued to one of the client's accounts. |
 | `clients.usage_outbound_usd_micro` | 100,000 ($0.10) | Per withdrawal queued for one of its accounts, and per float swap. |
 | `clients.usage_fill_usd_micro` | 2,000 ($0.002) | Per order of its accounts that filled. |
@@ -134,12 +138,16 @@ the only revenue the fee split, and so the validators, see from its flows
 while the protocol fee is waived for its users. They are priced in dollars
 so a client's bill does not move with the price of KEEL, and they recur:
 a plan is paid every period, usage with every flow. The lock is a
-different thing: it is the client's stake and its action capacity, it
-selects the tier, and it comes back in full. `docs/tokenomics.md` has the
+different thing: it is the client's stake and its action capacity, every
+tier requires its own amount of it for as long as the plan runs, and it
+comes back in full. `docs/tokenomics.md` has the
 reasoning and `docs/clients.md` the client's side.
 
-A client is in the highest tier whose lock its operator account meets;
-the tiers are expected to ascend but each key is set on its own. The
+A client buys a tier with `BuyPlan` and may buy any tier whose lock its
+operator account meets; the tiers are expected to ascend but each key is
+set on its own. A change to a tier applies to periods that start after
+it: a running period keeps the fee, allowance, lock and pool it started
+with. The
 dollar figures above are starting values for governance to set against
 what gateways and custody providers charge.
 

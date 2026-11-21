@@ -228,7 +228,7 @@ floats per asset. A swap is billed as rails usage like a payout
   explorer).
 
 **What Keel charges** (in dollars, paid in USDT, set by governance): the
-plan fee of the tier the client's locked KEEL selects, every 30 days, and
+plan fee of the tier the client bought (and keeps the KEEL locked for), every 30 days, and
 the usage prices `clients.usage_address_usd_micro` per custody address
 issued and `clients.usage_outbound_usd_micro` per custody withdrawal,
 drawn from the plan's allowance first and then from the custodian's USDT

@@ -91,6 +91,12 @@ describe('decodeAction', () => {
     expect(field(d, 'Amount')).toMatchObject({ formatted: '0.05 BTC.BTC' });
   });
 
+  it('BuyPlan and SetPlanRenewal name the tier', () => {
+    expect(decodeAction({ BuyPlan: { tier: 2 } }).summary).toBe('Buy client plan, tier 2');
+    expect(decodeAction({ SetPlanRenewal: { tier: 1 } }).summary).toBe('Renew the client plan at tier 1');
+    expect(decodeAction({ SetPlanRenewal: { tier: 0 } }).summary).toBe('Stop renewing the client plan');
+  });
+
   it('LockBudget / UnlockBudget in KEEL', () => {
     const d = decodeAction({ LockBudget: { amount: 25_000_000 } });
     expect(d.summary).toBe('Lock 25 KEEL as action budget');

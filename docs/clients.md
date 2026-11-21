@@ -8,6 +8,22 @@ transaction id. `models.md` explains the two models (custodial client with
 its own vaults, P2P client on Keel Wallet); this page is the mechanics, and
 it is the same for both.
 
+## A client is not a user
+
+The chain treats the two differently in one respect, how they pay. If you
+are a person with a wallet, the left column is all that applies to you and
+the rest of this page is not for you.
+
+| | User | Client (an exchange) |
+|---|---|---|
+| What it is | Any address: a person with Keel Wallet who trades, posts an offer or moves coins for themselves | An address that governance registered as an **attester**: a business that puts its own users on the chain and vouches for their KYC tier |
+| How it becomes one | Generates a key. Nothing to register | A `SetAttesters` governance proposal names its operator address |
+| What it locks | 1 KEEL or so, for its own action capacity. Returned on unlock. Nothing at all if a client with a plan attested it: the plan includes actions for the client's users | The KEEL its plan tier requires, on its operator account (100,000 / 500,000 / 2,000,000 KEEL): one half of the membership, and capacity for that account. Returned on unlock |
+| What it pays to act | Nothing. No gas, no fee per action | Nothing per action either |
+| What it pays on value moved | The protocol fees: 10 bps on a fill it takes, 1% on an escrow release, $1 on a withdrawal | A membership: the plan fee of its tier every 30 days on top of the lock, and a dollar price per flow of its users, in USDT. Its users then pay no protocol fees, and it charges them its own |
+| Who its counterparty is | The chain | The chain; its users are accounts it attested |
+| Where it manages its account | Keel Wallet | Keel Harbor (`harbor.keelchain.com`): plans, payment, usage, lock, fees and vaults, each change an action signed in the wallet |
+
 ## What is stable
 
 `https://testnet.keelchain.com/rpc/v1` (node) and `/api/v1` (indexer) are
@@ -194,16 +210,18 @@ replays from the last height. Details in the `ws` reference.
 
 ## Pricing
 
-A client pays a plan and usage, both priced in dollars and paid in USDT
-from the operator account's deposit balance. There is no invoice: the
-chain takes each charge when it falls due, and turns what it collects
+A client pays a membership and usage. The membership is a plan: a fixed
+fee every 30 days plus KEEL kept locked, both required. The fee and the
+usage are priced in dollars and paid in USDT from the operator account's
+deposit balance. There is no invoice: you buy the plan in Keel Harbor,
+the chain takes each charge when it falls due, and turns what it collects
 into KEEL on its own order book. Nothing is a share of your own fees.
 
-| Tier | KEEL locked on the operator account | Plan fee per 30 days | Usage included |
-|---|---|---|---|
-| 1 | 100,000 | $300 | $300 |
-| 2 | 500,000 | $1,000 | $1,200 |
-| 3 | 2,000,000 | $3,000 | $4,000 |
+| Tier | KEEL locked on the operator account | Plan fee per 30 days | Usage included | Actions a day for your users |
+|---|---|---|---|---|
+| 1 | 100,000 | $300 | $300 | 10,000 |
+| 2 | 500,000 | $1,000 | $1,200 | 50,000 |
+| 3 | 2,000,000 | $3,000 | $4,000 | 250,000 |
 
 | Usage | Price |
 |---|---|
@@ -215,29 +233,69 @@ into KEEL on its own order book. Nothing is a share of your own fees.
 
 All of these are governance parameters (`docs/governance.md`); `GET
 /v1/clients/{addr}` returns the live tier table and prices with your
-`tier`, `plan` (`ends_at`, `allowance_left_usd_micro`), `usage_paid` and
-`usage_owed`.
+`tier` (the highest your lock meets), `plan` (`tier`, `ends_at`, `active`,
+`suspended`, `renew_tier`, `allowance_left_usd_micro`,
+`user_actions_used_today`), `usage_paid` and `usage_owed`. Harbor is that
+endpoint with buttons.
 
-- **The lock selects the tier.** Lock the tier's KEEL on the operator
-  account with `LockBudget` (the same lock that gives the account its
-  action capacity). It is yours and comes back in full three days after
-  `UnlockBudget`. You are in the highest tier the lock meets.
-- **A period starts at an epoch boundary** once the lock meets a tier and
-  the operator account holds the fee in USDT (`ClientPlanStarted`). It
-  runs for 30 days and renews the same way at the first boundary after it
-  ends, at whatever tier the lock then selects. If the account cannot pay
-  the fee there is no plan until it can; the fee is never carried as debt.
+- **A plan is the fee and the lock together.** Neither alone is a plan:
+  the lock without the fee is only action capacity, and the fee cannot be
+  paid without the lock. Lock the tier's KEEL on the operator account
+  with `LockBudget` (the same lock that gives the account its action
+  capacity); it is yours and comes back in full three days after
+  `UnlockBudget`.
+- **You buy it in Keel Harbor.** `https://harbor.keelchain.com` is the
+  client's account: connect the operator account's wallet, pick a tier,
+  and sign one action, `BuyPlan { tier }`. The chain checks the lock,
+  takes the tier's fee in USDT from the operator account and starts the
+  period in that block (`ClientPlanStarted`); there is nothing to wait
+  for. Harbor has no server and no account of its own: it reads the chain
+  and every change is an action you sign, so the CLI (`keel send
+  buy-plan <tier>`) or the SDK do exactly the same.
+- **Upgrading.** While a period runs you can buy a higher tier once the
+  lock meets it. A fresh period starts at once, and what the old one had
+  left comes off the fee: its fee times the share of the time left, or
+  the share of the allowance left when that is smaller.
+- **Renewal is automatic.** When a period ends the chain starts the next
+  one in the same block, at the tier you chose, so there is no gap.
+  `SetPlanRenewal { tier }` changes that tier (a lower one is how you
+  downgrade) and 0 stops renewal. If the lock no longer meets the tier
+  the plan renews at the highest one it does meet. If the account cannot
+  pay the fee there is no plan until it can, and the first block in which
+  it can renews it; the fee is never carried as debt.
+- **The plan counts while the lock is in place.** Unlock below the
+  running tier's KEEL and the plan is suspended from that block, with no
+  refund; lock it back and what is left of the period returns.
 - **While a period runs, your users pay no protocol fee** on fills, escrow
   releases, dispute rulings and the withdrawal flat fee, and you set your
   own retail fee (`SetClientFee`, uncapped), which the chain pays into your
   account in the same posting. Without a plan you are still an attester,
   but your users pay the protocol fees like anyone else.
+- **Your users need no KEEL.** Each tier includes a daily pool of actions
+  for the accounts you attested. A user's own capacity is used first, if
+  it has any; after that its actions come out of your pool, up to 100 a
+  day per user (`clients.user_actions_per_user_per_day`), and such an
+  account needs neither a lock nor the activation KEEL. When the pool or
+  the user's share is used up for the day, the user is an address like
+  any other until the next day (UTC) or until it locks KEEL of its own.
+  The account endpoint shows it as `budget.sponsor`.
 - **Usage draws on the allowance first** (`UsageCovered`), then on your
   USDT (`UsageCharged`). A deposit address or a withdrawal you cannot pay
   for is refused. A fill, release or ruling is never blocked: what you
   cannot pay is owed (`UsageOwed`), collected from your next USDT, and
-  until it is paid no new address or withdrawal is issued to your accounts
-  and your users pay the protocol fees again.
+  until it is paid no new address or withdrawal is issued to your
+  accounts, your users pay the protocol fees again and your pool pays
+  for none of their actions.
+- **It is consensus, not a service.** The tier table, your period, your
+  allowance, your users' pool and what you owe are chain state, and every
+  charge is part of executing the block: the purchase, the renewal, and
+  the address request, withdrawal, fill, release or ruling that incurs a
+  usage price. Every validator computes the same result or the block does
+  not finalize. Nobody meters you from outside, no validator or operator
+  can waive, raise or skip a charge, and Harbor cannot either: prices
+  move only by a `ParamChange` proposal, and you can audit every charge
+  as an event (`ClientPlanStarted`, `ClientPlanRenewalSet`,
+  `UsageCovered`, `UsageCharged`, `UsageOwed`) and a ledger posting.
 - **What to keep on the operator account:** the tier's KEEL locked, and
   USDT for the next plan fee plus the usage you expect beyond the
   allowance.

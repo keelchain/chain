@@ -13,7 +13,7 @@ action's JSON they are 32-element byte arrays (serde form).
 | GET | `/v1/supply` | KEEL supply: `cap`, `issued`, `burned`, `block_reward` (`cap`, `minted`, `remaining`, `rate_per_year`, `proposer_bps`, `halving_ms`, `started_ms`, `next_halving_ms`) and `community_reward` (`cap`, `minted`, `remaining`, `keel_per_fee_usd`) |
 | GET | `/v1/stable` | the unified USDT: `supply`, `reserves_in_stable`, `rebalance_pool`, `params` (`auto_convert`, `rebalance_max_premium_bps`), and per basket network `reserve`, `cap`, `target_ppm`, `share_ppm`, `premium_bps` (what a `WithdrawStable` through it pays now, and the rebate a deposit on it earns) |
 | GET | `/v1/params` | every governance parameter (`docs/governance.md`): the scalar `Params`, nested `clients`/`liquidity`/`recovery`/`prices`/`stable`, and the dotted limit keys (`budget.activation_keel`, `sessions.max_secs`, …) flat |
-| GET | `/v1/accounts/{addr}` | `{nonce, activated, budget{activation_keel, activation_balance, fee_mode, action_fee_keel, free_lock_min_keel, used,limit,cancel_limit,remaining,earned,locked,lock_cap_per_day,lock_pool,…}, tier, tier_expires_at, balances[{asset,account_type,balance}]}` |
+| GET | `/v1/accounts/{addr}` | `{nonce, activated, budget{activation_keel, activation_balance, fee_mode, action_fee_keel, free_lock_min_keel, used,limit,cancel_limit,remaining,earned,locked,lock_cap_per_day,lock_pool,sponsor{client,left_today}|null,…}, tier, tier_expires_at, balances[{asset,account_type,balance}]}` |
 | GET | `/v1/accounts/{addr}/orders` | `{open:[OrderRecord]}` |
 | GET | `/v1/accounts/{addr}/trades` | `{trades:[Trade]}` |
 | GET | `/v1/markets` | `{markets:[summary]}` |
@@ -30,7 +30,7 @@ action's JSON they are 32-element byte arrays (serde form).
 | GET | `/v1/gov/proposals/{id}` | Proposal |
 | GET | `/v1/staking/validators` | `{consensus:[hex keys], staked:[{consensus_key,power}], staking}` |
 | GET | `/v1/receipts/{tx_id}` | `{index, tx_id, signer, ok, error{code,message}?, events[]}` (404 until applied) |
-| GET | `/v1/clients/{addr}` → `{address, attester, fee, caps, earned, usage_paid, usage_owed, attested_accounts, protocol_fee_waived, usage_prices{address_usd_micro, outbound_usd_micro, fill_usd_micro, release_usd_micro, ruling_usd_micro}, billing_asset, locked_keel, tier, plan{tier, started_at, ends_at, active, fee_usd_micro, allowance_left_usd_micro}, plan_period_secs, tiers[{tier, lock_keel, fee_usd_micro, allowance_usd_micro}]}` | a client's retail schedule, its plan and tier, the usage prices and what it earned, paid and owes |
+| GET | `/v1/clients/{addr}` → `{address, attester, fee, caps, earned, usage_paid, usage_owed, attested_accounts, protocol_fee_waived, usage_prices{address_usd_micro, outbound_usd_micro, fill_usd_micro, release_usd_micro, ruling_usd_micro}, billing_asset, locked_keel, tier, plan{tier, started_at, ends_at, active, suspended, fee_usd_micro, allowance_usd_micro, allowance_left_usd_micro, lock_keel, renew_tier, user_actions_per_day, user_actions_used_today}, user_actions_per_user_per_day, plan_period_secs, tiers[{tier, lock_keel, fee_usd_micro, allowance_usd_micro, user_actions_per_day}]}` | a client's retail schedule, its plan and tier, the usage prices and what it earned, paid and owes |
 | GET | `/v1/treasury` → `{height, balances:{treasury,validator_rewards,burn}, last_buyback, params, fee_split_bps}` | system balances per asset and the epoch buyback record |
 | GET | `/v1/recovery?status=&owner=` → `{height, params, recoveries:[{id, chain, evm_chain_id, token, to, owner, custodian, deposit_index, status, votes, tx_hash, external_tx, amount, created_height, closed_height}]}` | self-service recoveries of coins at a deposit address the chain cannot credit (`RequestRecovery`) |
 | GET | `/v1/recovery/{id}` | one recovery row |
@@ -48,7 +48,9 @@ structs in `crates/keel-vm/src/modules/`.
 
 Error codes on `/v1/actions`: `BAD_SIGNATURE`, `WRONG_CHAIN`, `BAD_NONCE`,
 `NOT_ACTIVATED` (the address holds less than `budget.activation_keel` KEEL;
-top it up, every other action is refused until then, cancels excepted),
+top it up, every other action is refused until then, cancels excepted; an
+account whose client's plan can pay for the action, `budget.sponsor`, is
+exempt),
 `BUDGET_EXHAUSTED` (the address has no capacity: it must lock KEEL with
 `LockBudget`; a lock of at least `budget.free_lock_min_keel` that it holds
 in full is accepted without capacity), `BLOCK_CAP`, `PAUSED`, `UNAUTHORIZED`, `INVALID`. A

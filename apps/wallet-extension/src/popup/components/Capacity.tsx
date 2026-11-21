@@ -50,6 +50,7 @@ export function CapacityCard({ network, capacity, spendable, onChanged }: { netw
             <tr><td>Available now</td><td className="num">{capacity.available.toLocaleString('en-US')} actions</td></tr>
             <tr><td>Locked</td><td className="num">{formatAmount(capacity.locked, 6)} KEEL</td></tr>
             <tr><td>Per day</td><td className="num">{capacity.perDay.toLocaleString('en-US')} actions</td></tr>
+            {capacity.sponsored > 0 && <tr><td>Paid by your exchange today</td><td className="num">{capacity.sponsored.toLocaleString('en-US')} actions</td></tr>}
           </tbody>
         </table>
       )}
@@ -63,6 +64,7 @@ export function CapacityCard({ network, capacity, spendable, onChanged }: { netw
           <button className="ghost" disabled={busy !== null || capacity.locked === 0n} onClick={() => void change('unlock')}>{busy === 'unlock' ? 'Signing…' : 'Unlock'}</button>
         </div>
       </div>
+      {capacity.sponsored > 0 && capacity.locked === 0n && <p className="muted small">The exchange that onboarded this account pays for its actions, so nothing needs locking. A lock of your own adds capacity that is used first.</p>}
       {!needsFirstLock(capacity) && <p className="muted small">Each KEEL locked gives {ACTIONS_PER_KEEL_PER_DAY} actions a day; the pool refills over 24 hours. Unlocked KEEL comes back in full after a delay.</p>}
       {result && (
         <div className={result.ok ? 'small' : 'error'}>

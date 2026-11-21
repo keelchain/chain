@@ -148,6 +148,17 @@ enum ActionCmd {
     UnlockBudget {
         amount: Amount,
     },
+    /// A client buys a plan period at this tier (1-based), starting now.
+    /// Its account must have the tier's KEEL locked and hold the fee in
+    /// the stable asset. A higher tier than the running one upgrades.
+    BuyPlan {
+        tier: u8,
+    },
+    /// The tier a client's plan renews at when its period ends; 0 stops
+    /// renewal.
+    SetPlanRenewal {
+        tier: u8,
+    },
     /// Lightning pool operations for an observer key (2026-09-10).
     #[command(subcommand)]
     Lightning(LightningCmd),
@@ -639,6 +650,8 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
         ActionCmd::BuyBudget { actions } => Action::BuyBudget { actions },
         ActionCmd::LockBudget { amount } => Action::LockBudget { amount },
         ActionCmd::UnlockBudget { amount } => Action::UnlockBudget { amount },
+        ActionCmd::BuyPlan { tier } => Action::BuyPlan { tier },
+        ActionCmd::SetPlanRenewal { tier } => Action::SetPlanRenewal { tier },
         ActionCmd::Liquidity(LiquidityCmd::Deposit { asset, amount }) => Action::DepositLiquidity {
             asset: Asset::new(asset),
             amount,

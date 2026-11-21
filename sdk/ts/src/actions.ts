@@ -144,7 +144,11 @@ export type Action =
    *  unlisted token to `to` (docs/deposits.md, "Sent on the wrong network"). */
   | { RequestRecovery: RecoveryRequest }
   | { ObserveRecovery: RecoveryObservation }
-  | { WithdrawStable: WithdrawStable };
+  | { WithdrawStable: WithdrawStable }
+  /** A client buys a plan period at `tier` (1-based), starting now. */
+  | { BuyPlan: { tier: number } }
+  /** The tier a client's plan renews at; 0 stops renewal. */
+  | { SetPlanRenewal: { tier: number } };
 
 export interface RecoveryRequest {
   /** The address family (the chain whose deposit index the address is). */
@@ -203,7 +207,7 @@ const ACTION_VARIANTS = [
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
-  "WithdrawStable",
+  "WithdrawStable", "BuyPlan", "SetPlanRenewal",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -392,6 +396,8 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "ObserveRecovery":
       w.u64(b.id); hash(w, b.tx_hash); w.option(b.external_tx, (s) => w.string(s)); w.u128(b.amount); w.u64(b.external_height); w.u64(b.tip_height); w.bool(b.success); break;
     case "WithdrawStable": w.string(b.via); w.string(b.to); w.u128(b.amount); break;
+    case "BuyPlan": w.u8(b.tier); break;
+    case "SetPlanRenewal": w.u8(b.tier); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

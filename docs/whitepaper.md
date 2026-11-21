@@ -82,9 +82,11 @@ unwind, and a per-block cap. Additional budget can be bought in KEEL at a
 nominal price; that revenue flows to the treasury. Observer-signers'
 attestations are budget-free but bonded.
 
-Businesses that put their users on the chain pay differently: a plan per
-30 days, chosen by the KEEL they lock, and a dollar price per flow, both
-paid in the stablecoin and bought into KEEL by the chain every epoch
+Businesses that put their users on the chain pay differently: a
+membership, which is a plan fee per 30 days together with KEEL they keep
+locked, and a dollar price per flow, both paid in the stablecoin and
+bought into KEEL by the chain every epoch. The plan includes actions for
+the accounts the business vouched for, so its users need no KEEL
 (`docs/tokenomics.md`).
 
 Fees are charged only on:
