@@ -22,6 +22,10 @@ import { Session } from './session';
 import { loadState, saveState, type AccountMeta, type WalletState } from './state';
 
 /** External chains a wallet account can receive on: RPC path, action enum name, label. */
+/** Accounts one wallet lists, and the length of an account's name. */
+const MAX_ACCOUNTS = 10;
+const MAX_ACCOUNT_NAME = 24;
+
 const DEPOSIT_CHAINS: Record<string, { path: string; action: string; label: string }> = {
   BTC: { path: 'BTC', action: 'Bitcoin', label: 'Bitcoin' },
   ETH: { path: 'ETH', action: 'Ethereum', label: 'Ethereum' },
@@ -343,6 +347,8 @@ export class Wallet {
         return { ok: true };
       case 'addAccount':
         return this.addAccount(typeof p['name'] === 'string' ? p['name'] : undefined);
+      case 'removeAccount':
+        return this.removeAccount(Number(p['index']));
       case 'selectAccount':
         return this.selectAccount(Number(p['index']));
       case 'renameAccount':
@@ -652,10 +658,22 @@ export class Wallet {
     const s = await this.st();
     const seed = this.deps.session.currentSeed();
     if (!seed) throw new UiError('Unlock the wallet first.');
-    const index = s.accounts.reduce((m, a) => Math.max(m, a.index), -1) + 1;
-    s.accounts.push({ index, address: accountAddress(seed, index), name: name?.trim() || `Account ${index + 1}` });
+    if (s.accounts.length >= MAX_ACCOUNTS) throw new UiError(`A wallet holds at most ${MAX_ACCOUNTS} accounts. Remove one you do not use first.`);
+    // The lowest free index, so an account that was removed comes back
+    // with the same address when it is added again.
+    let index = 0;
+    while (s.accounts.some((a) => a.index === index)) index += 1;
+    const label = (name ?? '').trim().slice(0, MAX_ACCOUNT_NAME) || `Account ${index + 1}`;
+    if (s.accounts.some((a) => a.name === label)) throw new UiError(`There is already an account named "${label}".`);
+    s.accounts.push({ index, address: accountAddress(seed, index), name: label });
+    s.accounts.sort((a, b) => a.index - b.index);
+    // Show the account that was just made: left on the old one, the only
+    // trace of the click was a new entry in the account list.
+    s.activeIndex = index;
     await this.save();
     this.deps.session.touch();
+    const info = this.info(s);
+    for (const origin of Object.keys(s.connections[s.networkId] ?? {})) this.deps.emit(origin, { event: 'accountChanged', payload: info });
     return this.uiState();
   }
 
@@ -675,8 +693,29 @@ export class Wallet {
     const s = await this.st();
     const a = s.accounts.find((x) => x.index === index);
     if (!a) throw new UiError('No such account.');
-    a.name = name.trim() || a.name;
+    a.name = name.trim().slice(0, MAX_ACCOUNT_NAME) || a.name;
     await this.save();
+    return this.uiState();
+  }
+
+  /**
+   * Take an account off the wallet's list. Nothing on the chain changes:
+   * the address and whatever it holds stay where they are, and adding an
+   * account again brings the lowest removed one back, same address. The
+   * first account stays, so the wallet always has one.
+   */
+  async removeAccount(index: number): Promise<UiState> {
+    const s = await this.st();
+    if (index === 0) throw new UiError('The first account cannot be removed.');
+    if (!s.accounts.some((a) => a.index === index)) throw new UiError('No such account.');
+    s.accounts = s.accounts.filter((a) => a.index !== index);
+    const wasActive = s.activeIndex === index;
+    if (wasActive) s.activeIndex = 0;
+    await this.save();
+    if (wasActive) {
+      const info = this.info(s);
+      for (const origin of Object.keys(s.connections[s.networkId] ?? {})) this.deps.emit(origin, { event: 'accountChanged', payload: info });
+    }
     return this.uiState();
   }
 

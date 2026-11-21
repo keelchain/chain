@@ -7,6 +7,7 @@ import { SiteAccessBanner } from '../components/SiteAccess';
 import { CapacityCard } from '../components/Capacity';
 import { accountTypeLabel, decimalsOf, formatAmount } from '../../core/format';
 import { explorerAccountUrl } from '../../core/networks';
+import { ChainLogo, CHAIN_TICKER } from '../components/ChainLogo';
 import { DEPOSIT_CHAINS, externalName } from '../external';
 
 /** The account: network and account selectors, address, balances in Keel, and where to receive. */
@@ -14,6 +15,8 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
   const { network, address } = state;
   const [account, setAccount] = useState<AccountResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [deposit, setDeposit] = useState<DepositAddressInfo | null>(null);
   const [ownAddrs, setOwnAddrs] = useState<SelfAddresses | null>(null);
@@ -129,10 +132,12 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
           ) : (
             <>
               <p className="muted small">Fund this account from {externalName(network.id, 'BTC')}, {externalName(network.id, 'TRON')}, {externalName(network.id, 'BSC')} or {externalName(network.id, 'SOL')}. The address belongs to the Keelchain vault, or to your exchange's own vault when it holds your coins in custody; the chain credits you after that chain's confirmations. Coins sent on any other network do not arrive. <b>USDT sent on any network is credited as one USDT balance</b>, backed by the USDT Keel holds on every supported network; you withdraw it as USDT on the network you choose (<a href="https://keelchain.com/policy/" target="_blank" rel="noreferrer">policy</a>).{ownAddrs?.supported && <> <a href="#" onClick={(e) => { e.preventDefault(); setShowOther((v) => !v); }}>Show my own address instead</a></>}</p>
-              <div className="row">
+              <div className="chain-tiles">
                 {DEPOSIT_CHAINS.map((c) => (
-                  <button key={c} className="mini" disabled={depositBusy !== null} onClick={() => receive(c)}>
-                    {depositBusy === c ? 'Requesting…' : c === 'BTC' ? externalName(network.id, 'BTC') : c === 'BSC' ? `${externalName(network.id, 'BSC')} (USDT, BNB)` : c === 'SOL' ? `${externalName(network.id, 'SOL')} (USDC, SOL)` : `${externalName(network.id, 'TRON')} (USDT, TRX)`}
+                  <button key={c} className="chain-tile" disabled={depositBusy !== null} title={`${externalName(network.id, c)}: ${CHAIN_TICKER[c].coins}`} aria-label={`${externalName(network.id, c)} deposit address (${CHAIN_TICKER[c].coins})`} onClick={() => receive(c)}>
+                    <ChainLogo chain={c} />
+                    <span className="chain-ticker">{depositBusy === c ? '…' : CHAIN_TICKER[c].ticker}</span>
+                    <span className="chain-coins">{CHAIN_TICKER[c].coins}</span>
                   </button>
                 ))}
               </div>
@@ -148,10 +153,22 @@ export function Home({ state, onState }: { state: UiState; onState: (s: UiState)
           )}
         </div>
       )}
-      <div className="row">
-        <button onClick={() => void act('addAccount')}>Add account</button>
-        <span className="muted small">auto-lock in {Math.ceil(state.remainingMs / 60_000)} min</span>
-      </div>
+      {adding ? (
+        <div className="card">
+          <div className="label">New account</div>
+          <p className="muted small">Another address from the same seed phrase, with its own balances and its own action capacity. Name it so you can tell it apart; you can rename or remove it in Settings.</p>
+          <form className="row" onSubmit={(e) => { e.preventDefault(); void call<UiState>('addAccount', { name: newName }).then((s) => { onState(s); setAdding(false); setNewName(''); }, (err: unknown) => setError(err instanceof Error ? err.message : String(err))); }}>
+            <input autoFocus value={newName} maxLength={24} placeholder={`Account ${state.accounts.length + 1}`} title="Account name" onChange={(e) => setNewName(e.target.value)} />
+            <button type="submit">Create</button>
+            <button type="button" className="ghost" onClick={() => { setAdding(false); setNewName(''); }}>Cancel</button>
+          </form>
+        </div>
+      ) : (
+        <div className="row">
+          <button onClick={() => { setError(null); setAdding(true); }}>Add account</button>
+          <span className="muted small">auto-lock in {Math.ceil(state.remainingMs / 60_000)} min</span>
+        </div>
+      )}
     </div>
   );
 }

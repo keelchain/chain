@@ -62,12 +62,13 @@ describe('without a wallet', () => {
 });
 
 describe('a connected account that is not a client', () => {
-  it('says Harbor is for clients and how one becomes a client', async () => {
+  it('gets in with the same wallet, sees the plans, and cannot buy before registration', async () => {
     installWallet();
     open('/testnet/plans', 'visitor');
-    expect(await screen.findByRole('heading', { name: 'Harbor is for clients' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'client documentation' }).getAttribute('href')).toBe('https://keelchain.com/docs/clients/');
-    expect(screen.queryByText('Next step')).toBeNull();
+    expect(await screen.findByText('This account is not registered as a client yet.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'client documentation' }).getAttribute('href')).toBe('https://keelchain.com/docs/exchange/');
+    expect(screen.getByRole('link', { name: 'Funds' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Buy tier/ })).toBeNull();
   });
 });
 

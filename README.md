@@ -52,6 +52,7 @@ the box. Secrets and settings live in the `testnet` GitHub environment;
 
 ## Read next
 
+- `docs/exchange.md`: getting started as an exchange: Keel Harbor, registration, the lock and the plan, step by step.
 - `docs/models.md`: the two ways to run an exchange on Keel, and where funds sit in each.
 - `docs/clients.md`: the integration contract for a client: roles, the per-network switch, reconciliation.
 - `docs/how-it-works.md`: the chain end to end, module by module.

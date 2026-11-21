@@ -1,3 +1,4 @@
+import { HarborMark } from './marks';
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useHref, useNetwork } from '../network/NetworkContext';
@@ -13,7 +14,7 @@ const NAV: { to: string; label: string; end?: boolean }[] = [
   { to: '/business', label: 'Business' },
 ];
 
-export const DOCS_URL = 'https://keelchain.com/docs/clients/';
+export const DOCS_URL = 'https://keelchain.com/docs/exchange/';
 export const WALLET_URL = 'https://keelchain.com/wallet/';
 
 function NetworkSwitcher() {
@@ -98,6 +99,7 @@ function Header() {
         <Link to={href('/')} className="brand">
           <img className="brand-mark" src={`${import.meta.env.BASE_URL}logo-mark.svg`} alt="" width={27} height={24} />
           Keel Harbor
+          <HarborMark className="brand-harbor" size={20} />
         </Link>
         {w.account && (
           <nav className="nav" aria-label="Primary">
@@ -168,6 +170,7 @@ export function Layout() {
   const location = useLocation();
   return (
     <div className="app">
+      <HarborMark className="watermark" size={520} />
       <Header />
       <main className="main">
         <ErrorBoundary key={location.pathname}>

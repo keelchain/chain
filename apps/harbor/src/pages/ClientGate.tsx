@@ -1,7 +1,7 @@
 /**
  * What stands in front of every page: the landing page until a wallet is
- * connected, a plain "this is for clients" page for an account that is not
- * an attester, and otherwise the client's records handed to the page.
+ * connected, and otherwise the account's records handed to the page, with a
+ * note on top while the account is not registered as a client.
  */
 import { useEffect, useState } from 'react';
 import { Outlet, useOutletContext } from 'react-router-dom';
@@ -40,27 +40,19 @@ function useNowSecs(): number {
   return now;
 }
 
-function NotAClient({ address }: { address: string }) {
+/**
+ * An account that is not a client yet still gets all of Harbor: it can
+ * hold the billing asset, lock KEEL and see what each tier would take.
+ * The one thing it cannot do before registration is buy.
+ */
+function NotRegistered({ address }: { address: string }) {
   const { network } = useNetwork();
   return (
-    <div className="stack narrow">
-      <Card title={<h1>Harbor is for clients</h1>}>
-        <div className="prose">
-          <p>
-            The connected account <Hex value={address} head={8} tail={6} /> is not a client on {network.name}. Keel Harbor is where exchanges and other businesses that attest their users manage their
-            plan, their KEEL lock and their fees; there is nothing here for a personal account.
-          </p>
-          <p>
-            <strong>Becoming a client.</strong> A client is an account that governance has registered as an attester. Onboarding is described in the{' '}
-            <a href={DOCS_URL}>client documentation</a>; once the proposal that names your operator account has passed, connect that account here.
-          </p>
-          <p>
-            <strong>Looking for your own balances?</strong> They are in <a href={WALLET_URL}>Keel Wallet</a>, and every account is public in the{' '}
-            <a href={explorerUrl(network.id, `/account/${address}`)}>explorer</a>.
-          </p>
-        </div>
-      </Card>
-    </div>
+    <Notice tone="info" title="This account is not registered as a client yet.">
+      You do not need another wallet: <Hex value={address} head={8} tail={6} /> becomes the client account once a governance proposal on {network.name} names it, as the{' '}
+      <a href={DOCS_URL}>client documentation</a> describes. Until then you can add funds, lock KEEL and compare plans here; buying a plan and the business tools open with registration. Your personal
+      balances stay in <a href={WALLET_URL}>Keel Wallet</a> and the <a href={explorerUrl(network.id, `/account/${address}`)}>explorer</a> as before.
+    </Notice>
   );
 }
 
@@ -81,7 +73,6 @@ export function ClientGate() {
       </Card>
     );
   }
-  if (!client.data.attester) return <NotAClient address={address} />;
   const funds: Funds = { usdt: spendable(account.data.balances, client.data.billing_asset), keel: spendable(account.data.balances, 'KEEL') };
   const harbor: Harbor = { address, client: client.data, account: account.data, funds, status: planStatus(client.data), nowSecs };
   return (
@@ -91,6 +82,7 @@ export function ClientGate() {
           Keel Wallet is connected on {w.account.network}; this page shows {network.name}. Switch one of them before signing.
         </Notice>
       )}
+      {!client.data.attester && <NotRegistered address={address} />}
       <Outlet context={harbor} />
     </div>
   );

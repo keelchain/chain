@@ -6,6 +6,7 @@ import { currentSite, enableSiteAccess, isBuiltInSite, type CurrentSite } from '
 
 export function Settings({ state, onState }: { state: UiState; onState: (s: UiState) => void }) {
   const [error, setError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<number | null>(null);
   const [sites, setSites] = useState<string[]>([]);
   const [hereSite, setHereSite] = useState<CurrentSite | null>(null);
   const here = hereSite !== null && !isBuiltInSite(hereSite.origin) ? hereSite.origin : null;
@@ -72,9 +73,30 @@ export function Settings({ state, onState }: { state: UiState; onState: (s: UiSt
         </p>
       </div>
       <div className="card">
+        <div className="label">Accounts</div>
+        <table className="balances">
+          <tbody>
+            {state.accounts.map((a) => (
+              <tr key={a.index}>
+                <td>{a.name}{a.index === state.activeIndex ? ' · active' : ''}<div className="muted small mono">{a.address.slice(0, 10)}…{a.address.slice(-6)}</div></td>
+                <td className="num">
+                  {a.index === 0 ? null : removing === a.index ? (
+                    <>
+                      <button className="mini" onClick={() => void act('removeAccount', { index: a.index }).then(() => setRemoving(null))}>Confirm</button>{' '}
+                      <button className="mini" onClick={() => setRemoving(null)}>Keep</button>
+                    </>
+                  ) : (
+                    <button className="mini" onClick={() => setRemoving(a.index)}>Remove</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="muted small">Removing an account only takes it off this list. Its address and anything it holds stay on the chain, and adding an account again brings it back with the same address. The first account always stays.</p>
         <div className="label">Rename active account</div>
         <div className="row">
-          <input value={rename} placeholder={state.accounts.find((a) => a.index === state.activeIndex)?.name ?? ''} onChange={(e) => setRename(e.target.value)} />
+          <input value={rename} maxLength={24} placeholder={state.accounts.find((a) => a.index === state.activeIndex)?.name ?? ''} onChange={(e) => setRename(e.target.value)} />
           <button onClick={() => void act('renameAccount', { index: state.activeIndex, name: rename }).then(() => setRename(''))}>Save</button>
         </div>
       </div>

@@ -296,12 +296,31 @@ describe('provider protocol', () => {
     expect((await rejection(h.provider.authorizeSession({ key: VECTOR.address1, scope: ['markets'], expires_at: Math.floor(now / 1000) + 31 * 86400, nonce: 5, chain_id: 3 }))).code).toBe('INVALID_REQUEST');
   });
 
+  it('adds named accounts up to a limit, and removes them without losing the address', async () => {
+    await setup(h);
+    const ui = (await h.wallet.handleUi('addAccount', { name: '  Trading  ' })) as { accounts: { index: number; name: string; address: string }[]; activeIndex: number };
+    expect(ui.accounts.map((a) => a.name)).toEqual(['Account 1', 'Trading']);
+    expect(ui.activeIndex).toBe(1);
+    await expect(h.wallet.handleUi('addAccount', { name: 'Trading' })).rejects.toThrow(/already an account named/);
+    await h.wallet.addAccount();
+    // Removing the middle one frees its index; adding again restores the same address.
+    await expect(h.wallet.removeAccount(0)).rejects.toThrow(/first account/);
+    const after = await h.wallet.removeAccount(1);
+    expect(after.accounts.map((a) => a.index)).toEqual([0, 2]);
+    expect(after.activeIndex).toBe(2);
+    const back = await h.wallet.addAccount('Again');
+    expect(back.accounts.find((a) => a.index === 1)?.address).toBe(VECTOR.address1);
+    for (let i = back.accounts.length; i < 10; i += 1) await h.wallet.addAccount();
+    await expect(h.wallet.addAccount()).rejects.toThrow(/at most 10 accounts/);
+  });
+
   it('emits accountChanged / networkChanged to connected origins', async () => {
     await setup(h);
     autoDecide(h, true);
     await h.provider.connect();
-    await h.wallet.addAccount();
-    await h.wallet.selectAccount(1);
+    // Adding an account switches to it, and tells the connected sites.
+    const ui = await h.wallet.addAccount();
+    expect(ui).toMatchObject({ activeIndex: 1 });
     expect(h.events.at(-1)).toEqual({ event: 'accountChanged', payload: { address: VECTOR.address1, network: 'testnet', chainId: 3 } });
     expect(await h.provider.getAccount()).toMatchObject({ address: VECTOR.address1 });
     await h.wallet.switchNetwork('devnet');

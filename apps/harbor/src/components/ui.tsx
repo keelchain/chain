@@ -1,3 +1,4 @@
+import { OrcaMark } from './marks';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useDecimals } from '../api/hooks';
 import { formatAmount, formatExact, formatRelative, truncateHex } from '../lib/format';
@@ -46,6 +47,7 @@ export function Amount({ value, asset, sym = true }: { value: string | number | 
   const full = formatAmount(value, d, { maxFraction: d });
   return (
     <span className="amount" title={value === null || value === undefined ? undefined : `${full} ${asset}${asset === 'KEEL' ? ` (${String(value)} orcas)` : ''}`}>
+      {asset === 'KEEL' && <OrcaMark className="orca" />}
       {formatAmount(value, d)}
       {sym && <span className="sym">{asset}</span>}
     </span>

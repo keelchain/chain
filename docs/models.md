@@ -1,5 +1,8 @@
 # Two ways to run an exchange on Keel
 
+For the steps to get started (Keel Harbor, registration, the lock and the
+plan) see `exchange.md`; this page is about who holds the funds.
+
 Keel is infrastructure. An exchange, a marketplace, a payments desk or a bot
 is a client of the chain, and every client chooses one of two models per
 network (Bitcoin, Ethereum, Tron). Both models use the same API, the same

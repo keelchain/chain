@@ -105,7 +105,7 @@ export function tierOffer(c: ClientRecord, funds: Funds, tier: Tier, nowSecs: nu
   const needLock = shortfall(big(tier.lock_keel), big(c.locked_keel));
   const needUsdt = shortfall(charge, funds.usdt);
   const buyable = kind === 'buy' || kind === 'upgrade';
-  return { tier, kind, needLock, needUsdt, credit, fee, owed, charge, canBuy: buyable && needLock === 0n && needUsdt === 0n };
+  return { tier, kind, needLock, needUsdt, credit, fee, owed, charge, canBuy: c.attester && buyable && needLock === 0n && needUsdt === 0n };
 }
 
 export type NextStep =
@@ -114,6 +114,8 @@ export type NextStep =
   /** Add the billing asset: to settle what is owed, to buy, or to renew. */
   | { kind: 'fund'; amount: bigint; tier: number | null; why: 'owed' | 'buy' | 'renew' }
   | { kind: 'buy'; tier: number; charge: bigint }
+  /** Lock and balance are in place, but the account is not registered as a client yet. */
+  | { kind: 'register'; tier: number }
   /** The period ends soon and renewal is off. */
   | { kind: 'ends'; endsAt: number }
   /** Nothing to sign: the chain acts by itself in a coming block. */
@@ -156,6 +158,7 @@ export function nextStep(c: ClientRecord, funds: Funds, nowSecs: number): NextSt
     const offer = tierOffer(c, funds, target, nowSecs);
     if (offer.needLock > 0n) return { kind: 'lock', amount: offer.needLock, tier: target.tier, why: 'buy' };
     if (offer.needUsdt > 0n) return { kind: 'fund', amount: offer.needUsdt, tier: target.tier, why: 'buy' };
+    if (!c.attester) return { kind: 'register', tier: target.tier };
     return { kind: 'buy', tier: target.tier, charge: offer.charge };
   }
   if (plan && secondsLeft(plan, nowSecs) <= RENEWAL_NOTICE_SECS) {
@@ -211,6 +214,12 @@ export function stepText(step: NextStep, c: ClientRecord): StepText {
       };
     case 'buy':
       return { title: `Buy tier ${step.tier}`, detail: `The lock and the balance are in place. Buying takes ${money(step.charge, asset)} and starts the period in that block.`, page: 'plans' };
+    case 'register':
+      return {
+        title: 'Waiting for registration',
+        detail: `The lock and the balance for tier ${step.tier} are in place. The plan can be bought with this same account as soon as governance has registered it as a client.`,
+        page: null,
+      };
     case 'ends':
       return { title: 'Turn renewal back on', detail: `The plan ends on ${day(step.endsAt)} and is set not to renew. After that your users pay protocol fees.`, page: 'plans' };
     case 'wait':

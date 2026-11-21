@@ -63,11 +63,15 @@ if (addr) {
   log('faucet', r.status, (await r.text()).slice(0, 160));
   await popup.waitForTimeout(12000);
   await popup.reload(); await popup.waitForTimeout(2500);
+  // A network has no free actions: lock 1 KEEL so the cards show a working account.
+  await popup.getByRole('button', { name: 'Lock', exact: true }).last().click();
+  await popup.waitForTimeout(8000);
+  await popup.reload(); await popup.waitForTimeout(2500);
 }
 await popup.evaluate(() => window.scrollTo(0, 0)); await popup.waitForTimeout(300);
 await shot(popup, 'home', 380, 640);
 // Receive card.
-const btn = popup.getByRole('button', { name: 'Bitcoin signet' }).first();
+const btn = popup.getByRole('button', { name: /^Bitcoin signet deposit address/ }).first();
 if (await btn.count()) {
   await btn.click(); await popup.waitForTimeout(3000);
   const card = popup.locator('text=Receive').first();

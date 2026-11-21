@@ -974,3 +974,29 @@ time[title] {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------- marks */
+.brand-harbor {
+  color: var(--accent);
+}
+/* The anchor, large and faint behind every page. */
+.watermark {
+  position: fixed;
+  right: -90px;
+  bottom: -110px;
+  z-index: -1;
+  color: var(--accent);
+  opacity: 0.07;
+  stroke-width: 0.7;
+  pointer-events: none;
+}
+.orca {
+  margin-right: 5px;
+  vertical-align: -1px;
+  color: var(--text-2, currentColor);
+}
+@media print {
+  .watermark {
+    display: none;
+  }
+}

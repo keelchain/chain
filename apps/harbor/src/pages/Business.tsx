@@ -386,8 +386,16 @@ export function BusinessPage() {
         <h1>Business</h1>
         <span className="sub">Your fees, your users and your vaults.</span>
       </div>
-      <Tabs label="Business sections" tabs={TABS} value={tab} onChange={(t) => navigate(href(t === 'fees' ? '/business' : `/business/${t}`))} />
-      {tab === 'fees' ? <Fees h={h} /> : <CustodyTab h={h} tab={tab} />}
+      {h.client.attester ? (
+        <>
+          <Tabs label="Business sections" tabs={TABS} value={tab} onChange={(t) => navigate(href(t === 'fees' ? '/business' : `/business/${t}`))} />
+          {tab === 'fees' ? <Fees h={h} /> : <CustodyTab h={h} tab={tab} />}
+        </>
+      ) : (
+        <Card>
+          <p className="text-2">Retail fees, attested users and vaults belong to a registered client. They open here, for this same account, once it is registered.</p>
+        </Card>
+      )}
     </>
   );
 }

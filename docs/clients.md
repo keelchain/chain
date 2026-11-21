@@ -8,6 +8,10 @@ transaction id. `models.md` explains the two models (custodial client with
 its own vaults, P2P client on Keel Wallet); this page is the mechanics, and
 it is the same for both.
 
+New here? `exchange.md` ("Run an exchange on Keel: getting started") is
+the step-by-step path through Keel Harbor; this page is the contract
+behind it.
+
 ## A client is not a user
 
 The chain treats the two differently in one respect, how they pay. If you

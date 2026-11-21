@@ -71,6 +71,9 @@ function TierState({ h, offer, onPick }: { h: Harbor; offer: TierOffer; onPick: 
       </>
     );
   }
+  if (!h.client.attester && offer.needLock === 0n && offer.needUsdt === 0n) {
+    return <p className="small text-2">The lock and the balance are in place. You can {verb.toLowerCase()} it once this account is registered as a client.</p>;
+  }
   return (
     <>
       <ul className="needs">
