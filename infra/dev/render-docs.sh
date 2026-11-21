@@ -16,7 +16,7 @@ mkdir -p "$OUT"
 # slug | source | title | one-line description (for the index)
 PAGES=(
   "exchange|docs/exchange.md|Run an exchange on Keel: getting started|The steps from a wallet to a running client: Keel Harbor, registration, the lock, the plan, fees, users, integration, and what it costs."
-  "models|docs/models.md|Two ways to run an exchange on Keel|Custodial clients with their own wallets, P2P clients on Keel Wallet: where funds sit, who signs, what it costs."
+  "models|docs/models.md|Two ways to run an exchange on Keel|Custodial clients with their own wallets, P2P clients on Keel Wallet, and a person with a wallet and no client: where funds sit, who signs, what it costs."
   "clients|docs/clients.md|Building a client|The integration contract: accounts and roles, the per-network switch and readiness, idempotency and reconciliation, streams, signing, pricing."
   "api|docs/explorer-api.md|Read API|The indexer's read API: blocks, accounts, markets, offers, trades, vaults, governance, search and the WebSocket feed."
   "rpc|chain/crates/keel-rpc/API.md|Node RPC|The node's HTTP API: status, accounts, submitting signed actions, receipts, order book, vaults, governance, readiness, state sync."
@@ -49,6 +49,11 @@ render() {
   echo
   echo "Everything here is rendered from the markdown in the public repository, so the"
   echo "page you read is the file the code is built from."
+  echo
+  echo "Where a section reads differently for a custodial client, a non-custodial"
+  echo "client or a person with Keel Wallet, or for coins in Keel against coins in"
+  echo "your wallet, it has tabs. Pick one once; the choice is kept in a cookie and"
+  echo "applies to every section on every page until you change it."
   echo
   for entry in "${PAGES[@]}"; do
     IFS='|' read -r slug src title desc <<<"$entry"

@@ -6,6 +6,47 @@ a session key, and the user approves each request in the wallet's own
 window. This page is the complete contract for a client that adds a
 "Connect Keel Wallet" button, on the web or in a mobile app.
 
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+As a custodial client you sign for your users server-side, with
+`@keelchain/sdk` and keys in your own KMS (`clients.md`, Signing), so your
+site needs no connect button for them. Two places where this page still
+applies to you: your **operator account** is a Keel Wallet account, and
+Keel Harbor is a site that connects to it exactly as described below,
+every plan, fee and vault change being one action you approve in the
+wallet; and your users get Keel Wallet for free without you building one,
+since the extension reads their custodian from the chain and shows your
+custody addresses, custody withdrawals and the float swap on its own
+(`wallet.md` §5c). If you want users to sign their own custody actions,
+the provider below is how your site asks them to.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+This page is yours in full. Your users hold their keys in Keel Wallet,
+your site connects, asks for a login signature, builds the actions that
+move their funds and hands each one to the wallet to approve, and holds a
+scope-limited session key so trading needs no popup per click. Nothing
+you hold can move a user's funds.
+
+</div>
+<div class="tab" data-mode="user">
+
+From your side, connecting means this. A site asks once to connect, and
+the wallet shows the origin and asks you; you can enable the wallet on
+any site from its settings, and disconnect from there too. After that the
+site cannot act for you: every chain action it wants arrives in the
+wallet's window, decoded, with a *Reject* and an *Approve*, and a login is
+a signed message that can never be replayed as an action. A site may ask
+for a **session key** so trading needs no popup per order; the wallet
+shows its scope and expiry, and the chain refuses a session key anything
+that moves funds: transfers, withdrawals and escrow releases always come
+back to you.
+
+</div>
+</div>
+
 ## 1. The provider
 
 The extension injects `window.keel` on any site the user has enabled it

@@ -38,11 +38,63 @@ keelchain.com/docs, and `@keelchain/sdk` on npm tracks them.
 
 ## Accounts and roles
 
-- **One Keel account per user.** An account is an Ed25519 public key. A
-  custodial client derives and stores its users' keys (or keeps a single
-  aggregate account, see `models.md`); a P2P client's users hold theirs in
-  Keel Wallet. Either way the client submits signed actions to `POST
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+- **One Keel account per user, or one aggregate account.** An account is
+  an Ed25519 public key. A custodial client derives and stores its users'
+  keys in its own KMS and signs as custodian (*transparent*: one chain
+  account per user, visible on the explorer), or keeps a single aggregate
+  account and its per-user balances in its own database (*rails only*;
+  `models.md`). Either way the client submits signed actions to `POST
   /v1/actions` and reads receipts.
+- **Onboarding a user is three steps:** `Attest` the account, send it the
+  KEEL for its lock (1 KEEL covers a retail user), and have its first
+  action be `LockBudget`, which your service signs since it holds the key.
+  Until it has locked, every action from it but a cancel is refused with
+  `BUDGET_EXHAUSTED` (or `NOT_ACTIVATED` while it holds less than
+  `budget.activation_keel`, 0.1 KEEL). While your plan runs neither the
+  lock nor the activation KEEL is needed: the account's actions come out
+  of your plan's daily pool (Pricing). Then `RequestCustodyAddress` with
+  the account as `custodian`'s owner gives it an address in your vault.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+- **One Keel account per user.** An account is an Ed25519 public key, and
+  a P2P client's users hold theirs in Keel Wallet: the address your site
+  learns when the wallet connects is the account you attest. The client
+  submits what the wallet signs (or what its session key signs) to `POST
+  /v1/actions` and reads receipts.
+- **Onboarding a user is three steps:** `Attest` the account, send it the
+  KEEL for its lock (1 KEEL covers a retail user), and have the user lock
+  it from the wallet's *Action capacity* card, or sign the `LockBudget`
+  through your site. Until it has locked, every action from it but a
+  cancel is refused with `BUDGET_EXHAUSTED` (or `NOT_ACTIVATED` while it
+  holds less than `budget.activation_keel`, 0.1 KEEL). While your plan
+  runs neither the lock nor the activation KEEL is needed: the account's
+  actions come out of your plan's daily pool (Pricing), so a retail user
+  with no KEEL at all can act the moment you attest them. The KEEL is the
+  user's and comes back when they unlock.
+
+</div>
+<div class="tab" data-mode="user">
+
+- **One Keel account, yours.** Generate a key in Keel Wallet; the address
+  is the public key, and there is nothing to register. Nobody attests it
+  unless you join an exchange, and no operator account is involved.
+- **Getting started is two steps:** hold at least 1 KEEL (the faucet on
+  the testnet, a transfer otherwise) and lock it from the wallet's *Action
+  capacity* card. A `LockBudget` of at least 1 KEEL is accepted from an
+  account with no capacity, so the first lock needs nothing but the KEEL.
+  Until then every action but a cancel is refused with `BUDGET_EXHAUSTED`
+  (or `NOT_ACTIVATED` while the address holds less than 0.1 KEEL). The
+  lock is a hundred actions a day and comes back three days after you
+  unlock.
+
+</div>
+</div>
+
 - **One operator account per client**, holding the roles governance granted
   it: **attester** (it stamps a KYC tier on its users' accounts with
   `Attest`, which the chain reads for limits) and, when it runs its own
@@ -61,16 +113,11 @@ keelchain.com/docs, and `@keelchain/sdk` on npm tracks them.
   many accounts does not change what you lock in total. `GET
   /v1/accounts/{addr}` shows `budget.remaining`, `budget.locked` and
   whether the account is `activated`.
-- **Onboarding a user is three steps:** `Attest` the account, send it the
-  KEEL for its lock (1 KEEL covers a retail user), and have its first
-  action be `LockBudget`. Until it has locked, every action from it but a
-  cancel is refused with `BUDGET_EXHAUSTED` (or `NOT_ACTIVATED` while it
-  holds less than `budget.activation_keel`, 0.1 KEEL). The KEEL is the
-  user's and comes back when they unlock; if you hold the user's key or a
-  session key, your service signs the lock. Governance can change these
-  numbers (`docs/governance.md`); read `budget.free_lock_min_keel`,
-  `budget.per_locked_keel_per_day` and `budget.activation_keel` from `GET
-  /v1/params` at startup rather than hard-coding them.
+
+Governance can change these numbers (`docs/governance.md`); read
+`budget.free_lock_min_keel`, `budget.per_locked_keel_per_day` and
+`budget.activation_keel` from `GET /v1/params` at startup rather than
+hard-coding them.
 
 ## The per-network switch
 
@@ -96,6 +143,25 @@ operations wait.
 
 Checklist for one network:
 
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+1. `ready` is true, and your custody vault for the chain is registered
+   (`RegisterCustodyVault`; `GET /v1/custody/{you}` lists it).
+2. The operator account has budget (locked or bought KEEL).
+3. One address issued in your vault for a test account
+   (`RequestCustodyAddress`), and a small deposit credited
+   (`deposits:<chain>:<addr>` on the socket, or `GET /v1/vaults/deposits?owner=`).
+4. One small custody withdrawal to an address you control, signed by your
+   signer and confirmed (`WithdrawalQueued` → `OutboundBatched` →
+   `OutboundConfirmed`).
+5. One float swap each way (`SwapCustody`) for the test account, and the
+   `CustodySwapped` event seen on `account:<addr>`.
+6. The reconciliation job below has run clean for a day.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
 1. `ready` is true.
 2. The operator account has budget (locked or bought KEEL).
 3. One deposit address issued for a test account (`RequestDepositAddress`),
@@ -103,11 +169,26 @@ Checklist for one network:
    `GET /v1/vaults/deposits?owner=`).
 4. One small withdrawal to an address the client controls, confirmed
    (`WithdrawalQueued` → `OutboundBatched` → `OutboundConfirmed`).
-5. For a P2P client: one escrow round trip (`StartTrade`, `MarkPaid`,
-   `ReleaseTrade`).
+5. One escrow round trip (`StartTrade`, `MarkPaid`, `ReleaseTrade`), signed
+   from a test user's Keel Wallet through your site.
 6. The reconciliation job below has run clean for a day.
 
-## Custodial clients: your own vault
+</div>
+<div class="tab" data-mode="user">
+
+There is no switch for you to flip. The wallet's Receive card offers a
+network when the chain has a vault for it, and `GET /rpc/v1/ready/{chain}`
+is the same answer the wallet reads. If a network is not ready, a new
+deposit address or a withdrawal on it waits; what you already hold is not
+at risk.
+
+</div>
+</div>
+
+## Where the funds sit: your vault, or the network vault
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
 
 A client that keeps its own keys (docs/models.md, Model A) uses the custody
 actions instead of the network vault: `RegisterCustodyVault` once per chain
@@ -150,6 +231,49 @@ of any live generation's address is
 signer reachable until `GET /v1/custody/{you}` shows that generation
 `Retired`.
 
+</div>
+<div class="tab" data-mode="noncustodial">
+
+A P2P client holds no vault. Its users' funds sit in the **network
+vault** for each chain, a threshold key held as shares by the bonded
+observer set (`how-it-works.md` §9), and the client uses the ordinary
+actions: `RequestDepositAddress` per account (the wallet asks for the same
+address when the user presses Receive), `Withdraw` and `WithdrawStable` for
+payouts, signed by the user in Keel Wallet, and `StartTrade`, `MarkPaid`,
+`ReleaseTrade` for escrow. Balances land in the `deposit` account type and
+trade on the chain's book and in escrow with everyone else's, swapped-in
+custodial balances included.
+
+The reserve check for the network vault is chain-wide: `GET
+/v1/vaults/{chain}` shows the vault, its epoch, signers, checkpoint and
+whether it is halted, and the explorer's vault page is every user's proof
+of reserves. Your reconciliation ingests `WithdrawalQueued`,
+`OutboundBatched`, `OutboundConfirmed` and `DepositCredited` on
+`account:<addr>` for each user you manage; there is no custody row, no
+float and no rotation on your side. A key rotation of the network vault is
+a governance step (a `RegisterVault` with a higher epoch, announced ahead;
+`how-it-works.md` §10), and the new key means a new address string at
+every account's unchanged index, so fetch the deposit address at deposit
+time (`GET /v1/vaults/{chain}/addresses?owner=`), never from a stale
+cache.
+
+</div>
+<div class="tab" data-mode="user">
+
+Your coins in Keel sit in the network vault, the threshold key the bonded
+observer set holds; nobody at Keel and no client can sign for it alone. The
+wallet's Receive card asks the chain for your address on each network
+(`RequestDepositAddress`), Send withdraws through the observers' batch, and
+the explorer's vault page shows the reserve against every balance it backs.
+You may also keep Bitcoin or Tron **in your wallet**, under a key from your
+own seed, outside the chain, and move them in only to trade (`wallet.md`
+§5b). If an exchange holds your balance in its own vault, Keel Wallet shows
+that too: the address in the exchange's custody, a withdrawal through its
+signer, and the swap onto the chain's book and back (`wallet.md` §5c).
+
+</div>
+</div>
+
 ## Naming your dispute team
 
 Disputes on your users' trades are ruled by whoever the offer names. Bond
@@ -166,6 +290,34 @@ chain's elected set. Your team rules with `RuleDispute` on
 `TradeArbitratorBound` event on `account:<arbitrator>` tells it which trades
 it holds. Governance can ban an arbitrator chain-wide; its bond is what it
 has to lose.
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+Only trades on the `deposit` side reach chain arbitration: a custody
+balance trades on the chain's book or escrow only after the float swap
+(`models.md`). A trade between two of your own custody users never touches
+the chain and stays with your own support, as today.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+Every trade of your users is a chain trade, so the above applies in
+full: name your team on every offer your site creates, and decide which
+other arbitrators you accept when your users take other makers' offers.
+
+</div>
+<div class="tab" data-mode="user">
+
+You do not bond an arbitrator; you choose one by taking an offer. The
+wallet and the explorer show `arbitrators[]` next to an offer's price (an
+exchange's offers name that exchange's dispute team); taking it accepts
+them, and when an offer names several you pick one with `ChooseArbitrator`
+before `MarkPaid`. An offer that names nobody is ruled by the chain's
+elected set.
+
+</div>
+</div>
 
 ## Idempotency and reconciliation
 
@@ -201,16 +353,37 @@ replays from the last height. Details in the `ws` reference.
 
 ## Signing
 
-- Custodial client: sign server-side with `@keelchain/sdk` (`Keypair`,
-  `RpcClient.send`), keys in the client's KMS.
-- P2P client: ask the user's Keel Wallet (`window.keel.signAction`) and
-  submit what comes back; use a **session key** (`AuthorizeSessionKey`, scope
-  `markets` or `p2p_manage`) so trading and offer management do not need a
-  popup per click. Session keys can never move funds. `wallet.md` has the
-  provider contract.
-- Withdrawals from a client-owned vault are signed by the client's own
-  signer under the same policy every Keel signer runs: the transaction must
-  pay open outbounds of a finalized batch.
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+Sign server-side with `@keelchain/sdk` (`Keypair`, `RpcClient.send`), keys
+in your KMS: the custodial accounts' keys for their actions (`on_behalf_of`
+for a swap), your operator key for roles, attestations and the plan.
+Withdrawals from your vault are signed by your own signer under the same
+policy every Keel signer runs: the transaction must pay open outbounds of a
+finalized batch, and nothing else.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+Ask the user's Keel Wallet (`window.keel.signAction`) and submit what
+comes back; use a **session key** (`AuthorizeSessionKey`, scope `markets`
+or `p2p_manage`) so trading and offer management do not need a popup per
+click. Session keys can never move funds. `wallet.md` has the provider
+contract and `connect-keel-wallet.md` the integration. Your operator key
+signs only your own actions: attestations, fees, the plan, your treasury.
+
+</div>
+<div class="tab" data-mode="user">
+
+Keel Wallet signs everything: each action is shown decoded in the
+wallet's own window and approved by you before it leaves the page, and a
+site you connect to only ever receives signatures, never the key. The CLI
+(`keel send … --secret`) and the SDK (`Keypair`, `RpcClient.send`) sign
+with the same key for anyone who prefers a terminal.
+
+</div>
+</div>
 
 ## Pricing
 
@@ -234,6 +407,35 @@ into KEEL on its own order book. Nothing is a share of your own fees.
 | Order of one of your users that filled | $0.002 |
 | Escrow release | $0.05 |
 | Dispute ruling | $1 |
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+The usage you incur: addresses issued in your vault, custody withdrawals
+and float swaps, and, for balances swapped onto the chain's book, your
+users' fills and releases. A custody-to-custody transfer inside your own
+ledger is not a chain action and costs nothing.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+The usage you incur: deposit addresses the network vault issues to your
+users, their withdrawals, and the fills, releases and dispute rulings of
+their trades. Your own operator actions cost nothing beyond your lock.
+
+</div>
+<div class="tab" data-mode="user">
+
+None of this table is yours. A wallet user buys no plan and is charged no
+usage; the protocol fees apply instead: 10 bps on a fill you take, 1% on
+an escrow release and the flat fee on a withdrawal
+(`how-it-works.md` §5, `governance.md`). Actions cost nothing beyond the
+1 KEEL you lock, which comes back when you unlock. Join an exchange and,
+while its plan runs, the protocol fees are waived and its retail fee
+applies instead.
+
+</div>
+</div>
 
 All of these are governance parameters (`docs/governance.md`); `GET
 /v1/clients/{addr}` returns the live tier table and prices with your

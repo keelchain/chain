@@ -134,3 +134,18 @@ footer ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .faucet-table th { font-size: .75rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
 .faucet-table tr:last-child td { border-bottom: 0; }
 @media (max-width: 720px) { .faucet-hero .grid { grid-template-columns: 1fr; } .faucet-hero .hero-art { display: none; } .faucet-stats { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---- Mode tabs in the docs (2026-11-21), built by keel-tabs.js ---- */
+.tabs { margin: 18px 0 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.tabs .tabbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px 0; border-bottom: 1px solid var(--line); }
+.tabs .tabbar button { appearance: none; border: 0; background: none; color: var(--muted); font: 600 .88rem Inter, system-ui, sans-serif; padding: 9px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0; cursor: pointer; transition: color .15s, background .15s; }
+.tabs .tabbar button:hover { color: var(--ink); background: var(--card-hover); }
+.tabs .tabbar button[aria-selected="true"] { color: var(--teal); border-bottom-color: var(--teal); }
+.tabs .tabbar button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.tabs .tab { padding: 14px 18px 4px; }
+.tabs .tab[hidden] { display: none; }
+.tabs .tab > :first-child { margin-top: 0; }
+.tabs .tab > h3:first-child, .tabs .tab > h4:first-child { margin-top: .2em; }
+.tabs .tabs { background: rgba(255,255,255,.03); }
+/* No script: every tab shows, each under its own label. */
+.no-js .tabs .tab::before { content: attr(data-mode); display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 8px; }

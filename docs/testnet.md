@@ -24,14 +24,72 @@ See `docs/deposits.md`: request a deposit address (wallet *Receive*, CLI or
 SDK), send signet BTC, Nile USDT/TRX, BSC-testnet USDT/BNB or devnet SOL/USDC to it, and the chain credits the
 vault asset after that chain's confirmations.
 
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+Your users' testnet deposits land in **your vault**, so register one per
+chain first (`RegisterCustodyVault`, a `keel-tss serve` or a signing hook
+of your own reachable by the observers) and hand out addresses with
+`RequestCustodyAddress`. The faucet funds accounts, not vaults: top up
+your vault's index-0 address from a signet or Nile faucet for gas and
+float. Your operator account's starting KEEL and USDT come from onboarding
+(below), not the faucet.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+Your users' deposits land in the **network vault** on each chain, with
+addresses the chain assigns through `RequestDepositAddress`. While your
+plan runs they need no KEEL; send each user the faucet's USDT or your own
+if a test trade needs a balance. Your operator account's starting KEEL and
+USDT come from onboarding (below), not the faucet.
+
+</div>
+<div class="tab" data-mode="user">
+
+Claim 100 KEEL and 100 USDT from `faucet.keelchain.com`, lock 1 KEEL from
+the wallet's *Action capacity* card, then request an address and send
+test coins to it. Coins can also stay in your own wallet, under a key from
+your seed, and move into Keel later (`docs/wallet.md` §5b).
+
+</div>
+</div>
+
 ## Clients
 
 A client is any service that signs actions for its users or holds a role.
 Run the `Onboard client` workflow with the client's account address: it adds
 the account to the attester set and sends it starting KEEL and USDT. The
 client then connects that account to Keel Harbor, locks its tier's KEEL
-and buys its plan there (`docs/clients.md`, Pricing). The first client is a marketplace sandbox that
-signs up users with Keel Wallet and settles trades on the chain.
+and buys its plan there (`docs/clients.md`, Pricing).
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+After onboarding, register your custody vault per chain from Harbor
+(Business) or with `RegisterCustodyVault`, attest your users, and request
+their addresses in your vault. Your signer must be reachable by the
+testnet observers to sign payouts. `docs/models.md`, Model A, is the
+procedure; `infra/dev/custody-e2e.sh` exercises the same deposits and
+payouts locally against regtest Bitcoin and a Tron mock.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+After onboarding, attest your users and connect your site to Keel Wallet
+(`docs/connect-keel-wallet.md`). The first client is a marketplace
+sandbox that signs up users with Keel Wallet and settles trades on the
+chain; `apps/example-client` is the shortest complete integration.
+
+</div>
+<div class="tab" data-mode="user">
+
+Nothing to onboard. A wallet user is any address: claim from the faucet,
+lock 1 KEEL and act. You become a client's user only when an exchange
+attests your account.
+
+</div>
+</div>
 
 ## Running a follower
 

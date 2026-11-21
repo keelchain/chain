@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Keelchain — settlement for peer-to-peer trading</title>
-<meta name="description" content="Keelchain is a settlement chain for peer-to-peer trading: on-chain escrow with arbitration, threshold-signed vaults for Bitcoin, Ethereum and Tron, the USDT stablecoin, and free signed actions instead of gas. Public testnet, explorer, wallet and API.">
+<meta name="description" content="Keelchain is a settlement chain for peer-to-peer trading: on-chain escrow with arbitration, threshold-signed vaults for Bitcoin, Ethereum, Tron, BNB Smart Chain and Solana, the USDT stablecoin, and free signed actions instead of gas. Public testnet, explorer, wallet and API.">
 <meta property="og:title" content="Keelchain"><meta property="og:description" content="A settlement chain for peer-to-peer trading. Public testnet live."><meta property="og:image" content="https://keelchain.com/keel-mark.svg">
 <link rel="icon" href="keel-mark.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,7 +31,7 @@
   <div>
     <div class="eyebrow">Keelchain · public testnet</div>
     <h1>Settlement for peer-to-peer trading.<br>No gas. No custodian.</h1>
-    <p class="lead">A Rust app-chain built for fiat-to-crypto trades: escrow with arbitrated disputes, threshold-signed vaults for Bitcoin, Ethereum and Tron, a one-to-one USD stablecoin, and no gas fees: you lock 1 KEEL to act and get it back.</p>
+    <p class="lead">A Rust app-chain built for fiat-to-crypto trades: escrow with arbitrated disputes, threshold-signed vaults for Bitcoin, Ethereum, Tron, BNB Smart Chain and Solana, a one-to-one USD stablecoin, and no gas fees: you lock 1 KEEL to act and get it back.</p>
     <div class="cta">
       <a class="btn primary" href="#build">Build a client</a>
       <a class="btn" href="wallet/">Get Keel Wallet</a>
@@ -64,8 +64,8 @@
   <p class="muted" style="max-width:720px">A fiat-for-crypto trade needs a holder for the crypto leg until the fiat leg settles. Today that holder is a company. On Keelchain it is a deterministic state machine, and every front end is just a client of it.</p>
   <div class="cards">
     <div class="card"><div class="ic">⚖</div><h3>P2P escrow with arbitration</h3><p>Offers, trades, payment windows and disputes are chain actions. Arbitrators are elected by governance and rule on evidence, on chain.</p></div>
-    <div class="card"><div class="ic">⛓</div><h3>Vaults, not bridges</h3><p>Bitcoin, Ethereum and Tron enter through observer-attested vaults with CGGMP21 threshold-signed keys. Light clients verify deposits against checkpoints.</p></div>
-    <div class="card"><div class="ic">$</div><h3>USDT, one balance on every network</h3><p>USDT sent on Ethereum, Tron or BNB Smart Chain is one USDT balance on Keel, backed one to one by the USDT the vaults hold, and leaves as USDT on the network you choose. Every market quotes in it.</p></div>
+    <div class="card"><div class="ic">⛓</div><h3>Vaults, not bridges</h3><p>Bitcoin, Ethereum, Tron, BNB Smart Chain and Solana enter through observer-attested vaults with threshold-signed keys: CGGMP21 on the secp256k1 chains, FROST on Solana. Light clients verify Bitcoin and Ethereum deposits against checkpoints.</p></div>
+    <div class="card"><div class="ic">$</div><h3>USDT, one balance on every network</h3><p>USDT sent on Ethereum, Tron or BNB Smart Chain is one USDT balance on Keel, backed one to one by the USDT the vaults hold, and leaves as USDT on the network you choose. Every market quotes in it. SOL and USDC arrive from Solana as their own assets.</p></div>
     <div class="card"><div class="ic">∞</div><h3>No gas</h3><p>No fee per action. Lock 1 <code>KEEL</code> for a hundred actions a day, more for more, and get it back in full on unlock.</p></div>
   </div>
 </div></section>
@@ -75,7 +75,7 @@
   <h2>Run your exchange on Keel. Manage it in Harbor.</h2>
   <div class="two">
     <div>
-      <p class="muted">Keel gives an exchange the ledger, the order book, P2P escrow and the vaults for Bitcoin, Tron, BNB Smart Chain and Solana. You pay a membership: a plan fee every 30 days plus KEEL you keep locked and get back. Your users pay no protocol fee and need no KEEL, and you keep all of your own fees.</p>
+      <p class="muted">Keel gives an exchange the ledger, the order book, P2P escrow and the vaults for Bitcoin, Ethereum, Tron, BNB Smart Chain and Solana. You pay a membership: a plan fee every 30 days plus KEEL you keep locked and get back. Your users pay no protocol fee and need no KEEL, and you keep all of your own fees.</p>
       <p class="muted"><a href="https://harbor.keelchain.com/">Keel Harbor</a> is your account: plans, payment, usage, the lock, your fees and your vaults. No sign-up and no server; you connect Keel Wallet, with the account you already have, and sign.</p>
       <div class="cta"><a class="btn gold" href="https://harbor.keelchain.com/">Open Keel Harbor</a><a class="btn" href="docs/exchange/">Getting started guide</a></div>
     </div>
@@ -98,7 +98,7 @@
         <div class="step"><div><b>Read</b><p>Blocks, accounts, markets, offers, trades, vaults and governance at <code>testnet.keelchain.com/api/v1</code>. <a href="docs/api/">Read API reference</a>.</p></div></div>
         <div class="step"><div><b>Sign</b><p>Ed25519 keys. Users bring their own through Keel Wallet, or your service holds keys for custodial accounts.</p></div></div>
         <div class="step"><div><b>Submit</b><p>Post signed actions to <code>testnet.keelchain.com/rpc/v1</code>, get a receipt with events in the next block. <a href="docs/rpc/">Node RPC reference</a>.</p></div></div>
-        <div class="step"><div><b>Fund</b><p>Accounts receive Bitcoin and Tron through vault addresses the chain assigns; on the testnet that is signet BTC and Nile USDT. <a href="docs/deposits/">How deposits work</a>.</p></div></div>
+        <div class="step"><div><b>Fund</b><p>Accounts receive Bitcoin, Ethereum, Tron, BNB Smart Chain and Solana coins through vault addresses the chain assigns; on the testnet that is signet BTC, Nile USDT and TRX, BSC-testnet USDT and BNB, and devnet SOL and USDC. <a href="docs/deposits/">How deposits work</a>.</p></div></div>
         <div class="step"><div><b>Onboard</b><p>Want your service to attest trades or hold a role? Write to <a href="mailto:mohab@keelchain.com">mohab@keelchain.com</a> and it goes through governance.</p></div></div>
       </div>
     </div>
@@ -142,7 +142,7 @@ console.log((await rpc.waitReceipt(tx)).events);</code></pre>
   <div class="eyebrow">Where it stands</div>
   <h2>Testnet now. Mainnet when the vault keys are held by more than one party.</h2>
   <div class="timeline">
-    <div class="tl"><b>Public testnet</b><p>One validator, one observer, signet Bitcoin and Nile Tron vaults, governance with a 60-block vote and a 10-block timelock. Everything resets between releases; nothing has value.</p></div>
+    <div class="tl"><b>Public testnet</b><p>One validator, one observer, vaults on Bitcoin signet, Tron Nile, the BNB Smart Chain testnet and Solana devnet, governance with a 60-block vote and a 10-block timelock. Everything resets between releases; nothing has value.</p></div>
     <div class="tl"><b>Clients and roles</b><p>Third-party front ends, attesters and observers join through governance. The first marketplace client runs on the testnet today.</p></div>
     <div class="tl"><b>Mainnet</b><p>After a threshold key ceremony across independent signer hosts, a genesis allocation and a published audit. No date.</p></div>
   </div>

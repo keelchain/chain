@@ -120,13 +120,54 @@ of both caps.
 
 ## Two kinds of user, two ways of paying
 
+A person who comes with a wallet and a business that brings its users pay
+differently; which usage a business pays depends on which model it runs
+(`models.md`).
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+**A custodial client pays a plan and rails usage.** The membership below is
+the same for every client: the tier's lock and the plan fee every 30 days.
+The usage it incurs is the rails: a price per deposit address issued in its
+own vault (`clients.usage_address_usd_micro`), per withdrawal its signer
+pays out and per float swap (`clients.usage_outbound_usd_micro`), and per
+vault rotation (`pools.usage_rotation_usd_micro`). Its users sign nothing
+on the chain unless it lets them. Capacity is charged to whoever signs the
+envelope: an action the client signs from its operator account
+(`on_behalf_of` a user) spends the operator lock's capacity, and an action
+signed with a per-user key the client holds spends that account's share of
+the plan's daily pool, so a transparent-ledger user needs no KEEL either. Users whose balance it swaps onto the book
+incur the fill, release and ruling usage like a non-custodial client's.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+**A non-custodial client pays a plan and flow usage.** The membership below
+is the same for every client: the tier's lock and the plan fee every 30
+days. The usage it incurs is per flow of its users: a filled order
+(`clients.usage_fill_usd_micro`), an escrow release
+(`clients.usage_release_usd_micro`), a dispute ruling
+(`clients.usage_ruling_usd_micro`), a deposit address and a withdrawal
+(`clients.usage_address_usd_micro`, `clients.usage_outbound_usd_micro`).
+Its users sign their own actions in Keel Wallet, so the plan's daily pool
+of actions is what spares each of them a lock of their own.
+
+</div>
+<div class="tab" data-mode="user">
+
 **A user pays nothing to act and locks one KEEL.** Someone who arrives
 with a wallet to post an offer, place a limit order or move KEEL needs a
 handful of actions. They lock 1 KEEL, which is a hundred actions a day,
 and get it back in full three days after they unlock it. That lock is the
 whole spam defence: an attacker's capacity is the KEEL they tie up, per
 day, whatever the number of keys. What a user does pay is a share of the
-value they move (the fee table above), not a price per transaction.
+value they move (the fee table above), not a price per transaction. There
+is no plan and no usage for a user; the rest of this section is about
+clients.
+
+</div>
+</div>
 
 **An exchange pays a plan.** A gateway and a ledger are what an exchange
 rents elsewhere for hundreds or thousands of dollars a month, and a lock
@@ -224,6 +265,27 @@ flow: `p2p_seller_fee_bps` on an escrow release, `taker_fee_bps` on a fill,
 at collection into the `treasury`, `validator_rewards` and `burn` system
 accounts (`fee_split_*_bps`).
 
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+**Clients keep all their fees.** A custodial client charges its users
+whatever its own ledger says; the chain never sees those fees and takes no
+share of them. On the chain the client is an attester, so when one of its
+users swaps a balance onto the book and trades, the protocol fee is waived
+while the plan runs and the client's `SetClientFee` schedule (`p2p_bps`,
+`taker_bps`, `withdraw_bps`) is charged to that user and credited to the
+client's deposit account in the same block, up to what the payer holds.
+
+**The plan and usage** are what the client pays Keel, through the same fee
+split: the plan fee when a period starts, then
+`clients.usage_address_usd_micro` per custody address issued,
+`clients.usage_outbound_usd_micro` per custody withdrawal or float swap,
+and `pools.usage_rotation_usd_micro` per vault rotation. Fill, release and
+ruling usage applies to its users' trades on the book after a swap.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
 **Clients keep all their fees.** A client is an attester: the account that
 vouched for a user's tier. An account attested by a client with a running
 plan pays no protocol fee on fills, escrow releases, dispute rulings or
@@ -231,8 +293,7 @@ the withdrawal flat fee. The client publishes its own schedule with
 `SetClientFee` (`p2p_bps`, `taker_bps`, `withdraw_bps`, uncapped while the
 waiver is on), and the chain charges that retail fee to the client's user
 in the same block and credits it to the client's deposit account, up to
-what the payer holds. A user with no attester, or whose attester has no
-plan, pays the protocol fees.
+what the payer holds.
 
 **The plan and usage** are what a client pays Keel, through the same fee
 split: the plan fee when a period starts, then `clients.usage_address_usd_micro`
@@ -242,6 +303,18 @@ that filled, `clients.usage_release_usd_micro` per escrow release and
 `clients.usage_ruling_usd_micro` per dispute ruling. `clients.protocol_fee_waived
 = 0` switches the waiver off for everyone (protocol fee plus a capped
 retail fee).
+
+</div>
+<div class="tab" data-mode="user">
+
+**A user pays the protocol fees.** A user with no attester, or whose
+attester has no running plan, pays the protocol fees above on what they
+move, and nobody charges them a retail fee. If an exchange attests the
+account later, the waiver and that exchange's `SetClientFee` schedule
+apply from then on, while its plan runs.
+
+</div>
+</div>
 
 **The buyback.** At every epoch boundary the chain sweeps the non-KEEL
 balances of the three system accounts: for each asset with a `KEEL-<asset>`

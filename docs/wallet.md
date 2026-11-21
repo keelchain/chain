@@ -168,34 +168,17 @@ wallet.
 ## 5b. In Keel and in your wallet (self-custody for bridged coins)
 
 A user's Bitcoin and Tron can sit in one of two places, and the wallet
-shows both:
+shows both. **Settings → New deposits go to** picks which address the
+Receive card shows: Keel (default) or your wallet. Nothing already
+deposited changes. The card carries the one warning that matters: coins in
+your wallet have no observer set behind them, so a lost phrase loses them.
 
-- **In Keel**: the default. The deposit address is a child of the network
-  vault's threshold key, the observer set signs for it, and the balance is a
-  Keel balance that trades, escrows and swaps. Everything in `deposits.md`.
-- **In your wallet**: self-custody. The wallet derives a Bitcoin key and a
-  Tron key from the same BIP39 seed as the Keel accounts, on the standard
-  paths, so the phrase alone recovers the coins in any other wallet:
+<div class="tabs" data-group="wallet">
+<div class="tab" data-mode="keel">
 
-  ```
-  Bitcoin  BIP84  m/84'/0'/0'/0/<account>   bc1…   (mainnet)
-                  m/84'/1'/0'/0/<account>   tb1…   (signet)
-  Tron     BIP44  m/44'/195'/0'/0/<account> T…     (same on Nile and mainnet)
-  ```
-
-  The chain never learns these addresses. The popup reads their balances
-  from mempool.space and TronGrid directly, and the explorer shows nothing
-  for them.
-
-**Settings → New deposits go to** picks which address the Receive card
-shows: Keel (default) or your wallet. Nothing already deposited changes.
-The card carries the one warning that matters: coins in your wallet have
-no observer set behind them, so a lost phrase loses them.
-
-The popup is five tabs: **Home** (address, balances in Keel, Action
-capacity, Receive),
-**Send**, **Deposits** (every incoming deposit and its stage), **Wallet**
-(coins in your wallet) and **Settings**.
+**In Keel** is the default. The deposit address is a child of the network
+vault's threshold key, the observer set signs for it, and the balance is a
+Keel balance that trades, escrows and swaps. Everything in `deposits.md`.
 
 **Action capacity** (the *Home* tab): actions available now, KEEL locked,
 actions per day and pending unlocks, with Lock and Unlock. An account acts
@@ -206,6 +189,29 @@ first transfer, order or deposit-address request; a refused action with
 with a plan onboarded needs no lock: the card shows the actions the
 exchange pays for today instead.
 
+**Move to your wallet**: *Send → Move to your wallet*. The bridged assets
+are always listed with what you hold in Keel, the destination is your own
+address for that chain, locked, and *Max* sends everything. An ordinary
+withdrawal: escrow, observer batch, threshold signature, fee from the amount.
+
+</div>
+<div class="tab" data-mode="wallet">
+
+**In your wallet** is self-custody. The wallet derives a Bitcoin key and a
+Tron key from the same BIP39 seed as the Keel accounts, on the standard
+paths, so the phrase alone recovers the coins in any other wallet:
+
+```
+Bitcoin  BIP84  m/84'/0'/0'/0/<account>   bc1…   (mainnet)
+                m/84'/1'/0'/0/<account>   tb1…   (signet)
+Tron     BIP44  m/44'/195'/0'/0/<account> T…     (same on Nile and mainnet)
+```
+
+The chain never learns these addresses. The popup reads their balances
+from mempool.space and TronGrid directly, and the explorer shows nothing
+for them. No action capacity is needed for coins here: they are outside
+the chain, and so is everything you do with them until they move in.
+
 **Move to Keel** (the *Wallet* tab): the background derives the
 key, builds the transaction to the account's vault deposit address (Bitcoin:
 a P2WPKH spend with change back to the own address, fee from the recommended
@@ -214,17 +220,26 @@ rate, *Max* takes the fee from the amount; Tron: a TRX transfer or a TRC-20
 it locally, broadcasts it through the public API and wipes the key. From
 there it is an ordinary deposit and the Deposits card follows it.
 
-**Move to your wallet**: *Send → Move to your wallet*. The bridged assets
-are always listed with what you hold in Keel, the destination is your own
-address for that chain, locked, and *Max* sends everything. An ordinary
-withdrawal: escrow, observer batch, threshold signature, fee from the amount.
-
 Self-custody is offered on the testnet and mainnet, where the wallet knows
 the public APIs; a custom network shows the Keel side only. Code:
 `apps/wallet-extension/src/core/selfcustody.ts`, checked against the live
 vault addresses in its tests.
 
-## 5c. Keel Wallet for a custodial client's users
+</div>
+</div>
+
+The popup is five tabs: **Home** (address, balances in Keel, Action
+capacity, Receive),
+**Send**, **Deposits** (every incoming deposit and its stage), **Wallet**
+(coins in your wallet) and **Settings**.
+
+## 5c. What the wallet shows your users
+
+Keel Wallet is one extension for every kind of account; what it shows
+depends on who attested the account and where its funds are held.
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
 
 A user attested by a client that registered custody vaults (docs/models.md,
 Model A) gets the whole flow in Keel Wallet without the client building a
@@ -243,6 +258,46 @@ wallet of its own. The wallet reads `attester`/`custodian` from
 
 An account the client does not hold in custody sees none of this and uses
 the network vault as before.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+A user of a P2P client holds their key in Keel Wallet and funds in the
+network vault, and your site is one of the origins the wallet is connected
+to (`connect-keel-wallet.md`). What they see:
+
+- **Home** shows the account, its balances in Keel and the *Action
+  capacity* card. While your plan runs the card says the actions your plan
+  pays for today instead of asking for a lock, because the account is
+  attested by a client with a plan; the user needs no KEEL of their own.
+- **Receive** hands out the network vault's address on each chain
+  (`RequestDepositAddress`), the same address your site shows if it asks
+  the chain for it.
+- **Signing requests** from your site open the approval window with the
+  decoded action and your `context`; a session key you asked for
+  (`authorizeSession`) is shown with its scope and expiry, and after that
+  order and offer actions in scope need no popup.
+- **Send** withdraws through the network vault (`Withdraw`,
+  `WithdrawStable`) to any address, or moves coins to the user's own
+  wallet (§5b).
+
+Nothing about custody appears: your client holds no vault for them, so
+there is no custody balance, no float swap and no custody address.
+
+</div>
+<div class="tab" data-mode="user">
+
+A wallet user with no client sees the plain wallet: **Home** with the
+account's balances in Keel and the *Action capacity* card (lock 1 KEEL
+here before the first action, since nobody else pays for them),
+**Receive** with the network vault's address on each chain, **Send** for
+transfers and withdrawals, **Deposits** for every incoming deposit and its
+stage, and **Wallet** for coins kept under the user's own key (§5b).
+Connecting to a site adds that origin's signing requests; nothing else
+changes.
+
+</div>
+</div>
 
 ## 6. What the operator still signs (its own keys, never users')
 

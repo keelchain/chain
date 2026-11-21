@@ -482,6 +482,26 @@ top up.
 
 ### 8.1 Two modes
 
+Who holds a user's key depends on who the user is to the chain: a person
+with Keel Wallet, a user of a client that lets them keep their key, or a
+user of a client that keeps it for them.
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+**Custodial client (models.md, Model A).** The client holds its users'
+keys, or one aggregate account, in its own KMS and signs their actions as
+custodian; their coins sit in the client's own vault, whose key the client
+alone holds (section 9 intro). The chain sees signed actions and balances
+like any other and publishes the client's reserve against its liabilities.
+A user of such a client may still install Keel Wallet: it reads the
+custodian from the account and shows the client's custody address, the
+custody withdrawal and the float swap (`wallet.md` §5c), signed by the
+user where the client allows it.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
 **Non-custodial (target state, decided 2026-09-09).** The user's
 key lives in the KEEL browser extension (`apps/wallet-extension`): a BIP39
 24-word seed, keys derived as `secret_0 = seed[0..32]` and
@@ -504,6 +524,19 @@ Postgres. The migration flow moves every balance to the user's own address
 tier for the new address, retires the cached deposit addresses and deletes
 the encrypted secret. Preconditions: no open offers, trades, orders or
 unlock queue on the custodial address; the site lists what to close.
+
+</div>
+<div class="tab" data-mode="user">
+
+**A wallet user with no client.** The same extension and the same key
+model as the non-custodial tab: a BIP39 seed, `window.keel`, every
+signature shown decoded and approved. No marketplace stands between the
+user and the node, so there are no signing requests and no session keys;
+the wallet talks to the RPC the user configured and the user locks 1 KEEL
+for action capacity before the first action.
+
+</div>
+</div>
 
 ### 8.2 Who can see what
 
@@ -532,27 +565,44 @@ after which it trades on the book and in escrow like any `deposit` balance.
 ### 9.0 Two places a user's coins can be: in Keel, or in your wallet
 
 For the bridged chains (Bitcoin and Tron) a Keel Wallet user holds coins in
-one of two places, and the wallet shows both side by side:
+one of two places, and the wallet shows both side by side. Nothing already
+deposited changes when the user switches which address the Receive card
+shows. Derivation paths, the settings that choose the default, and the
+self-custody code are in `wallet.md` section 5b.
 
-- **In Keel** (the default): the deposit address is a child of the network
-  vault's threshold key (9.1), the observer set signs for it, and the balance
-  is a Keel balance that trades, escrows and swaps. Everything below in this
-  section, deposits (9.2), withdrawals (9.3) and the reserve invariant (9.4),
-  is about coins in Keel.
-- **In your wallet** (self-custody): the wallet derives a Bitcoin and a Tron
-  key from the same BIP39 seed as the Keel accounts, on the standard paths,
-  so the phrase alone recovers them in any other wallet. The chain never
-  learns these addresses, no observer set stands behind them, and they do
-  not trade until moved into Keel.
+<div class="tabs" data-group="wallet">
+<div class="tab" data-mode="keel">
 
-Coins cross between the two with an ordinary deposit (*Move to Keel*: the
+**In Keel** (the default): the deposit address is a child of the network
+vault's threshold key (9.1), the observer set signs for it, and the balance
+is a Keel balance that trades, escrows and swaps. Everything below in this
+section, deposits (9.2), withdrawals (9.3) and the reserve invariant (9.4),
+is about coins in Keel.
+
+Coins leave for the user's own key with an ordinary withdrawal (*Send →
+Move to your wallet*: escrow, observer batch, threshold signature, as in
+9.3).
+
+</div>
+<div class="tab" data-mode="wallet">
+
+**In your wallet** (self-custody): the wallet derives a Bitcoin and a Tron
+key from the same BIP39 seed as the Keel accounts, on the standard paths,
+so the phrase alone recovers them in any other wallet. The chain never
+learns these addresses, no observer set stands behind them, and they do
+not trade until moved into Keel.
+
+Coins enter Keel with an ordinary deposit (*Wallet → Move to Keel*: the
 wallet signs a transaction to the account's vault deposit address and the
-Deposits tab follows it through the stages of 9.2) or an ordinary
-withdrawal (*Move to your wallet*: escrow, observer batch, threshold
-signature, as in 9.3). Nothing already deposited changes when the user
-switches which address the Receive card shows. Derivation paths, the
-settings that choose the default, and the self-custody code are in
-`wallet.md` section 5b.
+Deposits tab follows it through the stages of 9.2).
+
+Inside the wallet extension the only actions on coins in your wallet are to
+see them and to move them into Keel (`selfAddresses`, `selfBalances`,
+`moveToKeel` in `background/wallet.ts`). Everything else about them happens
+in whatever other wallet the user imports the phrase into.
+
+</div>
+</div>
 
 What each kind of balance can do:
 
@@ -568,11 +618,6 @@ What each kind of balance can do:
 | Shown in the explorer | yes | no, the chain never learns the address |
 | Lost phrase | the account is recoverable through Keel's recovery rules | the coins are gone |
 | Move to the other side | *Send → Move to your wallet* (a withdrawal) | *Wallet → Move to Keel* (a deposit) |
-
-Inside the wallet extension the only actions on coins in your wallet are to
-see them and to move them into Keel (`selfAddresses`, `selfBalances`,
-`moveToKeel` in `background/wallet.ts`). Everything else about them happens
-in whatever other wallet the user imports the phrase into.
 
 ### 9.1 Vaults and threshold keys
 
@@ -955,14 +1000,39 @@ rotates the vault. Validators and honest users elsewhere are untouched.
 
 ## 15. Is it fully peer-to-peer and non-custodial?
 
-Precisely:
+Precisely. What holds for everyone:
 
 - **On-chain assets (KEEL, USDT, trades, orders, escrow): non-custodial
   once the user is in wallet mode.** The key is in the user's extension; the
   chain enforces that nothing else can move the balance. Escrow is held by
   the chain's rules, not by an operator. Trades are peer to peer with
   arbitrators only on dispute.
-- **Bridged assets (BTC, ETH, USDT on Tron/Ethereum): custodied by a
+- **Peer discovery and matching: on chain.** Offers and the order book are
+  chain state; no server is needed to find a counterparty, though the
+  marketplace is the friendliest place to do it.
+- **Fiat: inherently off chain.** The fiat leg of a P2P trade is between the
+  two people; the chain sees a proof hash and an escrow.
+
+What depends on who holds the funds:
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+- **Users of a custodial client (model A): custodied by that client.**
+  Their balances are backed by the client's own vault, and the client may
+  sign swaps and payouts for them. The chain only guarantees the reserve
+  check and, after a float swap, that the balance on the `deposit` side is
+  held like any other.
+- **The client's own coins: custodied by the client, with the chain as
+  witness.** No share of the vault key lives on a Keel machine; the
+  observers attest deposits and build transactions, and the client's own
+  signer signs them after the policy check. What the client trusts Keel
+  for is detection, construction and liveness, not the coins.
+
+</div>
+<div class="tab" data-mode="noncustodial">
+
+- **Bridged assets (BTC, ETH, BNB, SOL and USDC on Solana, USDT on Ethereum, Tron and BSC): custodied by a
   federation, not by the user.** The vault key is a threshold key held by
   the bonded observer set; deposits need a quorum and a light-client proof,
   withdrawals need a quorum signature. This is the ZetaChain/THORChain
@@ -978,16 +1048,30 @@ Precisely:
   trades; a user flips it in Settings (`wallet.md` §5b).
 - **Custodial-mode users: not yet.** Until they migrate, the marketplace
   can sign for them. The design's answer is to make that mode disappear.
-- **Users of a custodial client (model A): custodied by that client.**
-  Their balances are backed by the client's own vault, and the client may
-  sign swaps and payouts for them. The chain only guarantees the reserve
-  check and, after a float swap, that the balance on the `deposit` side is
-  held like any other.
-- **Peer discovery and matching: on chain.** Offers and the order book are
-  chain state; no server is needed to find a counterparty, though the
-  marketplace is the friendliest place to do it.
-- **Fiat: inherently off chain.** The fiat leg of a P2P trade is between the
-  two people; the chain sees a proof hash and an escrow.
+
+</div>
+<div class="tab" data-mode="user">
+
+- **Bridged assets (BTC, ETH, BNB, SOL and USDC on Solana, USDT on Ethereum, Tron and BSC): custodied by a
+  federation, not by the user.** The vault key is a threshold key held by
+  the bonded observer set; deposits need a quorum and a light-client proof,
+  withdrawals need a quorum signature. This is the ZetaChain/THORChain
+  model: no single custodian, no company key, but a set of bonded operators
+  whose collusion above the threshold could move funds. The reserve
+  invariant makes any shortfall visible and halts payouts. Lightning adds
+  bounded hot exposure per observer.
+- **Bridged assets in your wallet: self-custodied.** Keel Wallet also
+  derives a Bitcoin and a Tron key from the user's seed on the standard
+  paths; coins there are outside the chain, recoverable with the phrase
+  alone, and move into Keel (a deposit) or back out (a withdrawal) on the
+  user's say. The default is the vault, because only a vaulted balance
+  trades; a user flips it in Settings (`wallet.md` §5b).
+- **Nobody signs for you.** No client attested the account and no
+  marketplace holds a key or a session key for it; every action is yours,
+  and so is the 1 KEEL you lock to act.
+
+</div>
+</div>
 
 So: fully non-custodial for chain-native value and for anyone who has moved
 to their own wallet; federated custody with on-chain proof for bridged

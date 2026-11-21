@@ -5,26 +5,34 @@ plan) see `exchange.md`; this page is about who holds the funds.
 
 Keel is infrastructure. An exchange, a marketplace, a payments desk or a bot
 is a client of the chain, and every client chooses one of two models per
-network (Bitcoin, Ethereum, Tron). Both models use the same API, the same
-explorer, the same SDK and the same readiness endpoints; they differ in one
-question: **who holds the funds and who signs the withdrawals.**
+network (Bitcoin, Ethereum, Tron, BNB Smart Chain, Solana). Both models use
+the same API, the same explorer, the same SDK and the same readiness
+endpoints; they differ in one question: **who holds the funds and who signs
+the withdrawals.** A person who connects Keel Wallet to the chain directly,
+with no exchange in between, is the third reader of this page: the last
+column below, and the *Wallet user* tab in every section that has one.
 
-| | Model A: custodial client | Model B: P2P client |
-|---|---|---|
-| Who holds user funds | The client, in **its own vault**: keys it owns, a signer it runs | Keel's network vault for that chain, threshold-signed by the observer set; escrow on chain |
-| What Keel does | Detects deposits to the client's addresses, keeps the ledger, builds and batches withdrawals, estimates fees, broadcasts, records everything on the explorer | Everything in A, plus on-chain escrow, disputes, the order book and session keys |
-| Who signs withdrawals | The client's own signer | The observer set (2-of-3 on the testnet) |
-| Who signs user actions | The client, as custodian | The user, with Keel Wallet |
-| What users can verify | Proof of reserves for that client: vault addresses, reserve against the sum of balances, every movement with a transaction id | Their own account and every action they signed |
-| Client fees and margin | **Untouched.** Keel charges usage, never a share of the client's fees | **Untouched.** While the client's plan runs the chain waives its protocol fee for the client's users; the client sets its own retail fee and receives it in the same posting, and pays usage per fill, release, ruling and withdrawal |
-| How Keel is paid | A plan every 30 days and usage, priced in dollars and paid in USDT, which the chain buys into KEEL; plus KEEL the client locks and gets back | The same way |
+| | Model A: custodial client | Model B: P2P client | A wallet user, no client |
+|---|---|---|---|
+| Who holds user funds | The client, in **its own vault**: keys it owns, a signer it runs | Keel's network vault for that chain, threshold-signed by the observer set; escrow on chain | The network vault, the same as Model B; or the user's own key on the external chain (`wallet.md` §5b) |
+| What Keel does | Detects deposits to the client's addresses, keeps the ledger, builds and batches withdrawals, estimates fees, broadcasts, records everything on the explorer | Everything in A, plus on-chain escrow, disputes, the order book and session keys | Everything in B |
+| Who signs withdrawals | The client's own signer | The observer set (2-of-3 on the testnet) | The observer set |
+| Who signs user actions | The client, as custodian | The user, with Keel Wallet | The user, with Keel Wallet |
+| What users can verify | Proof of reserves for that client: vault addresses, reserve against the sum of balances, every movement with a transaction id | Their own account and every action they signed | Their own account and every action they signed |
+| Client fees and margin | **Untouched.** Keel charges usage, never a share of the client's fees | **Untouched.** While the client's plan runs the chain waives its protocol fee for the client's users; the client sets its own retail fee and receives it in the same posting, and pays usage per fill, release, ruling and withdrawal | No client, no retail fee: the user pays the protocol fees (`how-it-works.md` §5) |
+| How Keel is paid | A plan every 30 days and usage, priced in dollars and paid in USDT, which the chain buys into KEEL; plus KEEL the client locks and gets back | The same way | The protocol fees, and 1 KEEL locked for action capacity, returned on unlock |
 
 A client can run both models at once: custodial accounts in its own vault,
 wallet users on the network vault. It can also switch a network from one
 model to the other with its own per-network setting; old balances stay where
 they are, new deposits follow the new setting, and nothing has to be moved.
 
-## Model A: the custodial client
+## The model, in detail
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+### Model A: the custodial client
 
 This is for an exchange that already runs its own wallets and wants to keep
 doing so. Today such an exchange pays a custody provider for address
@@ -240,7 +248,10 @@ other. Compared with a custody provider: no invoice, no per-call opacity, no
 vendor that can drop a subscription or a webhook, one API for every network,
 and the same numbers visible to the client's users.
 
-## Model B: the P2P client
+</div>
+<div class="tab" data-mode="noncustodial">
+
+### Model B: the P2P client
 
 This is for a marketplace whose users hold their own keys. Users install Keel
 Wallet, the client's site asks the wallet to connect, and every action the
@@ -283,7 +294,58 @@ a planned option (escrow-only custody, version 0.3.0) lets a seller back an
 offer from a wallet it holds on the native chain, so the vault holds coins
 only while a trade is in escrow.
 
+</div>
+<div class="tab" data-mode="user">
+
+### A wallet user, with no client
+
+This is a person with Keel Wallet who uses the chain directly: no exchange
+attested the account, no plan pays for its actions, and nobody signs for
+it. The account is an ordinary Ed25519 key in the extension; the user
+locks 1 KEEL for action capacity (a hundred actions a day, returned in
+full three days after unlocking), asks the chain for a deposit address on
+each network, and trades on the book and in escrow with everyone else,
+custodial clients' users included once those have swapped in.
+
+Funds sit where a P2P client's users' funds sit: bridged coins in Keel's
+network vault, threshold-signed by the observer set, and KEEL and USDT on
+the ledger. The user may also keep Bitcoin or Tron **in their wallet**,
+under a key derived from the same seed, outside the chain, and move them
+into Keel only to trade (`wallet.md` §5b; the *In Keel / In your wallet*
+tabs on the deposits page).
+
+**What Keel charges:** the protocol fees on value moved, 10 bps on a fill
+taken, 1% on an escrow release and the flat fee on a withdrawal
+(`how-it-works.md` §5, `governance.md`), and nothing per action. There is
+no plan and no usage price: those are for clients. A user who later joins
+an exchange is attested by it and, while the exchange's plan runs, pays no
+protocol fee and needs no lock of their own.
+
+**Where the trust is.** The user's key never leaves the extension; the
+chain refuses anything that moves the balance without it. Bridged coins in
+Keel are custodied by the bonded observer set under the reserve invariant
+(`how-it-works.md` §9.4), not by a company; coins in the user's own wallet
+are custodied by nobody but the user, and a lost phrase loses them.
+
+</div>
+</div>
+
 ## Control: can a client have signing power over the escrow?
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+A custodial client already holds the key that signs its own vault; nothing
+leaves it without the client's signer. The question only arises for the
+balances its users swap onto the `deposit` side to trade (the float swap
+above): while there, they sit in escrow and in the network vault like any
+P2P client's, and the options in the *Non-custodial client* tab apply to
+them in the same way. A custodial client that wants its own team to rule
+disputes on those trades bonds it as an arbitrator (option 3) and names it
+on its users' offers (`clients.md`, "Naming your dispute team").
+
+</div>
+<div class="tab" data-mode="noncustodial">
 
 A P2P client may want a say over the funds its trades put in escrow, beyond
 what the protocol guarantees. The honest options, in increasing weight:
@@ -306,6 +368,21 @@ what the protocol guarantees. The honest options, in increasing weight:
 
 None of these is switched on by default; each is a governance decision.
 
+</div>
+<div class="tab" data-mode="user">
+
+The escrow of a trade is a restricted account on chain: neither trader can
+move it, and neither can any client. Your say over it is the arbitrator
+you accept. An offer names the arbitrator that rules a dispute on it
+(several, and the taker chooses), or names nobody and falls to the
+governance-elected set; the wallet and the explorer show that next to the
+price, so you take an offer with eyes open, or filter it out. Beyond that,
+KEEL you hold votes on the observer set, the arbitrator set, the attesters
+and every fee, the same vote a client has.
+
+</div>
+</div>
+
 ## Trading between the two models
 
 Both models produce the same unit on the ledger (`BTC.BTC` is `BTC.BTC`,
@@ -318,6 +395,9 @@ one mechanism:
 | A custodial client's user and a Keel Wallet user (a P2P client's user or a direct user) | the chain's book or escrow | the arbitrator the offer names, else the governance set |
 | A custodial client's user and another custodial client's user | the chain's book or escrow | the same |
 | Two users of the same custodial client | the client's own ledger, never the chain | the client's own support, as today |
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
 
 **The path, step by step, for a custodial user selling BTC to a wallet
 user:**
@@ -364,7 +444,64 @@ other off chain. A custody balance is backed by one vault, and the chain
 only settles what the network vault backs. That is what keeps each client's
 reserve check exact.
 
+</div>
+<div class="tab" data-mode="noncustodial">
+
+Nothing about your integration changes when a counterparty is a custodial
+client's user. By the time such a user places an order or posts an offer,
+their balance has been swapped onto the `deposit` side and is held by the
+network vault like your users'; the book and the escrow do not know, and
+cannot show, which side it came from. Two things are worth telling your
+users:
+
+- **A dispute may be ruled by the other client's team.** A custodial
+  client bonds its dispute team as an arbitrator and names it on its
+  users' offers. Your user who takes such an offer accepts that team; your
+  site shows `arbitrators[]` of `GET /v1/offers` next to the price so they
+  can, or filters offers down to the arbitrators you accept
+  (`clients.md`, "Naming your dispute team"). Offers your users post name
+  your team, so the custodial side faces the same choice.
+- **Fees are per side.** A fill or a release settles with the protocol fee
+  (waived for your users while your plan runs) and, on top, each side's
+  own client's retail fee: yours into your account for your user, theirs
+  into theirs. Neither side pays the other's.
+
+</div>
+<div class="tab" data-mode="user">
+
+You can trade with anyone on the chain: another wallet user, a P2P
+client's user, or a custodial exchange's user who has swapped a balance
+onto the book. The counterparty's balance is held by the network vault
+like yours by the time it trades, so the trade itself is the same. Two
+things to look at before you take an offer:
+
+- **Who rules a dispute.** An offer names its arbitrator; an exchange's
+  offers name that exchange's dispute team. Taking the offer accepts that
+  team. The wallet and the explorer show it; an offer that names nobody is
+  ruled by the chain's elected set.
+- **What you pay.** The protocol fee on the fill or the release, from your
+  side only. The other side's exchange charges its own user its own retail
+  fee, never you.
+
+</div>
+</div>
+
 ## The per-network setting
+
+<div class="tabs" data-group="client">
+<div class="tab" data-mode="custodial">
+
+A client turns Keel on one network at a time. For a network that is on, new
+deposit addresses and new withdrawals go through your vault on Keel;
+everything that started before stays on the old path until it completes;
+no funds are moved between the two. Before turning a network on, register
+the custody vault for it (`RegisterCustodyVault`) and check
+`GET /v1/ready/{chain}`: the vault epoch and signers, the age of the last
+checkpoint, the last credited deposit, pending outbounds and whether the
+vault is halted. `clients.md` has the checklist.
+
+</div>
+<div class="tab" data-mode="noncustodial">
 
 A client turns Keel on one network at a time. For a network that is on, new
 deposit addresses, new withdrawals and new escrow go through Keel; everything
@@ -373,3 +510,14 @@ moved between the two. Before turning a network on, the client checks
 `GET /v1/ready/{chain}`: the vault epoch and signers, the age of the last
 checkpoint, the last credited deposit, pending outbounds and whether the
 vault is halted. `clients.md` has the checklist.
+
+</div>
+<div class="tab" data-mode="user">
+
+There is nothing to switch. The wallet's Receive card offers a network
+when the chain has a vault for it, and the Deposits tab shows whether
+deposits on it are being credited. If a network is halted the wallet says
+so and a withdrawal on it waits; your balance is not at risk in between.
+
+</div>
+</div>

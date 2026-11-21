@@ -5,6 +5,17 @@ Dates are UTC.
 
 ## Unreleased
 
+- Docs: **mode tabs** (2026-11-21). Every section that reads differently
+  for a custodial client, a non-custodial client or a person with Keel
+  Wallet, or for coins in Keel against coins in your wallet, is written
+  as tabs (`<div class="tabs" data-group="client|wallet">` with one
+  `<div class="tab" data-mode=…>` each, plain HTML in the markdown so the
+  files still read on GitHub, every variant one after the other). The
+  site's `keel-tabs.js` builds the tab bars and keeps the choice in the
+  cookies `keel_mode_client` (default `custodial`) and `keel_mode_wallet`
+  (default `keel`) for a year, so a choice made in one section is the
+  default for every section of every page. Home page: the network lists
+  name BNB Smart Chain and Solana next to Bitcoin, Ethereum and Tron.
 - Chain: **block reward and community reward replace the genesis buckets**
   (2026-11-16). 65% of the cap is issued at genesis (treasury 40%, the
   former reserve folded in; team 15%; liquidity 10%). Validators' 10% is
