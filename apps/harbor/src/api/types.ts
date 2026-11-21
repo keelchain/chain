@@ -48,6 +48,8 @@ export interface AssetAmount {
 export interface UsagePrices {
   address_usd_micro: AmountStr;
   outbound_usd_micro: AmountStr;
+  /** Per float swap of a custodial client; absent on a node older than the knob. */
+  swap_usd_micro?: AmountStr;
   fill_usd_micro: AmountStr;
   release_usd_micro: AmountStr;
   ruling_usd_micro: AmountStr;

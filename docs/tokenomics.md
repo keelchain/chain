@@ -106,7 +106,8 @@ with that network, Keel adds nothing to it and keeps none of it.
 | KEEL kept locked | 100,000 / 500,000 / 2,000,000 by tier, returned in full on unlock | while the plan runs |
 | Plan fee | $300 / $1,000 / $3,000 by tier, in USDT; includes $300 / $1,200 / $4,000 of the service prices below | every 30 days |
 | Service price: deposit address issued in your vault | $0.02, on any network | per address |
-| Service price: withdrawal from your vault, or a float swap | $0.10, on any network | per withdrawal or swap |
+| Service price: withdrawal from your vault | $0.10, on any network | per withdrawal |
+| Service price: float swap between custody and the market | $0 (`clients.usage_swap_usd_micro`): one ledger posting, no coins move | per swap |
 | Service price: vault rotation | $0 (`pools.usage_rotation_usd_micro`) | per rotation |
 | A user's balance you swapped onto the book: filled order / escrow release / dispute ruling | $0.002 / $0.05 / $1 | per flow |
 
@@ -233,8 +234,9 @@ differently; which usage a business pays depends on which model it runs
 the same for every client: the tier's lock and the plan fee every 30 days.
 The usage it incurs is the rails: a price per deposit address issued in its
 own vault (`clients.usage_address_usd_micro`), per withdrawal its signer
-pays out and per float swap (`clients.usage_outbound_usd_micro`), and per
-vault rotation (`pools.usage_rotation_usd_micro`). Its users sign nothing
+pays out (`clients.usage_outbound_usd_micro`), and per vault rotation
+(`pools.usage_rotation_usd_micro`). A float swap is free
+(`clients.usage_swap_usd_micro`, 0). Its users sign nothing
 on the chain unless it lets them. Capacity is charged to whoever signs the
 envelope: an action the client signs from its operator account
 (`on_behalf_of` a user) spends the operator lock's capacity, and an action
@@ -381,8 +383,8 @@ client's deposit account in the same block, up to what the payer holds.
 **The plan and usage** are what the client pays Keel, through the same fee
 split: the plan fee when a period starts, then
 `clients.usage_address_usd_micro` per custody address issued,
-`clients.usage_outbound_usd_micro` per custody withdrawal or float swap,
-and `pools.usage_rotation_usd_micro` per vault rotation. Fill, release and
+`clients.usage_outbound_usd_micro` per custody withdrawal and
+`pools.usage_rotation_usd_micro` per vault rotation; float swaps are free. Fill, release and
 ruling usage applies to its users' trades on the book after a swap.
 
 </div>

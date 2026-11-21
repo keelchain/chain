@@ -1473,6 +1473,7 @@ async fn client(
         "usage_prices": {
             "address_usd_micro": c.params.usage_address_usd_micro.to_string(),
             "outbound_usd_micro": c.params.usage_outbound_usd_micro.to_string(),
+            "swap_usd_micro": c.params.usage_swap_usd_micro.to_string(),
             "fill_usd_micro": c.params.usage_fill_usd_micro.to_string(),
             "release_usd_micro": c.params.usage_release_usd_micro.to_string(),
             "ruling_usd_micro": c.params.usage_ruling_usd_micro.to_string(),

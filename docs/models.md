@@ -209,8 +209,8 @@ address moves custody float into network float; `Withdraw` from its
 (credited as the client's custody, because index 0 is its own top-up
 address). Two-way user flow nets out, so external transactions shrink to the
 net drift and batch like any payout. `GET /v1/custody/{client}` shows both
-floats per asset. A swap is billed as rails usage like a payout
-(`clients.usage_outbound_usd_micro`).
+floats per asset. A swap is free: it is one ledger posting and sends
+nothing on any network (`clients.usage_swap_usd_micro`, 0 by default).
 
 **What Keel does**
 
@@ -427,7 +427,7 @@ user:**
 
 **What the custodial client needs for this:** a network float in each asset
 its users trade (its own `RequestDepositAddress`, funded from its vault by
-`WithdrawCustody` to that address), KEEL for the swap usage, and, if it
+`WithdrawCustody` to that address) and, if it
 wants its own team ruling disputes, an arbitrator bond. It keeps its keys,
 its ledger and its UI; its users see one balance and one button. A client
 that would rather not run a float can let its users swap only what they

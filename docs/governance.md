@@ -125,7 +125,8 @@ epoch buyback turns into KEEL.
 | `clients.tier3_user_actions_per_day` | 250,000 | The same for tier 3. |
 | `clients.user_actions_per_user_per_day` | 100 | The most one attested account takes from its client's pool in a day. |
 | `clients.usage_address_usd_micro` | 20,000 ($0.02) | Per deposit address issued to one of the client's accounts. |
-| `clients.usage_outbound_usd_micro` | 100,000 ($0.10) | Per withdrawal queued for one of its accounts, and per float swap. |
+| `clients.usage_outbound_usd_micro` | 100,000 ($0.10) | Per withdrawal queued for one of its accounts. |
+| `clients.usage_swap_usd_micro` | 0 | Per float swap of a custodial client (`SwapCustody`). Free by default: a swap is one ledger posting and moves no coins. |
 | `clients.usage_fill_usd_micro` | 2,000 ($0.002) | Per order of its accounts that filled. |
 | `clients.usage_release_usd_micro` | 50,000 ($0.05) | Per escrow release. |
 | `clients.usage_ruling_usd_micro` | 1,000,000 ($1) | Per dispute ruling. |

@@ -51,7 +51,7 @@ export function mockClient(over: Partial<ClientRecord> = {}): ClientRecord {
     usage_owed: '0',
     attested_accounts: 0,
     protocol_fee_waived: true,
-    usage_prices: { address_usd_micro: '50000', outbound_usd_micro: '250000', fill_usd_micro: '20000', release_usd_micro: '100000', ruling_usd_micro: '5000000' },
+    usage_prices: { address_usd_micro: '50000', outbound_usd_micro: '250000', swap_usd_micro: '0', fill_usd_micro: '20000', release_usd_micro: '100000', ruling_usd_micro: '5000000' },
     billing_asset: 'USDT',
     locked_keel: '0',
     tier: 0,

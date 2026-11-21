@@ -113,6 +113,9 @@ pub struct ClientParams {
     /// Actions per day one attested account may take from its client's
     /// plan, so one user cannot use up the pool.
     pub user_actions_per_user_per_day: u64,
+    /// USD micro a custodial client pays per float swap. 0 (the default):
+    /// a swap is one ledger posting and moves no coins, so it is free.
+    pub usage_swap_usd_micro: u128,
 }
 
 impl Default for ClientParams {
@@ -156,6 +159,7 @@ impl Default for ClientParams {
                 },
             ],
             user_actions_per_user_per_day: 100,
+            usage_swap_usd_micro: 0,
         }
     }
 }
@@ -240,6 +244,7 @@ pub const PARAM_KEYS: &[&str] = &[
     "clients.tier2_user_actions_per_day",
     "clients.tier3_user_actions_per_day",
     "clients.user_actions_per_user_per_day",
+    "clients.usage_swap_usd_micro",
 ];
 
 /// `clients.tier<N>_<field>` -> (index, field).
@@ -268,6 +273,7 @@ pub fn get_param(state: &State, key: &str) -> Option<u128> {
         "clients.fee_cap_withdraw_bps" => p.fee_cap_withdraw_bps as u128,
         "clients.usage_address_usd_micro" => p.usage_address_usd_micro,
         "clients.usage_outbound_usd_micro" => p.usage_outbound_usd_micro,
+        "clients.usage_swap_usd_micro" => p.usage_swap_usd_micro,
         "clients.buyback_max_slippage_bps" => p.buyback_max_slippage_bps as u128,
         "clients.buyback_dust_usd_micro" => p.buyback_dust_usd_micro as u128,
         "clients.service_dedicated_keel_per_period" => p.service_dedicated_keel_per_period,
@@ -317,6 +323,7 @@ pub fn set_param(state: &mut State, key: &str, value: u128) -> Result<Vec<Event>
         "clients.fee_cap_withdraw_bps" => p.fee_cap_withdraw_bps = bps(value)?,
         "clients.usage_address_usd_micro" => p.usage_address_usd_micro = value,
         "clients.usage_outbound_usd_micro" => p.usage_outbound_usd_micro = value,
+        "clients.usage_swap_usd_micro" => p.usage_swap_usd_micro = value,
         "clients.buyback_max_slippage_bps" => p.buyback_max_slippage_bps = bps(value)?,
         "clients.buyback_dust_usd_micro" => {
             p.buyback_dust_usd_micro =
@@ -794,9 +801,10 @@ pub fn charge_usage_to(
     let p = &state.clients.params;
     let (price, soft) = match kind {
         "address" => (p.usage_address_usd_micro, false),
-        // A float swap is rails usage like a payout, priced the same until
-        // it gets its own knob.
-        "outbound" | "swap" => (p.usage_outbound_usd_micro, false),
+        "outbound" => (p.usage_outbound_usd_micro, false),
+        // A float swap has its own price, free by default: nothing is sent
+        // on any network. It is still a rail, closed while usage is owed.
+        "swap" => (p.usage_swap_usd_micro, false),
         "rotation" => (state.pools.params.usage_rotation_usd_micro, false),
         "fill" => (p.usage_fill_usd_micro, true),
         "release" => (p.usage_release_usd_micro, true),

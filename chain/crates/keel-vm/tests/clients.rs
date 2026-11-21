@@ -277,6 +277,29 @@ fn fill_usage_is_billed_or_owed_and_rails_close_until_paid() {
 }
 
 #[test]
+fn a_float_swap_is_free_and_a_withdrawal_is_not() {
+    let (state, _alice, _bob, v) = setup(0);
+    let mut c = Chain::new(state);
+    assert_eq!(c.state.clients.params.usage_swap_usd_micro, 0);
+    let before = acct(&c.state, v.addr(), &usds(), "deposit");
+    let events =
+        keel_vm::modules::clients::charge_usage_to(&mut c.state, v.addr(), "swap", &[3u8; 32])
+            .unwrap();
+    assert!(events.is_empty());
+    assert_eq!(acct(&c.state, v.addr(), &usds(), "deposit"), before);
+    keel_vm::modules::clients::charge_usage_to(&mut c.state, v.addr(), "outbound", &[4u8; 32])
+        .unwrap();
+    assert_eq!(
+        acct(&c.state, v.addr(), &usds(), "deposit"),
+        before - c.state.clients.params.usage_outbound_usd_micro as i128
+    );
+    // The knob is governance's: priced, a swap is charged like any rail.
+    c.state.clients.params.usage_swap_usd_micro = 7;
+    keel_vm::modules::clients::charge_usage_to(&mut c.state, v.addr(), "swap", &[5u8; 32]).unwrap();
+    audit_clean(&c.state);
+}
+
+#[test]
 fn a_rail_the_client_cannot_pay_in_full_takes_nothing() {
     let (mut state, alice, bob, v) = setup(0);
     state.clients.params.usage_address_usd_micro = 5 * USDT;

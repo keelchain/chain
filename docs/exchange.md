@@ -167,9 +167,9 @@ parameters and Harbor always shows the live ones.
 <div class="tab" data-mode="custodial">
 
 The usage lines a custodial client sees are the deposit addresses it
-issues in its vault, its custody withdrawals and its float swaps, and, for
-balances swapped onto the chain's book, the fills and releases of its
-users. Everything else about the table is the same for every client.
+issues in its vault and its custody withdrawals, and, for balances swapped
+onto the chain's book, the fills and releases of its users. Float swaps
+are free. Everything else about the table is the same for every client.
 
 </div>
 <div class="tab" data-mode="noncustodial">

@@ -5,6 +5,10 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **float swaps are free** (2026-11-21). `SwapCustody` was billed
+  at the withdrawal price ($0.10) although it sends nothing on any
+  network. It has its own parameter now, `clients.usage_swap_usd_micro`,
+  0 by default. Snapshot schema 17: the testnet resets with this release.
 - Docs: **fees per path** (2026-11-21). The "Fee flows" section of
   `tokenomics.md` is three tabs, one complete fee table each for a
   custodial client, a non-custodial client and a wallet user, in place of

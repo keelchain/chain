@@ -14,7 +14,8 @@ function Prices({ h }: { h: Harbor }) {
   const p = c.usage_prices;
   const rows: [string, string, string][] = [
     ['Deposit address', 'Each address issued to one of your accounts', p.address_usd_micro],
-    ['Payout', 'Each withdrawal queued, and each float swap', p.outbound_usd_micro],
+    ['Payout', 'Each withdrawal queued', p.outbound_usd_micro],
+    ['Float swap', 'Each swap between your custody and the market', p.swap_usd_micro ?? '0'],
     ['Order fill', 'Each order of one of your users that filled', p.fill_usd_micro],
     ['Escrow release', 'Each P2P trade released', p.release_usd_micro],
     ['Dispute ruling', 'Each dispute ruled', p.ruling_usd_micro],

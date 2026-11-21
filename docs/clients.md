@@ -403,7 +403,8 @@ into KEEL on its own order book. Nothing is a share of your own fees.
 | Usage | Price |
 |---|---|
 | Deposit address issued to one of your accounts | $0.02 |
-| Withdrawal queued, or a float swap | $0.10 |
+| Withdrawal queued | $0.10 |
+| Float swap between custody and the market | free |
 | Order of one of your users that filled | $0.002 |
 | Escrow release | $0.05 |
 | Dispute ruling | $1 |
@@ -411,9 +412,9 @@ into KEEL on its own order book. Nothing is a share of your own fees.
 <div class="tabs" data-group="client">
 <div class="tab" data-mode="custodial">
 
-The usage you incur: addresses issued in your vault, custody withdrawals
-and float swaps, and, for balances swapped onto the chain's book, your
-users' fills and releases. A custody-to-custody transfer inside your own
+The usage you incur: addresses issued in your vault and custody
+withdrawals, and, for balances swapped onto the chain's book, your users'
+fills and releases. The float swap itself is free. A custody-to-custody transfer inside your own
 ledger is not a chain action and costs nothing.
 
 </div>
