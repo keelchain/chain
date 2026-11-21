@@ -632,7 +632,7 @@ fn withdraw_stable(
         .custody
         .custodian_of
         .get(&signer)
-        .ok_or_else(|| VmError::Invalid("account holds no custody balance".into()))?;
+        .ok_or(VmError::NotEnoughFunds)?;
     let chain = vaults::chain_of(state, &w.via)?;
     // Checked before anything is redeemed: a refused payout must not
     // leave the account holding the per-network asset.
@@ -722,7 +722,7 @@ fn withdraw(
         .custody
         .custodian_of
         .get(&signer)
-        .ok_or_else(|| VmError::Invalid("account holds no custody balance".into()))?;
+        .ok_or(VmError::NotEnoughFunds)?;
     if state.custody.vault(chain, custodian).is_none() {
         return Err(VmError::NotFound(format!(
             "custody vault on {}",
@@ -819,9 +819,7 @@ fn swap(
         None => match s.to {
             SwapSide::Custody => clients::client_of(state, &owner)
                 .ok_or_else(|| VmError::Invalid("account is in no client's custody".into()))?,
-            SwapSide::Deposit => {
-                return Err(VmError::Invalid("account holds no custody balance".into()))
-            }
+            SwapSide::Deposit => return Err(VmError::NotEnoughFunds),
         },
     };
     if owner != signer && signer != custodian {
@@ -929,23 +927,44 @@ fn transfer(
     let custodian = match state.custody.custodian_of.get(&owner) {
         Some(c) => *c,
         None if state.custody.vaults.keys().any(|(_, c)| *c == owner) => owner,
-        None => return Err(VmError::Invalid("account holds no custody balance".into())),
+        None => return Err(VmError::NotEnoughFunds),
     };
     if owner != signer && signer != custodian {
         return Err(VmError::Unauthorized);
     }
-    let mut need: std::collections::BTreeMap<Asset, Amount> = Default::default();
+    // What each account ends up paying or receiving, per asset: the whole
+    // set is one posting, so an account that is paid and pays in the same
+    // transfer needs only the difference.
+    let mut net: BTreeMap<(Address, Asset), i128> = BTreeMap::new();
     for leg in &t.legs {
-        if leg.amount == 0 {
+        let from = leg.from.unwrap_or(owner);
+        if leg.amount == 0 || leg.amount > i128::MAX as Amount {
             return Err(VmError::Invalid("amount must be > 0".into()));
         }
-        if leg.to == owner {
+        if leg.to == from {
             return Err(VmError::Invalid("sender and recipient are the same".into()));
         }
         if leg.to.is_system() {
             return Err(VmError::Invalid(
                 "cannot transfer to the system address".into(),
             ));
+        }
+        // A leg paid from another account: only the custodian of both
+        // signs for it, and it stays inside that custodian's custody.
+        if from != owner {
+            if signer != custodian {
+                return Err(VmError::Unauthorized);
+            }
+            let theirs = match state.custody.custodian_of.get(&from) {
+                Some(c) => *c,
+                None if from == custodian => custodian,
+                None => return Err(VmError::NotEnoughFunds),
+            };
+            if theirs != custodian {
+                return Err(VmError::Invalid(
+                    "the sender is in another client's custody".into(),
+                ));
+            }
         }
         if leg.asset != state.tokens.stable {
             vaults::chain_of(state, &leg.asset)?;
@@ -972,28 +991,41 @@ fn transfer(
                 leg.asset
             )));
         }
-        let n = need.entry(leg.asset.clone()).or_insert(0);
-        *n = n
-            .checked_add(leg.amount)
-            .ok_or_else(|| VmError::Invalid("overflow".into()))?;
+        let amount = leg.amount as i128;
+        for (who, delta) in [(from, -amount), (leg.to, amount)] {
+            let n = net.entry((who, leg.asset.clone())).or_insert(0);
+            *n = n
+                .checked_add(delta)
+                .ok_or_else(|| VmError::Invalid("overflow".into()))?;
+        }
     }
-    for (asset, amount) in &need {
-        if balance(state, owner, asset) < *amount {
+    for ((who, asset), delta) in &net {
+        if *delta < 0 && (balance(state, *who, asset) as i128) < -*delta {
             return Err(VmError::NotEnoughFunds);
         }
     }
-    let mut records = Vec::with_capacity(t.legs.len() * 2);
-    for leg in &t.legs {
-        records.push(Record::debit(custody_key(owner, &leg.asset), leg.amount));
-        records.push(Record::credit(custody_key(leg.to, &leg.asset), leg.amount));
+    // Posted as the net movement per account, so the ledger sees no
+    // account dip below zero on the way: debits, then credits.
+    let mut records = Vec::with_capacity(net.len());
+    for ((who, asset), delta) in &net {
+        if *delta < 0 {
+            records.push(Record::debit(custody_key(*who, asset), (-*delta) as Amount));
+        }
     }
-    state.ledger.post(
-        &format!("custody:transfer:{}", tokens::hex(tx_id)),
-        TxType::InternalTransferComplete,
-        None,
-        None,
-        records,
-    )?;
+    for ((who, asset), delta) in &net {
+        if *delta > 0 {
+            records.push(Record::credit(custody_key(*who, asset), *delta as Amount));
+        }
+    }
+    if !records.is_empty() {
+        state.ledger.post(
+            &format!("custody:transfer:{}", tokens::hex(tx_id)),
+            TxType::InternalTransferComplete,
+            None,
+            None,
+            records,
+        )?;
+    }
     let mut events = Vec::with_capacity(t.legs.len());
     for leg in &t.legs {
         if leg.to != custodian {
@@ -1005,7 +1037,7 @@ fn transfer(
         }
         events.push(Event::CustodyTransferred {
             custodian,
-            from: owner,
+            from: leg.from.unwrap_or(owner),
             to: leg.to,
             asset: leg.asset.clone(),
             amount: leg.amount,

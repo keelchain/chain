@@ -329,7 +329,9 @@ enum CustodyCmd {
     /// `--to` are one posting: all of them happen or none.
     Transfer {
         asset: String,
-        /// A payment as `<address>=<amount>`; repeat for more legs.
+        /// A payment as `<address>=<amount>`; repeat for more legs. As
+        /// `<from>:<address>=<amount>` the leg is paid from another
+        /// account of the same custodian, which only the custodian signs.
         #[arg(long = "to", required = true)]
         to: Vec<String>,
         /// The custodian signs for one of the accounts in its custody.
@@ -648,8 +650,13 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 .map(|leg| {
                     let (addr, amount) = leg
                         .split_once('=')
-                        .ok_or_else(|| anyhow!("--to is <address>=<amount>"))?;
+                        .ok_or_else(|| anyhow!("--to is [<from>:]<address>=<amount>"))?;
+                    let (from, addr) = match addr.split_once(':') {
+                        Some((from, to)) => (Some(parse_addr(from)?), to),
+                        None => (None, addr),
+                    };
                     Ok(keel_actions::CustodyLeg {
+                        from,
                         to: parse_addr(addr)?,
                         asset: Asset::new(asset.clone()),
                         amount: amount.parse()?,

@@ -415,6 +415,7 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
       const fields: NamedField[] = [];
       legs.forEach((l, i) => {
         const n = legs.length > 1 ? ` ${i + 1}` : '';
+        if (l['from']) fields.push({ name: `From${n}`, field: { k: 'address', value: str(l['from']) } });
         fields.push({ name: `To${n}`, field: { k: 'address', value: str(l['to']) } });
         fields.push({ name: `Amount${n}`, field: { k: 'amount', value: amountStr(l['amount']), asset: str(l['asset']) } });
       });

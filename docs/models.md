@@ -150,13 +150,20 @@ when the client's float on the far side is short.
 ### Transfers inside custody: your own users' trades, on chain
 
 Two users of the same custodial client do not need the float swap to
-trade with each other. `TransferCustody { legs: [{ to, asset, amount }],
+trade with each other. `TransferCustody { legs: [{ from?, to, asset, amount }],
 on_behalf_of, memo }` moves custody balances from one account to others
 inside the same client's custody, in one ledger posting:
 
 ```
 sender custody -(X+Y+Z)   recipient 1 +X   recipient 2 +Y   recipient 3 +Z
 ```
+
+A leg may also name the account it is paid from (`from`), so one transfer
+can debit several accounts: an exchange between two users, or a seller
+and a fee payer charged together. Only the client can sign such a
+transfer, since it is the one party that may sign for all of them. An
+account that is both paid and paying in the same transfer needs only the
+difference.
 
 A transfer carries 1 to 16 legs and is atomic: every leg is checked first
 and all of them are posted together, so a release that pays the buyer, a

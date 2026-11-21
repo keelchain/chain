@@ -420,11 +420,13 @@ fn vectors() -> Vec<(&'static str, Action)> {
             Action::TransferCustody(keel_actions::CustodyTransfer {
                 legs: vec![
                     keel_actions::CustodyLeg {
+                        from: None,
                         to: Address::tagged(9),
                         asset: Asset::new("BTC.BTC"),
                         amount: 1_500_000,
                     },
                     keel_actions::CustodyLeg {
+                        from: Some(Address::tagged(8)),
                         to: Address::tagged(5),
                         asset: Asset::new("BTC.BTC"),
                         amount: 15_000,

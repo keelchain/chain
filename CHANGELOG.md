@@ -5,6 +5,13 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **custody transfers can debit several accounts** (2026-11-21).
+  A `TransferCustody` leg takes an optional `from`; legs paid from
+  different accounts are one atomic posting, signed by their custodian,
+  and are settled on each account's net. Debiting an account that holds
+  no custody balance now answers `NOT_ENOUGH_FUNDS` instead of `INVALID`.
+  `public_key` in `RegisterCustodyVault`, `RotateCustodyVault` and
+  `RegisterVault` is accepted as a hex string as well as a byte array.
 - Chain: **one USDT in custody** (2026-11-21). A deposit of USDT on
   Ethereum (ERC-20), Tron or BNB Smart Chain into a client's own vault is
   credited as the unified `USDT` on the custody balance, backed by the

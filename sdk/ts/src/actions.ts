@@ -186,6 +186,12 @@ export interface CustodyRotation {
  *  the custodian's floats; no coins move on any external chain. */
 /** One payment of a custody transfer. */
 export interface CustodyLeg {
+  /**
+   * The account this leg is paid from; omitted, it is the transfer's
+   * sender. Naming another account debits several accounts in one
+   * posting, which only their custodian can sign.
+   */
+  from?: Address | null;
   to: Address;
   asset: string;
   amount: bigint | number;
@@ -422,7 +428,7 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "SetPlanRenewal": w.u8(b.tier); break;
     case "WithdrawCustodyStable": w.string(b.via); w.string(b.to); w.u128(b.amount); break;
     case "TransferCustody":
-      w.vec(b.legs as CustodyLeg[], (l) => { address(w, l.to); w.string(l.asset); w.u128(l.amount); });
+      w.vec(b.legs as CustodyLeg[], (l) => { w.option(l.from, (a) => address(w, a)); address(w, l.to); w.string(l.asset); w.u128(l.amount); });
       w.option(b.on_behalf_of, (a) => address(w, a)); w.option(b.memo, (m) => w.string(m)); break;
     default: throw new Error(`unknown action ${name}`);
   }

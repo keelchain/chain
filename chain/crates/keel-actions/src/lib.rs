@@ -11,6 +11,7 @@ pub mod action;
 pub mod budget;
 pub mod envelope;
 pub mod hex32;
+mod hexbytes;
 pub mod payload;
 
 pub use action::*;

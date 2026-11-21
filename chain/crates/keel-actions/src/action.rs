@@ -714,6 +714,7 @@ pub struct VaultRegistration {
     pub chain: Chain,
     pub epoch: u64,
     /// Compressed secp256k1 (33 bytes) or ed25519 (32 bytes) vault key.
+    #[serde(deserialize_with = "crate::hexbytes::deserialize")]
     pub public_key: Vec<u8>,
     /// Chain code for non-hardened child derivation (secp256k1 vaults).
     #[serde(with = "crate::hex32::option")]
@@ -729,6 +730,7 @@ pub struct CustodyVaultRegistration {
     /// Bumped on every rotation; the highest epoch is the active vault.
     pub epoch: u64,
     /// Compressed secp256k1 vault key (33 bytes).
+    #[serde(deserialize_with = "crate::hexbytes::deserialize")]
     pub public_key: Vec<u8>,
     #[serde(with = "crate::hex32::option")]
     pub chain_code: Option<[u8; 32]>,
@@ -742,6 +744,7 @@ pub struct CustodyVaultRegistration {
 pub struct CustodyRotation {
     pub chain: Chain,
     /// Compressed secp256k1 key of the new generation (33 bytes).
+    #[serde(deserialize_with = "crate::hexbytes::deserialize")]
     pub public_key: Vec<u8>,
     #[serde(with = "crate::hex32")]
     pub chain_code: [u8; 32],
@@ -789,7 +792,9 @@ pub struct CustodySwap {
 /// on chain: the seller's balance to an escrow account of the client's,
 /// and from there to the buyer on release or back to the seller on cancel.
 /// The legs are one ledger posting: a release that pays the buyer, the
-/// fee account and a referrer either happens whole or not at all.
+/// fee account and a referrer either happens whole or not at all. Legs
+/// may be paid from different accounts (`CustodyLeg::from`), so an
+/// exchange between two users is one posting as well.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct CustodyTransfer {
     /// 1 to `MAX_CUSTODY_LEGS` payments out of the sender's balance.
@@ -804,6 +809,12 @@ pub struct CustodyTransfer {
 /// One payment of a `CustodyTransfer`.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct CustodyLeg {
+    /// The account this leg is paid from. `None`: the transfer's sender
+    /// (`on_behalf_of`, else the signer). Naming another account makes
+    /// the transfer debit several accounts at once, which only their
+    /// custodian can sign.
+    #[serde(default)]
+    pub from: Option<Address>,
     pub to: Address,
     pub asset: Asset,
     pub amount: Amount,
