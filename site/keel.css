@@ -77,6 +77,9 @@ section { padding: 64px 0; }
 section + section { border-top: 1px solid var(--line); }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin-top: 28px; }
 .card { position: relative; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); transition: background .2s, transform .2s; }
+/* A long URL or path in a card wraps instead of running out of it. */
+.card { min-width: 0; }
+.card code, .card a { overflow-wrap: anywhere; }
 .card:hover { background: var(--card-hover); transform: translateY(-2px); }
 .card .ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 16px; background: linear-gradient(135deg, rgba(45,212,191,.25), rgba(245,196,81,.18)); color: var(--teal); font-weight: 800; }
 .card p { color: var(--muted); margin: 0; font-size: .95rem; }

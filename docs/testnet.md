@@ -7,7 +7,7 @@ Live since 2026-09-24 at keelchain.com, deployed only by GitHub Actions
 |---|---|
 | site | https://keelchain.com (`site/`, wallet pages, wallet packages under `/wallet/downloads/`) |
 | explorer | https://testnet.keelchain.com (`apps/explorer`, `VITE_BASE=/`) |
-| Harbor | https://harbor.keelchain.com (`apps/harbor`): the clients' account, where a plan is bought and managed. Static; it reads the API below and every change is an action signed in the wallet |
+| Harbor | [harbor.keelchain.com](https://harbor.keelchain.com/) (`apps/harbor`): the clients' account, where a plan is bought and managed. Static; it reads the API below and every change is an action signed in the wallet |
 | read API | https://testnet.keelchain.com/api/v1/… (`keel-indexer`, `docs/explorer-api.md`) |
 | node RPC | https://testnet.keelchain.com/rpc/v1/… (`keel-node`; status, accounts, params, `gov/roles`, `gov/proposals`, receipts, WebSocket at `/rpc/v1/ws`) |
 | chain | id 3, `_KEEL_CHAIN` namespace, external network signet; the validator set is the host set in `DEPLOY_HOSTS` (one host today; consensus is BFT, so four validators tolerate one fault and three tolerate none), 600-block epochs; genesis built by the deploy workflow from every host's public identity plus `infra/testnet/genesis-params.json` (voting 60 blocks, timelock 10, proposal deposit 1000 KEEL) |

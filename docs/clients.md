@@ -26,7 +26,7 @@ the rest of this page is not for you.
 | What it pays to act | Nothing. No gas, no fee per action | Nothing per action either |
 | What it pays on value moved | The protocol fees: 10 bps on a fill it takes, 1% on an escrow release, $1 on a withdrawal | A membership: the plan fee of its tier every 30 days on top of the lock, and a dollar price per flow of its users, in USDT. Its users then pay no protocol fees, and it charges them its own |
 | Who its counterparty is | The chain | The chain; its users are accounts it attested |
-| Where it manages its account | Keel Wallet | Keel Harbor (`harbor.keelchain.com`): plans, payment, usage, lock, fees and vaults, each change an action signed in the wallet |
+| Where it manages its account | Keel Wallet | Keel Harbor ([harbor.keelchain.com](https://harbor.keelchain.com/)): plans, payment, usage, lock, fees and vaults, each change an action signed in the wallet |
 
 ## What is stable
 
@@ -450,7 +450,7 @@ endpoint with buttons.
   with `LockBudget` (the same lock that gives the account its action
   capacity); it is yours and comes back in full three days after
   `UnlockBudget`.
-- **You buy it in Keel Harbor.** `https://harbor.keelchain.com` is the
+- **You buy it in Keel Harbor.** [harbor.keelchain.com](https://harbor.keelchain.com/) is the
   client's account: connect the operator account's wallet, pick a tier,
   and sign one action, `BuyPlan { tier }`. The chain checks the lock,
   takes the tier's fee in USDT from the operator account and starts the

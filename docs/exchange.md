@@ -7,7 +7,7 @@ the funds), `clients.md` (the integration contract and the pricing) and
 `tokenomics.md` (why it is priced this way).
 
 Everything a client manages lives in one place: **Keel Harbor**,
-`https://harbor.keelchain.com`. Harbor has no sign-up and no server. You
+[harbor.keelchain.com](https://harbor.keelchain.com/). Harbor has no sign-up and no server. You
 connect a wallet, it reads your account from the chain, and every change
 you make there is one action you sign.
 
@@ -41,7 +41,7 @@ is the page for that, and `wallet.md` for the wallet itself.
 
 ## What you need
 
-- **One Keel account**, in Keel Wallet (`https://keelchain.com/wallet/`).
+- **One Keel account**, in [Keel Wallet](https://keelchain.com/wallet/).
   This is your operator account. It is an ordinary account: the one you
   already have works, and you do not need a second wallet for Harbor. Use
   a separate account in the same wallet only if you want to keep the
@@ -79,9 +79,9 @@ a hundred actions a day and comes back three days after unlocking.
 ## The steps
 
 1. **Install Keel Wallet and create or import your account.** On the
-   testnet, the faucet (`https://faucet.keelchain.com`) gives a new account
+   testnet, the [faucet](https://faucet.keelchain.com/) gives a new account
    its first KEEL and USDT.
-2. **Open Harbor and connect.** You can look around at once: your
+2. **Open [Harbor](https://harbor.keelchain.com/) and connect.** You can look around at once: your
    balances, the three plans, and what each would take from you today.
    Until step 3 is done Harbor says the account is not registered yet, and
    everything except buying a plan and the business tools already works.

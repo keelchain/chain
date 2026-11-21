@@ -65,7 +65,7 @@ treats them differently in exactly one respect, how they pay:
 | What it pays to act | Nothing. No gas, no fee per action | Nothing per action either |
 | What it pays on value moved | The protocol fees: 10 bps on a fill it takes, 1% on an escrow release, $1 on a withdrawal | A membership: the plan fee of its tier every 30 days on top of the lock, and a dollar price per flow of its users, in USDT. Its users then pay no protocol fees, and it charges them its own |
 | Who its counterparty is | The chain | The chain; its users are accounts it attested |
-| Where it manages its account | Keel Wallet | Keel Harbor (`harbor.keelchain.com`): plans, payment, usage, lock, fees and vaults, each change an action signed in the wallet |
+| Where it manages its account | Keel Wallet | Keel Harbor ([harbor.keelchain.com](https://harbor.keelchain.com/)): plans, payment, usage, lock, fees and vaults, each change an action signed in the wallet |
 
 A user never buys a plan and a plan is never something a user sees. An
 address is a client only because governance put it in the attester set;
@@ -328,7 +328,7 @@ The plan is what makes that bill recurring: a membership fee plus a
 lock. There are three tiers; each requires KEEL locked on the client's
 operator account (`clients.tier<N>_lock_keel`) and has a fee per period.
 The client buys one with `BuyPlan { tier }`, from Keel Harbor
-(`harbor.keelchain.com`) or any other signer: the chain checks the lock,
+([harbor.keelchain.com](https://harbor.keelchain.com/)) or any other signer: the chain checks the lock,
 takes the fee in USDT and starts the period in that block
 (`ClientPlanStarted`). For `clients.plan_period_secs` (30 days) the client
 holds the tier's usage allowance, which the usage prices draw on first

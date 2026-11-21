@@ -232,7 +232,7 @@ the action that incurs it, so every validator applies the same charges by
 executing the same blocks. No validator meters usage or decides anything,
 and no key can waive a charge.
 
-Where it is bought. Keel Harbor (`harbor.keelchain.com`) is the client's
+Where it is bought. Keel Harbor ([harbor.keelchain.com](https://harbor.keelchain.com/)) is the client's
 account: plans, payment, usage against the allowance, the lock, retail
 fees and vaults. It is a static page with no server behind it. A client
 deposits USDT to its operator account, locks the tier's KEEL, and signs
