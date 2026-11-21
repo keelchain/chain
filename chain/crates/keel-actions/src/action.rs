@@ -779,21 +779,33 @@ pub struct CustodySwap {
     pub on_behalf_of: Option<Address>,
 }
 
-/// A custody balance moving between two accounts of one custodian. This
-/// is how a custodial client posts its own users' trades on chain: the
-/// seller's balance to an escrow account of the client's, and from there
-/// to the buyer on release or back to the seller on cancel.
+/// Custody balances moving from one account to others of the same
+/// custodian. This is how a custodial client posts its own users' trades
+/// on chain: the seller's balance to an escrow account of the client's,
+/// and from there to the buyer on release or back to the seller on cancel.
+/// The legs are one ledger posting: a release that pays the buyer, the
+/// fee account and a referrer either happens whole or not at all.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 pub struct CustodyTransfer {
-    pub to: Address,
-    pub asset: Asset,
-    pub amount: Amount,
+    /// 1 to `MAX_CUSTODY_LEGS` payments out of the sender's balance.
+    pub legs: Vec<CustodyLeg>,
     /// The custodian may sign for a member account; `None` means the
     /// signer's own balance moves.
     pub on_behalf_of: Option<Address>,
     /// The client's own reference (a trade id, a leg), echoed in the event.
     pub memo: Option<String>,
 }
+
+/// One payment of a `CustodyTransfer`.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct CustodyLeg {
+    pub to: Address,
+    pub asset: Asset,
+    pub amount: Amount,
+}
+
+/// Most legs one `CustodyTransfer` carries.
+pub const MAX_CUSTODY_LEGS: usize = 16;
 
 // ---------------- staking ----------------
 

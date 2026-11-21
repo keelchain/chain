@@ -405,13 +405,16 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
         { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: str(p['asset']) } },
       ]);
     case 'TransferCustody': {
-      const fields: NamedField[] = [
-        { name: 'To', field: { k: 'address', value: str(p['to']) } },
-        { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: str(p['asset']) } },
-      ];
+      const legs = Array.isArray(p['legs']) ? (p['legs'] as Record<string, unknown>[]) : [];
+      const fields: NamedField[] = [];
+      legs.forEach((l, i) => {
+        const n = legs.length > 1 ? ` ${i + 1}` : '';
+        fields.push({ name: `To${n}`, field: { k: 'address', value: str(l['to']) } });
+        fields.push({ name: `Amount${n}`, field: { k: 'amount', value: amountStr(l['amount']), asset: str(l['asset']) } });
+      });
       if (p['on_behalf_of']) fields.push({ name: 'On behalf of', field: { k: 'address', value: str(p['on_behalf_of']) } });
       if (p['memo']) fields.push({ name: 'Reference', field: { k: 'text', value: str(p['memo']) } });
-      return view(`Transfer ${str(p['asset'])} in custody`, fields);
+      return view(legs.length === 1 ? `Transfer ${str(legs[0]?.['asset'])} in custody` : `Transfer in custody to ${legs.length} accounts`, fields);
     }
     case 'Bond': {
       const fields: NamedField[] = [

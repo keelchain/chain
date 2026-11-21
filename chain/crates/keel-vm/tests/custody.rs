@@ -598,9 +598,7 @@ fn transfer_custody(
     memo: &str,
 ) -> Action {
     Action::TransferCustody(keel_actions::CustodyTransfer {
-        to,
-        asset,
-        amount,
+        legs: vec![keel_actions::CustodyLeg { to, asset, amount }],
         on_behalf_of,
         memo: Some(memo.into()),
     })
@@ -726,5 +724,82 @@ fn a_custody_balance_moves_between_accounts_of_the_same_client() {
         "too much",
     ))]);
     assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
+
+    // A release with its fee legs is one posting: buyer, fee account and
+    // referrer are paid together out of the escrow account.
+    let leg = |to: Address, amount: u128| keel_actions::CustodyLeg {
+        to,
+        asset: usdt(),
+        amount,
+    };
+    let (r, _) = c.block(&[v.act(transfer_custody(
+        v.addr(),
+        usdt(),
+        3_000_000,
+        Some(alice.addr()),
+        "trade:2:escrow",
+    ))]);
+    ok(&r[0]);
+    let before = (
+        custody::balance(&c.state, v.addr(), &usdt()),
+        custody::balance(&c.state, bob.addr(), &usdt()),
+        custody::balance(&c.state, alice.addr(), &usdt()),
+    );
+    // One leg the client cannot make (an outsider) refuses the whole
+    // release: the buyer is not paid either.
+    let (r, _) = c.block(&[
+        v.act(Action::TransferCustody(keel_actions::CustodyTransfer {
+            legs: vec![leg(bob.addr(), 2_900_000), leg(erin.addr(), 100_000)],
+            on_behalf_of: None,
+            memo: Some("trade:2:release".into()),
+        })),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    // So does a set of legs that together exceed the balance.
+    let (r, _) = c.block(&[
+        v.act(Action::TransferCustody(keel_actions::CustodyTransfer {
+            legs: vec![leg(bob.addr(), 2_900_000), leg(alice.addr(), 100_001)],
+            on_behalf_of: None,
+            memo: None,
+        })),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
+    assert_eq!(
+        (
+            custody::balance(&c.state, v.addr(), &usdt()),
+            custody::balance(&c.state, bob.addr(), &usdt()),
+            custody::balance(&c.state, alice.addr(), &usdt()),
+        ),
+        before
+    );
+    let (r, _) = c.block(&[
+        v.act(Action::TransferCustody(keel_actions::CustodyTransfer {
+            legs: vec![leg(bob.addr(), 2_900_000), leg(alice.addr(), 100_000)],
+            on_behalf_of: None,
+            memo: Some("trade:2:release".into()),
+        })),
+    ]);
+    ok(&r[0]);
+    assert_eq!(r[0].events.len(), 2);
+    assert_eq!(
+        (
+            custody::balance(&c.state, v.addr(), &usdt()),
+            custody::balance(&c.state, bob.addr(), &usdt()),
+            custody::balance(&c.state, alice.addr(), &usdt()),
+        ),
+        (
+            before.0 - 3_000_000,
+            before.1 + 2_900_000,
+            before.2 + 100_000
+        )
+    );
+    let (r, _) = c.block(&[
+        v.act(Action::TransferCustody(keel_actions::CustodyTransfer {
+            legs: vec![],
+            on_behalf_of: None,
+            memo: None,
+        })),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }

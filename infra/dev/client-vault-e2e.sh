@@ -323,15 +323,16 @@ client_send() { # out-file, then the `keel send` arguments
   return 1
 }
 # ---------------------------------------------------------------- a trade between two of the client's users, inside custody
-# Seller -> the client's escrow account -> back: each leg is one
-# TransferCustody, no float in the network vault and no swap.
+# Seller -> the client's escrow account -> back, with no float in the
+# network vault and no swap. The way back is two legs in one posting, as a
+# release that pays a buyer and a fee account would be.
 ESCROW_SATS=1000
 say "the client escrows $ESCROW_SATS sats of the user's custody balance with itself, then returns them"
 C_BEFORE=$(balance "$CLIENT" BTC.BTC custody); U_BEFORE=$(balance "$USER" BTC.BTC custody)
-client_send "$KEEL_DEVNET_DIR/ct-escrow.json" custody transfer "$CLIENT" BTC.BTC "$ESCROW_SATS" --on-behalf-of "$USER" --memo "trade:1:escrow" || true
+client_send "$KEEL_DEVNET_DIR/ct-escrow.json" custody transfer BTC.BTC --to "$CLIENT=$ESCROW_SATS" --on-behalf-of "$USER" --memo "trade:1:escrow" || true
 grep -q '"CustodyTransferred"' "$KEEL_DEVNET_DIR/ct-escrow.json" || { cat "$KEEL_DEVNET_DIR/ct-escrow.json"; fail "custody transfer to escrow refused"; }
 [[ "$(balance "$USER" BTC.BTC custody)" == $((U_BEFORE - ESCROW_SATS)) && "$(balance "$CLIENT" BTC.BTC custody)" == $((C_BEFORE + ESCROW_SATS)) ]] || fail "escrow leg did not move the custody balances"
-client_send "$KEEL_DEVNET_DIR/ct-cancel.json" custody transfer "$USER" BTC.BTC "$ESCROW_SATS" --memo "trade:1:cancel" || true
+client_send "$KEEL_DEVNET_DIR/ct-cancel.json" custody transfer BTC.BTC --to "$USER=$((ESCROW_SATS - 100))" --to "$USER=100" --memo "trade:1:cancel" || true
 grep -q '"CustodyTransferred"' "$KEEL_DEVNET_DIR/ct-cancel.json" || { cat "$KEEL_DEVNET_DIR/ct-cancel.json"; fail "custody transfer back refused"; }
 [[ "$(balance "$USER" BTC.BTC custody)" == "$U_BEFORE" && "$(balance "$CLIENT" BTC.BTC custody)" == "$C_BEFORE" ]] || fail "the custody balances did not return"
 read -r RES LIA HALT <<<"$(reserves)"

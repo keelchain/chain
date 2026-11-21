@@ -203,8 +203,10 @@ and `/v1/ready/{chain}` is green for deposits).
 
 To settle a trade between two of your own users without leaving custody,
 move the balance with `TransferCustody`: seller to your escrow account,
-then to the buyer on release or back on cancel, each leg one posting you
-sign (`on_behalf_of`) with your own reference in `memo`. No float, no
+then to the buyer on release or back on cancel, signed by you
+(`on_behalf_of`) with your own reference in `memo`. A transfer takes up
+to 16 legs in one atomic posting, so the buyer and your fee, affiliate
+and referral accounts are paid together or not at all. No float, no
 swap, no usage price; the `CustodyTransferred` event reaches both
 accounts' streams (`models.md`, "Transfers inside custody").
 

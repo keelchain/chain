@@ -633,20 +633,25 @@ fn swap(
     ))
 }
 
-/// `TransferCustody`: a custody balance moves between two accounts of the
-/// same custodian. The custodian's vault backs the same total before and
-/// after, so its reserve check is untouched and nothing is sent on any
-/// network. The owner signs, or the custodian signs for it; the recipient
+/// `TransferCustody`: custody balances move from one account to others of
+/// the same custodian. The custodian's vault backs the same total before
+/// and after, so its reserve check is untouched and nothing is sent on any
+/// network. The owner signs, or the custodian signs for it; each recipient
 /// is the custodian itself, an account already in its custody, or an
-/// account it attested (which joins its custody by receiving).
+/// account it attested (which joins its custody by receiving). Every leg
+/// is checked before anything is written and all of them are one ledger
+/// posting, so the transfer happens whole or not at all.
 fn transfer(
     state: &mut State,
     signer: Address,
     tx_id: &[u8; 32],
     t: &keel_actions::CustodyTransfer,
 ) -> Result<Vec<Event>, VmError> {
-    if t.amount == 0 {
-        return Err(VmError::Invalid("amount must be > 0".into()));
+    if t.legs.is_empty() || t.legs.len() > keel_actions::MAX_CUSTODY_LEGS {
+        return Err(VmError::Invalid(format!(
+            "a custody transfer has 1 to {} legs",
+            keel_actions::MAX_CUSTODY_LEGS
+        )));
     }
     if t.memo
         .as_ref()
@@ -654,67 +659,93 @@ fn transfer(
     {
         return Err(VmError::Invalid("memo too long".into()));
     }
-    let chain = vaults::chain_of(state, &t.asset)?;
     let owner = t.on_behalf_of.unwrap_or(signer);
-    if owner == t.to {
-        return Err(VmError::Invalid("sender and recipient are the same".into()));
-    }
-    if t.to.is_system() {
-        return Err(VmError::Invalid(
-            "cannot transfer to the system address".into(),
-        ));
-    }
     // A custodian's own balance is in its own custody.
     let custodian = match state.custody.custodian_of.get(&owner) {
         Some(c) => *c,
-        None if state.custody.vault(chain, owner).is_some() => owner,
+        None if state.custody.vaults.keys().any(|(_, c)| *c == owner) => owner,
         None => return Err(VmError::Invalid("account holds no custody balance".into())),
     };
     if owner != signer && signer != custodian {
         return Err(VmError::Unauthorized);
     }
-    match state.custody.custodian_of.get(&t.to) {
-        Some(c) if *c == custodian => {}
-        Some(_) => {
-            return Err(VmError::Invalid(
-                "the recipient is in another client's custody".into(),
-            ))
+    let mut need: std::collections::BTreeMap<Asset, Amount> = Default::default();
+    for leg in &t.legs {
+        if leg.amount == 0 {
+            return Err(VmError::Invalid("amount must be > 0".into()));
         }
-        None if t.to == custodian => {}
-        None => require_member(state, t.to, custodian).map_err(|_| {
-            VmError::Invalid("the recipient is not an account of this client".into())
-        })?,
+        if leg.to == owner {
+            return Err(VmError::Invalid("sender and recipient are the same".into()));
+        }
+        if leg.to.is_system() {
+            return Err(VmError::Invalid(
+                "cannot transfer to the system address".into(),
+            ));
+        }
+        vaults::chain_of(state, &leg.asset)?;
+        match state.custody.custodian_of.get(&leg.to) {
+            Some(c) if *c == custodian => {}
+            Some(_) => {
+                return Err(VmError::Invalid(
+                    "the recipient is in another client's custody".into(),
+                ))
+            }
+            None if leg.to == custodian => {}
+            None => require_member(state, leg.to, custodian).map_err(|_| {
+                VmError::Invalid("the recipient is not an account of this client".into())
+            })?,
+        }
+        if state
+            .custody
+            .halted
+            .contains(&(custodian, leg.asset.clone()))
+        {
+            return Err(VmError::Paused(format!(
+                "custody of {} (reserve below balances)",
+                leg.asset
+            )));
+        }
+        let n = need.entry(leg.asset.clone()).or_insert(0);
+        *n = n
+            .checked_add(leg.amount)
+            .ok_or_else(|| VmError::Invalid("overflow".into()))?;
     }
-    if state.custody.halted.contains(&(custodian, t.asset.clone())) {
-        return Err(VmError::Paused(format!(
-            "custody of {} (reserve below balances)",
-            t.asset
-        )));
+    for (asset, amount) in &need {
+        if balance(state, owner, asset) < *amount {
+            return Err(VmError::NotEnoughFunds);
+        }
     }
-    if balance(state, owner, &t.asset) < t.amount {
-        return Err(VmError::NotEnoughFunds);
+    let mut records = Vec::with_capacity(t.legs.len() * 2);
+    for leg in &t.legs {
+        records.push(Record::debit(custody_key(owner, &leg.asset), leg.amount));
+        records.push(Record::credit(custody_key(leg.to, &leg.asset), leg.amount));
     }
     state.ledger.post(
         &format!("custody:transfer:{}", tokens::hex(tx_id)),
         TxType::InternalTransferComplete,
         None,
         None,
-        vec![
-            Record::debit(custody_key(owner, &t.asset), t.amount),
-            Record::credit(custody_key(t.to, &t.asset), t.amount),
-        ],
+        records,
     )?;
-    if t.to != custodian {
-        state.custody.custodian_of.entry(t.to).or_insert(custodian);
+    let mut events = Vec::with_capacity(t.legs.len());
+    for leg in &t.legs {
+        if leg.to != custodian {
+            state
+                .custody
+                .custodian_of
+                .entry(leg.to)
+                .or_insert(custodian);
+        }
+        events.push(Event::CustodyTransferred {
+            custodian,
+            from: owner,
+            to: leg.to,
+            asset: leg.asset.clone(),
+            amount: leg.amount,
+            memo: t.memo.clone(),
+        });
     }
-    Ok(vec![Event::CustodyTransferred {
-        custodian,
-        from: owner,
-        to: t.to,
-        asset: t.asset.clone(),
-        amount: t.amount,
-        memo: t.memo.clone(),
-    }])
+    Ok(events)
 }
 
 /// Called by the vaults module once the observer quorum settled a custody

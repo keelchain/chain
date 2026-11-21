@@ -316,12 +316,14 @@ enum CustodyCmd {
         #[arg(long)]
         on_behalf_of: Option<String>,
     },
-    /// Move a custody balance to another account of the same client (its
-    /// escrow account, the buyer, the client itself). No coins move.
+    /// Move a custody balance to other accounts of the same client (its
+    /// escrow account, the buyer, a fee account). No coins move. Several
+    /// `--to` are one posting: all of them happen or none.
     Transfer {
-        to: String,
         asset: String,
-        amount: Amount,
+        /// A payment as `<address>=<amount>`; repeat for more legs.
+        #[arg(long = "to", required = true)]
+        to: Vec<String>,
         /// The custodian signs for one of the accounts in its custody.
         #[arg(long)]
         on_behalf_of: Option<String>,
@@ -621,15 +623,24 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
             on_behalf_of: on_behalf_of.as_deref().map(parse_addr).transpose()?,
         }),
         ActionCmd::Custody(CustodyCmd::Transfer {
-            to,
             asset,
-            amount,
+            to,
             on_behalf_of,
             memo,
         }) => Action::TransferCustody(keel_actions::CustodyTransfer {
-            to: parse_addr(&to)?,
-            asset: Asset::new(asset),
-            amount,
+            legs: to
+                .iter()
+                .map(|leg| {
+                    let (addr, amount) = leg
+                        .split_once('=')
+                        .ok_or_else(|| anyhow!("--to is <address>=<amount>"))?;
+                    Ok(keel_actions::CustodyLeg {
+                        to: parse_addr(addr)?,
+                        asset: Asset::new(asset.clone()),
+                        amount: amount.parse()?,
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?,
             on_behalf_of: on_behalf_of.as_deref().map(parse_addr).transpose()?,
             memo,
         }),

@@ -396,16 +396,22 @@ export function decodeAction(action: unknown): DecodedAction {
       ]);
     }
     case 'TransferCustody': {
-      const asset = str(p['asset']);
+      const legs = Array.isArray(p['legs']) ? (p['legs'] as Record<string, unknown>[]) : [];
       const who = present(p['on_behalf_of']) ? ` for ${str(p['on_behalf_of']).slice(0, 8)}…` : '';
-      const fields: NamedField[] = [
-        { name: 'To', field: { k: 'address', value: str(p['to']) } },
-        { name: 'Asset', field: { k: 'asset', value: asset } },
-        { name: 'Amount', field: amount(p['amount'], asset) },
-      ];
+      const fields: NamedField[] = [];
+      legs.forEach((l, i) => {
+        const n = legs.length > 1 ? ` ${i + 1}` : '';
+        fields.push({ name: `To${n}`, field: { k: 'address', value: str(l['to']) } });
+        fields.push({ name: `Amount${n}`, field: amount(l['amount'], str(l['asset'])) });
+      });
       if (present(p['on_behalf_of'])) fields.push({ name: 'On behalf of', field: { k: 'address', value: str(p['on_behalf_of']) } });
       if (present(p['memo'])) fields.push({ name: 'Reference', field: { k: 'text', value: str(p['memo']) } });
-      return view(`Transfer ${formatAmount(amountStr(p['amount']), decimalsOf(asset))} ${asset} in custody to ${str(p['to']).slice(0, 8)}…${who}`, fields);
+      const first = legs[0];
+      const summary =
+        legs.length === 1 && first
+          ? `Transfer ${formatAmount(amountStr(first['amount']), decimalsOf(str(first['asset'])))} ${str(first['asset'])} in custody to ${str(first['to']).slice(0, 8)}…${who}`
+          : `Transfer in custody to ${legs.length} accounts${who}`;
+      return view(summary, fields);
     }
     case 'SwapCustody': {
       const asset = str(p['asset']);

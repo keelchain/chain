@@ -410,9 +410,18 @@ fn vectors() -> Vec<(&'static str, Action)> {
         (
             "transfer_custody",
             Action::TransferCustody(keel_actions::CustodyTransfer {
-                to: Address::tagged(9),
-                asset: Asset::new("BTC.BTC"),
-                amount: 1_500_000,
+                legs: vec![
+                    keel_actions::CustodyLeg {
+                        to: Address::tagged(9),
+                        asset: Asset::new("BTC.BTC"),
+                        amount: 1_500_000,
+                    },
+                    keel_actions::CustodyLeg {
+                        to: Address::tagged(5),
+                        asset: Asset::new("BTC.BTC"),
+                        amount: 15_000,
+                    },
+                ],
                 on_behalf_of: Some(Address::tagged(7)),
                 memo: Some("trade:4821:escrow".into()),
             }),

@@ -182,11 +182,19 @@ export interface CustodyRotation {
 
 /** Move a balance between a client's custody and the network vault against
  *  the custodian's floats; no coins move on any external chain. */
-/** A custody balance moving between two accounts of the same custodian. */
-export interface CustodyTransfer {
+/** One payment of a custody transfer. */
+export interface CustodyLeg {
   to: Address;
   asset: string;
   amount: bigint | number;
+}
+
+/**
+ * Custody balances moving from one account to others of the same
+ * custodian. The legs (1 to 16) are one posting: all happen or none.
+ */
+export interface CustodyTransfer {
+  legs: CustodyLeg[];
   /** The custodian signing for one of the accounts in its custody. */
   on_behalf_of?: Address | null;
   /** Your own reference (a trade id, a leg), echoed in the event. */
@@ -411,7 +419,8 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "BuyPlan": w.u8(b.tier); break;
     case "SetPlanRenewal": w.u8(b.tier); break;
     case "TransferCustody":
-      address(w, b.to); w.string(b.asset); w.u128(b.amount); w.option(b.on_behalf_of, (a) => address(w, a)); w.option(b.memo, (m) => w.string(m)); break;
+      w.vec(b.legs as CustodyLeg[], (l) => { address(w, l.to); w.string(l.asset); w.u128(l.amount); });
+      w.option(b.on_behalf_of, (a) => address(w, a)); w.option(b.memo, (m) => w.string(m)); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

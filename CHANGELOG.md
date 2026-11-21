@@ -6,9 +6,11 @@ Dates are UTC.
 ## Unreleased
 
 - Chain: **transfers inside custody** (2026-11-21). `TransferCustody
-  { to, asset, amount, on_behalf_of, memo }` moves a custody balance
-  between two accounts of the same custodial client, signed by the owner
-  or by the client. A client can now post escrow and release between its
+  { legs: [{ to, asset, amount }], on_behalf_of, memo }` moves custody
+  balances from one account to others of the same custodial client,
+  signed by the owner or by the client. Up to 16 legs are one atomic
+  posting (a release with its fee and referral legs), which replaces the
+  single-recipient shape first written here on the same day. A client can now post escrow and release between its
   own users on chain with no float in the network vault and no swap
   (`docs/models.md`). Event `CustodyTransferred`. In the SDK
   (`TransferCustody`) and the CLI (`keel send custody transfer`).

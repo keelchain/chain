@@ -101,13 +101,19 @@ when the client's float on the far side is short.
 ### Transfers inside custody: your own users' trades, on chain
 
 Two users of the same custodial client do not need the float swap to
-trade with each other. `TransferCustody { to, asset, amount, on_behalf_of,
-memo }` moves a custody balance from one account to another inside the
-same client's custody, in one ledger posting:
+trade with each other. `TransferCustody { legs: [{ to, asset, amount }],
+on_behalf_of, memo }` moves custody balances from one account to others
+inside the same client's custody, in one ledger posting:
 
 ```
-seller custody -X   recipient custody +X
+sender custody -(X+Y+Z)   recipient 1 +X   recipient 2 +Y   recipient 3 +Z
 ```
+
+A transfer carries 1 to 16 legs and is atomic: every leg is checked first
+and all of them are posted together, so a release that pays the buyer, a
+fee account, an affiliate and a referrer happens whole or not at all. One
+failing leg (a recipient outside the client, a balance that does not
+cover the sum) refuses the transfer and nothing moves.
 
 The client's vault backs the same total before and after, so its reserve
 check is untouched, nothing is sent on any network, there is no float to
@@ -120,9 +126,10 @@ an event anyone can audit:
    attested for that purpose. The client signs for the seller
    (`on_behalf_of`), or the seller signs it in Keel Wallet.
 2. **Release or cancel.** The client moves the balance from its escrow
-   account to the buyer, or back to the seller. `memo` carries the
-   client's own reference (a trade id and the leg) and is echoed in the
-   `CustodyTransferred` event.
+   account to the buyer, with its fee, affiliate and referral accounts as
+   further legs of the same transfer, or back to the seller. `memo`
+   carries the client's own reference (a trade id and the step) and is
+   echoed in a `CustodyTransferred` event per leg.
 
 Who may sign: the owner of the balance, or its custodian. Where it may go:
 the custodian itself, an account already in its custody, or an account it
