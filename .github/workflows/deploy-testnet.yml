@@ -303,9 +303,12 @@ jobs:
           HOST_INDEX: ${{ matrix.host }}
         run: |
           H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[int(os.environ["HOST_INDEX"])]; print(h.get("user","ubuntu")+"@"+h["ip"])')
-          ssh -i ~/.ssh/id_deploy "$H" 'rm -rf ~/keel-deploy && mkdir -m 700 ~/keel-deploy'
-          scp -i ~/.ssh/id_deploy release.tgz "$H":~/keel-deploy/release.tgz
-          ssh -i ~/.ssh/id_deploy "$H" 'cd ~/keel-deploy && tar xzf release.tgz && rm release.tgz && bash infra/testnet/deploy-remote.sh'
+          # A runner sometimes cannot reach the box on the first try: retry the
+          # connection (not the deploy itself, which runs once).
+          O=(-i ~/.ssh/id_deploy -o ConnectTimeout=20 -o ConnectionAttempts=6 -o ServerAliveInterval=30)
+          ssh "${O[@]}" "$H" 'rm -rf ~/keel-deploy && mkdir -m 700 ~/keel-deploy'
+          scp "${O[@]}" release.tgz "$H":~/keel-deploy/release.tgz
+          ssh "${O[@]}" "$H" 'cd ~/keel-deploy && tar xzf release.tgz && rm release.tgz && bash infra/testnet/deploy-remote.sh'
 
   checks:
     needs: [deploy]

@@ -1,7 +1,8 @@
 // Refresh site/wallet/shots from the built extension: welcome, seed, home (funded by the
-// testnet faucet), receive, connect and sign. Playwright's own Chromium is required:
-// Google Chrome 137+ ignores --load-extension. Usage: node scripts/shots.mjs <out-dir>
-// (cd to a dir with playwright installed, e.g. npx -p playwright node scripts/shots.mjs out).
+// testnet faucet), receive, connect and sign, captured in dark mode (the wallet follows the
+// browser scheme). Needs Playwright's own Chromium: Google Chrome 137+ ignores --load-extension.
+// Usage: node scripts/shots.mjs <out-dir>   (run where playwright is installed)
+import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
 import http from 'node:http';
 const EXT = new URL('../dist', import.meta.url).pathname;
@@ -25,8 +26,14 @@ const site = http.createServer((req, res) => { res.setHeader('content-type', 'te
 await new Promise((r) => site.listen(SITE_PORT, '127.0.0.1', r));
 const ctx = await chromium.launchPersistentContext(`/tmp/keel-wallet-shots-${Date.now()}`, {
   headless: false,
-  viewport: { width: 380, height: 640 }, deviceScaleFactor: 2,
+  viewport: { width: 380, height: 640 }, deviceScaleFactor: 2, colorScheme: 'dark',
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--no-first-run', ...(HEADED ? [] : ['--headless=new'])],
+});
+// Marketing shots: no scrollbar, and the page background behind it matches the theme.
+await ctx.addInitScript(() => {
+  const css = 'html{scrollbar-width:none;background:var(--bg)}html::-webkit-scrollbar,body::-webkit-scrollbar{display:none;width:0}';
+  const add = () => { const st = document.createElement('style'); st.textContent = css; (document.head || document.documentElement).appendChild(st); };
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', add) : add();
 });
 let [sw] = ctx.serviceWorkers();
 if (!sw) sw = await ctx.waitForEvent('serviceworker', { timeout: 20000 });

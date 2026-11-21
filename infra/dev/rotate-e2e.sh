@@ -9,9 +9,8 @@
 #      address credits too
 #   3. a withdrawal is paid from the draining generation only: every input
 #      is an old-generation coin and the change returns to the old key
-#   4. a rotation asking for a sweep is refused; the client rotates again
-#      (no sweep is the only way) to a third signer: three generations, the
-#      two old ones draining
+#   4. the client rotates again to a third signer (the action cannot ask
+#      for a sweep): three generations, the two old ones draining
 #   5. past the grace nothing is moved between the generations: no
 #      transaction appears, the new key's own address receives nothing, the
 #      funded old generations stay Draining (they empty through payouts
@@ -46,9 +45,14 @@ GAS_BTC=0.01;      GAS_SATS=1000000
 say() { echo "[rotate-e2e] $*"; }
 fail() { say "FAIL: $*"; exit 1; }
 # Parse the last JSON line of stdin (daemons may log before printing).
+# The whole input when it is one (pretty-printed) document, as `keel send`
+# prints; else its last JSON line, as a signer log has.
 json() { python3 -c "import sys,json
-lines=[l for l in sys.stdin.read().splitlines() if l.strip().startswith(('{','['))]
-d=json.loads(lines[-1]) if lines else None
+raw=sys.stdin.read()
+try: d=json.loads(raw)
+except ValueError:
+    lines=[l for l in raw.splitlines() if l.strip().startswith(('{','['))]
+    d=json.loads(lines[-1]) if lines else None
 print($1)"; }
 height() { curl -sf "$1/v1/status" | json 'd["height"]' 2>/dev/null || echo 0; }
 balance() { # addr asset type
@@ -262,11 +266,7 @@ rotate() { # seed port
   start_signer "$1" "$2" "$log"
   local pk cc
   pk=$(head -1 "$log" | json 'd["public_key"]'); cc=$(head -1 "$log" | json 'd["chain_code"]')
-  # Generations are separate pools: a rotation asking to sweep is refused.
-  "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 raw \
-    "{\"RotateCustodyVault\":{\"chain\":\"Bitcoin\",\"public_key\":\"$pk\",\"chain_code\":\"$cc\",\"signer_url\":\"http://127.0.0.1:$2\",\"sweep\":true,\"activate_at\":null}}" \
-    > "$KEEL_DEVNET_DIR/rotate-sweep-$2.json" || true
-  grep -q 'separate pools' "$KEEL_DEVNET_DIR/rotate-sweep-$2.json" || { cat "$KEEL_DEVNET_DIR/rotate-sweep-$2.json"; fail "a rotation with sweep was not refused"; }
+  # Generations are separate pools: the action has no way to ask for a sweep.
   "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 custody rotate BTC \
     --public-key "$pk" --chain-code "$cc" --signer-url "http://127.0.0.1:$2" > "$KEEL_DEVNET_DIR/rotate-$2.json"
   grep -q '"PoolRotated"' "$KEEL_DEVNET_DIR/rotate-$2.json" || { cat "$KEEL_DEVNET_DIR/rotate-$2.json"; fail "rotation refused"; }
@@ -371,4 +371,4 @@ d=json.load(sys.stdin)
 print(next((b['balance'] for b in d['balances'] if b['asset']=='BTC.BTC' and b['account_type']=='custody'),0))")
   [[ "$b" == "$USER_AFTER" ]] || fail "node $i disagrees on the user's custody balance ($b vs $USER_AFTER)"
 done
-say "PASS: rotated twice ($(gens)); a sweeping rotation refused; old and new addresses both credited; withdrawal paid from the draining key only; nothing moved between generations; user custody $USER_AFTER sats; reserve == liabilities == $RES; network reserve untouched"
+say "PASS: rotated twice ($(gens)); old and new addresses both credited; withdrawal paid from the draining key only; nothing moved between generations; user custody $USER_AFTER sats; reserve == liabilities == $RES; network reserve untouched"

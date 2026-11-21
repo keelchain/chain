@@ -94,7 +94,7 @@ scheduled rekey, a signer migration (a new `keel-tss` set, a new KMS), a
 suspected compromise of the old key or of its signer, or a change of
 custody provider. The rotation moves its whole platform to a fresh vault
 on that chain without touching a single Keel account: `RotateCustodyVault { chain, public_key, chain_code, signer_url,
-sweep: false, activate_at }`. The client makes the new key on a signer of
+activate_at }`. The client makes the new key on a signer of
 its own (a second `keel-tss serve`, or its KMS behind a second `POST /sign`
 URL; the old signer keeps serving the old key), and registers its public
 key and chain code; no private key is ever sent, at registration or at
@@ -112,8 +112,8 @@ rotation. From the block it activates, or at `activate_at`:
   nothing watches those addresses any more.
 
 **Generations are separate pools. Nothing is ever moved between them.**
-This is a rule of the protocol, not an option: the chain refuses a
-rotation whose `sweep` is `true`, refuses every `ObserveCustodySweep`, and
+This is a rule of the protocol, not an option: a rotation has
+no field that asks for a sweep, no action reports one, and
 the signing policy of `keel-tss` has no context that could describe a
 transfer from one generation's address to another's (a consolidation may
 pay only the signing key's own hot address, gas funding only the key's own
