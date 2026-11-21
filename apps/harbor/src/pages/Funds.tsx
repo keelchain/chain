@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
-import { useUnlockDelay } from '../api/hooks';
+import { useBook, useUnlockDelay } from '../api/hooks';
 import { ActionResult, Field, Submit, useAction } from '../components/action';
 import { WALLET_URL } from '../components/Layout';
 import { Amount, Card, Hex, Notice } from '../components/ui';
 import { KEEL_DECIMALS, USD_DECIMALS, big, fromUnits, keel, money, shortfall, toUnits } from '../lib/amounts';
+import { asksOf, quoteBuy } from '../lib/book';
 import { isRunning, offeredTiers, periodLabel } from '../lib/plan';
 import { useNetwork } from '../network/NetworkContext';
 import { explorerUrl } from '../network/networks';
@@ -86,9 +87,17 @@ function BuyKeel({ h }: { h: Harbor }) {
   const [budget, setBudget] = useState('');
   const units = toUnits(budget, USD_DECIMALS);
   const tooMuch = units !== null && units > h.funds.usdt;
+  const { network } = useNetwork();
+  const pair = `KEEL-${asset}`;
+  const book = useBook(pair);
+  const asks = asksOf(book.data);
+  const empty = book.isSuccess && asks.length === 0;
+  const quote = units !== null && units > 0n && asks.length > 0 ? quoteBuy(asks, units) : null;
+  // Four decimals is as fine as a price per KEEL needs to read.
+  const price = (p: bigint) => `${Number((Number(p) / 10 ** USD_DECIMALS).toFixed(4))} ${asset}`;
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (units === null || units === 0n) return;
+    if (units === null || units === 0n || asks.length === 0) return;
     void act.run(
       { PlaceOrder: { pair: `KEEL-${asset}`, side: 'buy', order_type: 'market', price: null, quantity: null, quote_budget: units, client_id: null } },
       `Buy KEEL with ${budget} ${asset}`,
@@ -98,12 +107,50 @@ function BuyKeel({ h }: { h: Harbor }) {
   return (
     <Card title="Buy KEEL">
       <form className="form" onSubmit={submit}>
-        <p className="small text-2">A market order on Keel's own order book, paid from your {asset} balance. What it buys lands in your KEEL balance, ready to lock.</p>
+        <p className="small text-2">
+          A market order on the chain's own <a href={explorerUrl(network.id, `/markets/${pair}`)}>{pair} order book</a>, paid from your {asset} balance. It buys from whoever is selling KEEL there,
+          cheapest first; what it buys lands in your KEEL balance, ready to lock.
+        </p>
+        {book.isError && <p className="small down">The order book could not be read. You can still see it on the explorer.</p>}
+        {empty && (
+          <Notice tone="warn" title="Nobody is selling KEEL on the book right now.">
+            A market order would buy nothing and your {asset} would stay where it is. KEEL can also be transferred to this account from another one.
+          </Notice>
+        )}
+        {asks.length > 0 && (
+          <table className="tbl" aria-label={`Sellers on ${pair}`}>
+            <thead>
+              <tr>
+                <th>Price per KEEL</th>
+                <th className="num">KEEL on offer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {asks.slice(0, 5).map((a, i) => (
+                <tr key={i}>
+                  <td>
+                    {price(a.price)}
+                    {a.house ? <span className="text-2"> · liquidity pool</span> : null}
+                  </td>
+                  <td className="num">{keel(a.size)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
         <Field label={`Spend (${asset})`} hint={tooMuch ? <span className="down">More than the {money(h.funds.usdt, asset)} you hold.</span> : `You hold ${money(h.funds.usdt, asset)}.`}>
           <input className="input" value={budget} onChange={(e) => setBudget(e.target.value)} inputMode="decimal" required aria-invalid={tooMuch || (budget !== '' && units === null)} />
         </Field>
+        {quote && quote.bought > 0n && (
+          <p className="small" role="status">
+            Buys about <strong>{keel(quote.bought)}</strong> for {money(quote.filled ? units! : quote.spent, asset)}, at {price(quote.average ?? 0n)} on average
+            {quote.worst !== null && quote.worst !== quote.average ? ` (up to ${price(quote.worst)})` : ''}.
+            {!quote.filled ? ` The book only has that much on offer; the other ${money(units! - quote.spent, asset)} stays in your balance.` : ''} An estimate: the book can move before the order
+            lands.
+          </p>
+        )}
         <div className="row">
-          <Submit act={act} disabled={units === null || units === 0n || tooMuch}>
+          <Submit act={act} disabled={units === null || units === 0n || tooMuch || asks.length === 0}>
             Buy at market
           </Submit>
         </div>

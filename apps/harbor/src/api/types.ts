@@ -146,7 +146,23 @@ export class ApiError extends Error {
 }
 
 /** Everything Harbor reads, so pages and tests share one seam. */
+/** One price level of an order book: `price` is quote units per whole base coin, `size` is base units. */
+export interface BookLevel {
+  price: string;
+  size: string;
+  orders?: number;
+}
+/** `GET /v1/markets/{pair}/book`. `house` is the house maker's standing quote, as `[price, size]` per side. */
+export interface Book {
+  symbol: string;
+  asks: BookLevel[];
+  bids: BookLevel[];
+  house: { ask?: [string | number, string | number] | null; bid?: [string | number, string | number] | null } | null;
+}
+
 export interface HarborApi {
+  /** The resting orders of `pair`, best first. */
+  book(pair: string): Promise<Book>;
   client(addr: string): Promise<ClientRecord>;
   account(addr: string): Promise<AccountRecord>;
   custody(addr: string): Promise<Custody>;

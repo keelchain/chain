@@ -21,6 +21,12 @@ export function useClient(addr: string | undefined) {
   });
 }
 
+/** The order book of `pair`, refreshed every few seconds while it is on screen. */
+export function useBook(pair: string) {
+  const { api, network } = useNetwork();
+  return useQuery({ queryKey: [network.id, 'book', pair], queryFn: () => api.book(pair), refetchInterval: 5_000 });
+}
+
 /** Tiers, period and prices for a visitor without a wallet. */
 export function usePublicTerms() {
   const { api, network } = useNetwork();
