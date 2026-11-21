@@ -5,6 +5,13 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **transfers inside custody** (2026-11-21). `TransferCustody
+  { to, asset, amount, on_behalf_of, memo }` moves a custody balance
+  between two accounts of the same custodial client, signed by the owner
+  or by the client. A client can now post escrow and release between its
+  own users on chain with no float in the network vault and no swap
+  (`docs/models.md`). Event `CustodyTransferred`. In the SDK
+  (`TransferCustody`) and the CLI (`keel send custody transfer`).
 - Chain: **float swaps are free** (2026-11-21). `SwapCustody` was billed
   at the withdrawal price ($0.10) although it sends nothing on any
   network. It has its own parameter now, `clients.usage_swap_usd_micro`,

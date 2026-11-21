@@ -82,6 +82,7 @@ export const ACTION_LABELS: Record<string, string> = {
   RequestCustodyAddress: 'Request custody address',
   WithdrawCustody: 'Withdraw from custody',
   SwapCustody: 'Swap custody',
+  TransferCustody: 'Transfer in custody',
   SetOfferArbitrators: 'Name offer arbitrators',
   ChooseArbitrator: 'Choose arbitrator',
   RotateCustodyVault: 'Rotate custody vault',
@@ -105,6 +106,7 @@ const MOVES_FUNDS: Record<string, string> = {
   Bond: 'This locks KEEL as a bond.',
   Delegate: 'This delegates KEEL to a validator.',
   WithdrawCustody: 'This sends funds out of the chain to an external address, paid from your custodian\'s vault.',
+  TransferCustody: 'This sends a custody balance to another account of the same exchange.',
   SwapCustody: 'This moves a balance between your custodian\'s vault and the network vault. The amount stays yours; only what backs it changes.',
   RotateCustodyVault: 'This moves your vault to a new key. New deposit addresses are issued; the old ones keep working while the old key drains.',
 };
@@ -392,6 +394,18 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Amount', field: amount(p['amount'], asset) },
         { name: 'Destination', field: { k: 'external', chain, value: str(p['to']) } },
       ]);
+    }
+    case 'TransferCustody': {
+      const asset = str(p['asset']);
+      const who = present(p['on_behalf_of']) ? ` for ${str(p['on_behalf_of']).slice(0, 8)}…` : '';
+      const fields: NamedField[] = [
+        { name: 'To', field: { k: 'address', value: str(p['to']) } },
+        { name: 'Asset', field: { k: 'asset', value: asset } },
+        { name: 'Amount', field: amount(p['amount'], asset) },
+      ];
+      if (present(p['on_behalf_of'])) fields.push({ name: 'On behalf of', field: { k: 'address', value: str(p['on_behalf_of']) } });
+      if (present(p['memo'])) fields.push({ name: 'Reference', field: { k: 'text', value: str(p['memo']) } });
+      return view(`Transfer ${formatAmount(amountStr(p['amount']), decimalsOf(asset))} ${asset} in custody to ${str(p['to']).slice(0, 8)}…${who}`, fields);
     }
     case 'SwapCustody': {
       const asset = str(p['asset']);

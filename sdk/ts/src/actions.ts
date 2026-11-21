@@ -148,7 +148,8 @@ export type Action =
   /** A client buys a plan period at `tier` (1-based), starting now. */
   | { BuyPlan: { tier: number } }
   /** The tier a client's plan renews at; 0 stops renewal. */
-  | { SetPlanRenewal: { tier: number } };
+  | { SetPlanRenewal: { tier: number } }
+  | { TransferCustody: CustodyTransfer };
 
 export interface RecoveryRequest {
   /** The address family (the chain whose deposit index the address is). */
@@ -181,6 +182,17 @@ export interface CustodyRotation {
 
 /** Move a balance between a client's custody and the network vault against
  *  the custodian's floats; no coins move on any external chain. */
+/** A custody balance moving between two accounts of the same custodian. */
+export interface CustodyTransfer {
+  to: Address;
+  asset: string;
+  amount: bigint | number;
+  /** The custodian signing for one of the accounts in its custody. */
+  on_behalf_of?: Address | null;
+  /** Your own reference (a trade id, a leg), echoed in the event. */
+  memo?: string | null;
+}
+
 export interface CustodySwap {
   asset: string;
   amount: bigint | number;
@@ -207,7 +219,7 @@ const ACTION_VARIANTS = [
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
-  "WithdrawStable", "BuyPlan", "SetPlanRenewal",
+  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -398,6 +410,8 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "WithdrawStable": w.string(b.via); w.string(b.to); w.u128(b.amount); break;
     case "BuyPlan": w.u8(b.tier); break;
     case "SetPlanRenewal": w.u8(b.tier); break;
+    case "TransferCustody":
+      address(w, b.to); w.string(b.asset); w.u128(b.amount); w.option(b.on_behalf_of, (a) => address(w, a)); w.option(b.memo, (m) => w.string(m)); break;
     default: throw new Error(`unknown action ${name}`);
   }
   return w;

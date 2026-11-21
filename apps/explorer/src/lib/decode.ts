@@ -404,6 +404,15 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
         { name: 'Redeemed into', field: { k: 'asset', value: str(p['asset']) } },
         { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: str(p['asset']) } },
       ]);
+    case 'TransferCustody': {
+      const fields: NamedField[] = [
+        { name: 'To', field: { k: 'address', value: str(p['to']) } },
+        { name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: str(p['asset']) } },
+      ];
+      if (p['on_behalf_of']) fields.push({ name: 'On behalf of', field: { k: 'address', value: str(p['on_behalf_of']) } });
+      if (p['memo']) fields.push({ name: 'Reference', field: { k: 'text', value: str(p['memo']) } });
+      return view(`Transfer ${str(p['asset'])} in custody`, fields);
+    }
     case 'Bond': {
       const fields: NamedField[] = [
         { name: 'Role', field: { k: 'badge', value: str(p['role']), tone: 'neutral' } },

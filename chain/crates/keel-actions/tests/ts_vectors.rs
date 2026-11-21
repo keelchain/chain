@@ -407,6 +407,16 @@ fn vectors() -> Vec<(&'static str, Action)> {
         ),
         ("buy_plan", Action::BuyPlan { tier: 2 }),
         ("set_plan_renewal", Action::SetPlanRenewal { tier: 0 }),
+        (
+            "transfer_custody",
+            Action::TransferCustody(keel_actions::CustodyTransfer {
+                to: Address::tagged(9),
+                asset: Asset::new("BTC.BTC"),
+                amount: 1_500_000,
+                on_behalf_of: Some(Address::tagged(7)),
+                memo: Some("trade:4821:escrow".into()),
+            }),
+        ),
     ]
 }
 

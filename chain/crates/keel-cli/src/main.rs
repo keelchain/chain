@@ -316,6 +316,19 @@ enum CustodyCmd {
         #[arg(long)]
         on_behalf_of: Option<String>,
     },
+    /// Move a custody balance to another account of the same client (its
+    /// escrow account, the buyer, the client itself). No coins move.
+    Transfer {
+        to: String,
+        asset: String,
+        amount: Amount,
+        /// The custodian signs for one of the accounts in its custody.
+        #[arg(long)]
+        on_behalf_of: Option<String>,
+        /// Your own reference, echoed in the event.
+        #[arg(long)]
+        memo: Option<String>,
+    },
     /// Rotate this client's vault on a chain to a fresh key of its own: the
     /// new key, its chain code and the URL of the signer serving it (the
     /// old signer keeps serving the draining generation).
@@ -606,6 +619,19 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 _ => return Err(anyhow!("--to must be deposit or custody")),
             },
             on_behalf_of: on_behalf_of.as_deref().map(parse_addr).transpose()?,
+        }),
+        ActionCmd::Custody(CustodyCmd::Transfer {
+            to,
+            asset,
+            amount,
+            on_behalf_of,
+            memo,
+        }) => Action::TransferCustody(keel_actions::CustodyTransfer {
+            to: parse_addr(&to)?,
+            asset: Asset::new(asset),
+            amount,
+            on_behalf_of: on_behalf_of.as_deref().map(parse_addr).transpose()?,
+            memo,
         }),
         ActionCmd::Gov(GovCmd::Propose {
             title,

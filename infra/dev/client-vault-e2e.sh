@@ -311,6 +311,32 @@ print(next((b['balance'] for b in d['balances'] if b['asset']=='BTC.BTC' and b['
   [[ "$b" == "$USER_AFTER" ]] || fail "node $i disagrees on the user's custody balance after the swaps ($b vs $USER_AFTER)"
 done
 say "float swap: $SWAP_SATS sats to the market, $SELL_SATS sold on BTC-USDT, $BACK_SATS back into custody; no external transaction, reserve == liabilities == $RES"
+# The client is observer 0's key, and that observer reports the fee rate
+# every few seconds: a send can find its nonce taken. Try again then.
+client_send() { # out-file, then the `keel send` arguments
+  local out=$1 try; shift
+  for try in 1 2 3 4 5 6; do
+    "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 "$@" > "$out" 2> "$out.err" && return 0
+    grep -q 'nonce already queued' "$out.err" || return 1
+    sleep 1
+  done
+  return 1
+}
+# ---------------------------------------------------------------- a trade between two of the client's users, inside custody
+# Seller -> the client's escrow account -> back: each leg is one
+# TransferCustody, no float in the network vault and no swap.
+ESCROW_SATS=1000
+say "the client escrows $ESCROW_SATS sats of the user's custody balance with itself, then returns them"
+C_BEFORE=$(balance "$CLIENT" BTC.BTC custody); U_BEFORE=$(balance "$USER" BTC.BTC custody)
+client_send "$KEEL_DEVNET_DIR/ct-escrow.json" custody transfer "$CLIENT" BTC.BTC "$ESCROW_SATS" --on-behalf-of "$USER" --memo "trade:1:escrow" || true
+grep -q '"CustodyTransferred"' "$KEEL_DEVNET_DIR/ct-escrow.json" || { cat "$KEEL_DEVNET_DIR/ct-escrow.json"; fail "custody transfer to escrow refused"; }
+[[ "$(balance "$USER" BTC.BTC custody)" == $((U_BEFORE - ESCROW_SATS)) && "$(balance "$CLIENT" BTC.BTC custody)" == $((C_BEFORE + ESCROW_SATS)) ]] || fail "escrow leg did not move the custody balances"
+client_send "$KEEL_DEVNET_DIR/ct-cancel.json" custody transfer "$USER" BTC.BTC "$ESCROW_SATS" --memo "trade:1:cancel" || true
+grep -q '"CustodyTransferred"' "$KEEL_DEVNET_DIR/ct-cancel.json" || { cat "$KEEL_DEVNET_DIR/ct-cancel.json"; fail "custody transfer back refused"; }
+[[ "$(balance "$USER" BTC.BTC custody)" == "$U_BEFORE" && "$(balance "$CLIENT" BTC.BTC custody)" == "$C_BEFORE" ]] || fail "the custody balances did not return"
+read -r RES LIA HALT <<<"$(reserves)"
+[[ "$RES" == "$LIA" && "$HALT" == False ]] || fail "reserve $RES vs liabilities $LIA halted=$HALT after the custody transfers"
+say "custody transfers: escrow and return posted on chain, reserve == liabilities == $RES"
 # ---------------------------------------------------------------- the client's plan
 # A plan is a lock and a fee: the client locks tier 1's KEEL, buys the tier
 # with one action, and the period runs from that block. Its attested user
@@ -318,12 +344,12 @@ say "float swap: $SWAP_SATS sats to the market, $SELL_SATS sold on BTC-USDT, $BA
 T1_LOCK=$(curl -sf "$RPC0/v1/clients/$CLIENT" | json 'd["tiers"][0]["lock_keel"]')
 T1_FEE=$(curl -sf "$RPC0/v1/clients/$CLIENT" | json 'd["tiers"][0]["fee_usd_micro"]')
 say "client buys plan tier 1: locks $T1_LOCK orcas, pays $T1_FEE USDT micro"
-"$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 buy-plan 1 > "$KEEL_DEVNET_DIR/plan-nolock.json" || true
+client_send "$KEEL_DEVNET_DIR/plan-nolock.json" buy-plan 1 || true
 grep -q '"ClientPlanStarted"' "$KEEL_DEVNET_DIR/plan-nolock.json" && fail "a plan was sold without the lock"
-"$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 lock-budget "$T1_LOCK" > "$KEEL_DEVNET_DIR/plan-lock.json"
+client_send "$KEEL_DEVNET_DIR/plan-lock.json" lock-budget "$T1_LOCK" || true
 grep -q '"BudgetLocked"' "$KEEL_DEVNET_DIR/plan-lock.json" || { cat "$KEEL_DEVNET_DIR/plan-lock.json"; fail "tier lock failed"; }
 USDT_BEFORE=$(balance "$CLIENT" USDT deposit)
-"$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 buy-plan 1 > "$KEEL_DEVNET_DIR/plan.json"
+client_send "$KEEL_DEVNET_DIR/plan.json" buy-plan 1 || true
 grep -q '"ClientPlanStarted"' "$KEEL_DEVNET_DIR/plan.json" || { cat "$KEEL_DEVNET_DIR/plan.json"; fail "plan not started"; }
 [[ "$(balance "$CLIENT" USDT deposit)" == $((USDT_BEFORE - T1_FEE)) ]] || fail "the plan fee was not taken once"
 for i in 0 1 2 3; do
@@ -334,7 +360,7 @@ assert p and p["tier"]==1 and p["active"] and not p["suspended"] and p["renew_ti
 done
 SPONSOR=$(curl -sf "$RPC0/v1/accounts/$USER" | json '(d["budget"]["sponsor"] or {}).get("client")')
 [[ "$SPONSOR" == "$CLIENT" ]] || fail "the user is not carried by its client's plan (sponsor: $SPONSOR)"
-"$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 set-plan-renewal 0 > "$KEEL_DEVNET_DIR/plan-renewal.json"
+client_send "$KEEL_DEVNET_DIR/plan-renewal.json" set-plan-renewal 0 || true
 grep -q '"ClientPlanRenewalSet"' "$KEEL_DEVNET_DIR/plan-renewal.json" || { cat "$KEEL_DEVNET_DIR/plan-renewal.json"; fail "renewal not set"; }
 say "plan tier 1 bought in one action, $T1_FEE USDT micro paid, the user's actions paid by the plan"
 say "PASS: $DEPOSIT_SATS sats credited as custody in the client's vault; $WITHDRAW_SATS sats withdrawn through the client's own signer ($OUT_TXID); fee $FEE sats from the client's gas; reserve == liabilities == $RES; network reserve untouched"

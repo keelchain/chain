@@ -98,6 +98,43 @@ never asked for a custody address joins the client's custody by swapping
 into it. The swap is refused while either vault is halted for the asset or
 when the client's float on the far side is short.
 
+### Transfers inside custody: your own users' trades, on chain
+
+Two users of the same custodial client do not need the float swap to
+trade with each other. `TransferCustody { to, asset, amount, on_behalf_of,
+memo }` moves a custody balance from one account to another inside the
+same client's custody, in one ledger posting:
+
+```
+seller custody -X   recipient custody +X
+```
+
+The client's vault backs the same total before and after, so its reserve
+check is untouched, nothing is sent on any network, there is no float to
+hold in the network vault, and the transfer is not billed. That makes the
+chain the client's ledger for its own users' trades as well, with each leg
+an event anyone can audit:
+
+1. **Escrow.** The seller's balance moves to an escrow account of the
+   client's: the client's operator account, or a separate account it
+   attested for that purpose. The client signs for the seller
+   (`on_behalf_of`), or the seller signs it in Keel Wallet.
+2. **Release or cancel.** The client moves the balance from its escrow
+   account to the buyer, or back to the seller. `memo` carries the
+   client's own reference (a trade id and the leg) and is echoed in the
+   `CustodyTransferred` event.
+
+Who may sign: the owner of the balance, or its custodian. Where it may go:
+the custodian itself, an account already in its custody, or an account it
+attested, which joins its custody by receiving. It never leaves the
+client: a transfer to an outsider or to another client's user is refused,
+and that case is what the float swap above is for.
+
+This is the client's own escrow, run by the client: the payment window,
+the dispute and its ruling are the client's, as they are on its ledger
+today. The chain's escrow with elected arbitrators applies to trades on
+the `deposit` side.
+
 ### Rotating to a fresh pool
 
 A custodial client rotates its vault key on a chain for security: a
@@ -394,7 +431,7 @@ one mechanism:
 |---|---|---|
 | A custodial client's user and a Keel Wallet user (a P2P client's user or a direct user) | the chain's book or escrow | the arbitrator the offer names, else the governance set |
 | A custodial client's user and another custodial client's user | the chain's book or escrow | the same |
-| Two users of the same custodial client | the client's own ledger, never the chain | the client's own support, as today |
+| Two users of the same custodial client | on chain without leaving custody (`TransferCustody` through the client's escrow account), or the client's own ledger if it prefers | the client's own support, as today |
 
 <div class="tabs" data-group="client">
 <div class="tab" data-mode="custodial">

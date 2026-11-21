@@ -589,3 +589,142 @@ fn swap_into_custody_enrols_an_attested_account() {
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }
+
+fn transfer_custody(
+    to: Address,
+    asset: Asset,
+    amount: u128,
+    on_behalf_of: Option<Address>,
+    memo: &str,
+) -> Action {
+    Action::TransferCustody(keel_actions::CustodyTransfer {
+        to,
+        asset,
+        amount,
+        on_behalf_of,
+        memo: Some(memo.into()),
+    })
+}
+
+/// A custodial client posts a trade between two of its users on chain
+/// without leaving custody: seller -> the client's escrow account ->
+/// buyer, each leg one transfer, with no float and no swap.
+#[test]
+fn a_custody_balance_moves_between_accounts_of_the_same_client() {
+    let (mut state, mut alice, mut bob, mut v) = setup(0);
+    // dave is a second client; erin is nobody's user.
+    let (dave, erin) = (Actor::new(61), Actor::new(62));
+    state.attest.attesters.insert(dave.addr());
+    let mut c = Chain::new(state);
+    let (r, _) = c.block(&[
+        v.act(Action::RegisterCustodyVault(registration(1))),
+        v.act(Action::Attest {
+            subject: alice.addr(),
+            tier: 1,
+            expires_at: T0 + 1_000_000,
+        }),
+        v.act(Action::Attest {
+            subject: bob.addr(),
+            tier: 1,
+            expires_at: T0 + 1_000_000,
+        }),
+    ]);
+    for x in &r {
+        ok(x);
+    }
+    let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
+        chain: ExtChain::Tron,
+        custodian: v.addr(),
+    })]);
+    ok(&r[0]);
+    fund_custody(&mut c.state, v.addr(), alice.addr(), &usdt(), 10_000_000);
+    let backed = (
+        reserve(&c, v.addr(), &usdt()),
+        liabilities(&c, v.addr(), &usdt()),
+    );
+    let usage_before = acct(&c.state, v.addr(), &usds(), "deposit");
+
+    // The seller escrows with the client: the client signs for her.
+    let (r, _) = c.block(&[v.act(transfer_custody(
+        v.addr(),
+        usdt(),
+        4_000_000,
+        Some(alice.addr()),
+        "trade:1:escrow",
+    ))]);
+    ok(&r[0]);
+    assert!(r[0].events.contains(&Event::CustodyTransferred {
+        custodian: v.addr(),
+        from: alice.addr(),
+        to: v.addr(),
+        asset: usdt(),
+        amount: 4_000_000,
+        memo: Some("trade:1:escrow".into()),
+    }));
+    // Release: escrow -> the buyer, who held no custody balance until now
+    // and joins the client's custody by receiving.
+    let (r, _) = c.block(&[v.act(transfer_custody(
+        bob.addr(),
+        usdt(),
+        4_000_000,
+        None,
+        "trade:1:release",
+    ))]);
+    ok(&r[0]);
+    assert_eq!(
+        (
+            custody::balance(&c.state, alice.addr(), &usdt()),
+            custody::balance(&c.state, v.addr(), &usdt()),
+            custody::balance(&c.state, bob.addr(), &usdt()),
+        ),
+        (6_000_000, 0, 4_000_000)
+    );
+    assert_eq!(
+        c.state.custody.custodian_of.get(&bob.addr()),
+        Some(&v.addr())
+    );
+    // Nothing moved on any network: the vault backs the same total, and a
+    // transfer is not billed.
+    assert_eq!(
+        (
+            reserve(&c, v.addr(), &usdt()),
+            liabilities(&c, v.addr(), &usdt())
+        ),
+        backed
+    );
+    assert_eq!(acct(&c.state, v.addr(), &usds(), "deposit"), usage_before);
+
+    // A user moves her own balance to another user of the same client.
+    let (r, _) = c.block(&[alice.act(transfer_custody(
+        bob.addr(),
+        usdt(),
+        1_000_000,
+        None,
+        "gift",
+    ))]);
+    ok(&r[0]);
+    // Nobody but the owner or the client signs for an account.
+    let (r, _) = c.block(&[bob.act(transfer_custody(
+        bob.addr(),
+        usdt(),
+        1,
+        Some(alice.addr()),
+        "theft",
+    ))]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
+    // Custody never leaves the client: not to an outsider, not to
+    // another client, not for more than is held.
+    for to in [erin.addr(), dave.addr()] {
+        let (r, _) = c.block(&[alice.act(transfer_custody(to, usdt(), 1, None, "out"))]);
+        assert!(matches!(err(&r[0]), VmError::Invalid(_)), "{:?}", r[0]);
+    }
+    let (r, _) = c.block(&[alice.act(transfer_custody(
+        bob.addr(),
+        usdt(),
+        5_000_001,
+        None,
+        "too much",
+    ))]);
+    assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
+    assert!(c.state.ledger.audit().mismatches.is_empty());
+}

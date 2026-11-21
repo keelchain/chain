@@ -108,6 +108,7 @@ with that network, Keel adds nothing to it and keeps none of it.
 | Service price: deposit address issued in your vault | $0.02, on any network | per address |
 | Service price: withdrawal from your vault | $0.10, on any network | per withdrawal |
 | Service price: float swap between custody and the market | $0 (`clients.usage_swap_usd_micro`): one ledger posting, no coins move | per swap |
+| Transfer between two of your users inside custody (`TransferCustody`) | $0: one ledger posting, no coins move, no float needed | per transfer |
 | Service price: vault rotation | $0 (`pools.usage_rotation_usd_micro`) | per rotation |
 | A user's balance you swapped onto the book: filled order / escrow release / dispute ruling | $0.002 / $0.05 / $1 | per flow |
 

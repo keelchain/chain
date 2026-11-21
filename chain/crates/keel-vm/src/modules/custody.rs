@@ -152,6 +152,7 @@ pub fn apply(
             events.extend(clients::charge_usage_to(state, custodian, "swap", tx_id)?);
             Ok(events)
         }
+        Action::TransferCustody(t) => transfer(state, signer, tx_id, t),
         _ => Err(VmError::Invalid("not a custody action".into())),
     }
 }
@@ -630,6 +631,90 @@ fn swap(
             to: side.to_string(),
         }],
     ))
+}
+
+/// `TransferCustody`: a custody balance moves between two accounts of the
+/// same custodian. The custodian's vault backs the same total before and
+/// after, so its reserve check is untouched and nothing is sent on any
+/// network. The owner signs, or the custodian signs for it; the recipient
+/// is the custodian itself, an account already in its custody, or an
+/// account it attested (which joins its custody by receiving).
+fn transfer(
+    state: &mut State,
+    signer: Address,
+    tx_id: &[u8; 32],
+    t: &keel_actions::CustodyTransfer,
+) -> Result<Vec<Event>, VmError> {
+    if t.amount == 0 {
+        return Err(VmError::Invalid("amount must be > 0".into()));
+    }
+    if t.memo
+        .as_ref()
+        .is_some_and(|m| m.len() > state.limits.max_memo_bytes as usize)
+    {
+        return Err(VmError::Invalid("memo too long".into()));
+    }
+    let chain = vaults::chain_of(state, &t.asset)?;
+    let owner = t.on_behalf_of.unwrap_or(signer);
+    if owner == t.to {
+        return Err(VmError::Invalid("sender and recipient are the same".into()));
+    }
+    if t.to.is_system() {
+        return Err(VmError::Invalid(
+            "cannot transfer to the system address".into(),
+        ));
+    }
+    // A custodian's own balance is in its own custody.
+    let custodian = match state.custody.custodian_of.get(&owner) {
+        Some(c) => *c,
+        None if state.custody.vault(chain, owner).is_some() => owner,
+        None => return Err(VmError::Invalid("account holds no custody balance".into())),
+    };
+    if owner != signer && signer != custodian {
+        return Err(VmError::Unauthorized);
+    }
+    match state.custody.custodian_of.get(&t.to) {
+        Some(c) if *c == custodian => {}
+        Some(_) => {
+            return Err(VmError::Invalid(
+                "the recipient is in another client's custody".into(),
+            ))
+        }
+        None if t.to == custodian => {}
+        None => require_member(state, t.to, custodian).map_err(|_| {
+            VmError::Invalid("the recipient is not an account of this client".into())
+        })?,
+    }
+    if state.custody.halted.contains(&(custodian, t.asset.clone())) {
+        return Err(VmError::Paused(format!(
+            "custody of {} (reserve below balances)",
+            t.asset
+        )));
+    }
+    if balance(state, owner, &t.asset) < t.amount {
+        return Err(VmError::NotEnoughFunds);
+    }
+    state.ledger.post(
+        &format!("custody:transfer:{}", tokens::hex(tx_id)),
+        TxType::InternalTransferComplete,
+        None,
+        None,
+        vec![
+            Record::debit(custody_key(owner, &t.asset), t.amount),
+            Record::credit(custody_key(t.to, &t.asset), t.amount),
+        ],
+    )?;
+    if t.to != custodian {
+        state.custody.custodian_of.entry(t.to).or_insert(custodian);
+    }
+    Ok(vec![Event::CustodyTransferred {
+        custodian,
+        from: owner,
+        to: t.to,
+        asset: t.asset.clone(),
+        amount: t.amount,
+        memo: t.memo.clone(),
+    }])
 }
 
 /// Called by the vaults module once the observer quorum settled a custody

@@ -257,6 +257,10 @@ pub enum Action {
     SetPlanRenewal {
         tier: u8,
     },
+    /// Move a custody balance from one account to another inside the same
+    /// client's custody (docs/models.md, "Transfers inside custody"). One
+    /// ledger posting; the client's vault backs the same total.
+    TransferCustody(CustodyTransfer),
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -376,7 +380,8 @@ impl Action {
             | Action::RequestCustodyAddress { .. }
             | Action::ObserveCustodyDeposit { .. }
             | Action::WithdrawCustody(_)
-            | Action::SwapCustody(_) => "custody",
+            | Action::SwapCustody(_)
+            | Action::TransferCustody(_) => "custody",
             Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
             Action::RotateCustodyVault(_)
             | Action::CancelCustodyRotation { .. }
@@ -772,6 +777,22 @@ pub struct CustodySwap {
     /// The custodian may sign for a member account (transparent mode);
     /// `None` means the signer's own balance moves.
     pub on_behalf_of: Option<Address>,
+}
+
+/// A custody balance moving between two accounts of one custodian. This
+/// is how a custodial client posts its own users' trades on chain: the
+/// seller's balance to an escrow account of the client's, and from there
+/// to the buyer on release or back to the seller on cancel.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct CustodyTransfer {
+    pub to: Address,
+    pub asset: Asset,
+    pub amount: Amount,
+    /// The custodian may sign for a member account; `None` means the
+    /// signer's own balance moves.
+    pub on_behalf_of: Option<Address>,
+    /// The client's own reference (a trade id, a leg), echoed in the event.
+    pub memo: Option<String>,
 }
 
 // ---------------- staking ----------------

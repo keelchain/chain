@@ -201,6 +201,13 @@ is the client's reserve versus liabilities per asset; the per-network switch
 applies the same way (enable a network once its custody vault is registered
 and `/v1/ready/{chain}` is green for deposits).
 
+To settle a trade between two of your own users without leaving custody,
+move the balance with `TransferCustody`: seller to your escrow account,
+then to the buyer on release or back on cancel, each leg one posting you
+sign (`on_behalf_of`) with your own reference in `memo`. No float, no
+swap, no usage price; the `CustodyTransferred` event reaches both
+accounts' streams (`models.md`, "Transfers inside custody").
+
 To let a custody balance trade on the chain's book or escrow, swap it
 against your own floats with `SwapCustody` (`to: "deposit"`), and swap it
 back (`to: "custody"`) when the user is done: one posting, no external

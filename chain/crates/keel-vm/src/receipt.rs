@@ -440,6 +440,16 @@ pub enum Event {
         amount: Amount,
         to: String,
     },
+    /// A custody balance moved from `from` to `to`, both in `custodian`'s
+    /// custody; `memo` is the client's own reference.
+    CustodyTransferred {
+        custodian: Address,
+        from: Address,
+        to: Address,
+        asset: Asset,
+        amount: Amount,
+        memo: Option<String>,
+    },
     /// The offer owner named (or with `count` 0 cleared) the arbitrators a
     /// taker accepts by taking the offer.
     OfferArbitratorsSet {
