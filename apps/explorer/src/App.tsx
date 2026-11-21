@@ -67,7 +67,6 @@ function NetworkRoutes({ networks, apiFactory }: { networks: Network[]; apiFacto
           <Route path="governance/:id" element={<ProposalPage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="dashboard/:tab" element={<DashboardPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

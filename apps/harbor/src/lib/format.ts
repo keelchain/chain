@@ -64,13 +64,6 @@ export function formatInt(n: number | string | null | undefined): string {
   return groupThousands(s);
 }
 
-/** USD micro-units (6 decimals) as "$1,234.56". */
-export function formatUsd(micro: string | number | null | undefined, opts: { compact?: boolean } = {}): string {
-  if (micro === null || micro === undefined) return '—';
-  if (opts.compact) return `$${formatAmount(micro, 6, { compact: true })}`;
-  return `$${formatAmount(micro, 6, { maxFraction: 2, minFraction: 2 })}`;
-}
-
 export function formatBps(bps: number | string | null | undefined): string {
   if (bps === null || bps === undefined) return '—';
   const n = Number(bps);
@@ -108,13 +101,6 @@ export function formatExact(ts: number | null | undefined): string {
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`;
 }
 
-export function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
-  if (seconds < 86_400) return `${(seconds / 3600).toFixed(seconds % 3600 ? 1 : 0)} h`;
-  return `${(seconds / 86_400).toFixed(1)} d`;
-}
-
 /** Well-known decimals, used only when a response lacks `decimals`. */
 export const KNOWN_DECIMALS: Record<string, number> = {
   KEEL: 6,
@@ -130,12 +116,4 @@ export const KNOWN_DECIMALS: Record<string, number> = {
   'SOL.SOL': 9,
   'SOL.USDC': 6,
 };
-
-/** Decimals for an asset id, or for a bare symbol (`BTC` → `BTC.BTC`). */
-export function decimalsOf(asset: string, table: Record<string, number> = KNOWN_DECIMALS): number {
-  const direct = table[asset];
-  if (direct !== undefined) return direct;
-  const bySymbol = Object.entries(table).find(([id]) => id.endsWith(`.${asset}`));
-  return bySymbol ? bySymbol[1] : 6;
-}
 

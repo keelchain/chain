@@ -4,8 +4,7 @@ import { ActionResult, Field, Submit, useAction } from '../components/action';
 import { WALLET_URL } from '../components/Layout';
 import { Amount, Card, Hex, Notice } from '../components/ui';
 import { KEEL_DECIMALS, USD_DECIMALS, big, fromUnits, keel, money, shortfall, toUnits } from '../lib/amounts';
-import { formatDuration } from '../lib/format';
-import { isRunning, offeredTiers } from '../lib/plan';
+import { isRunning, offeredTiers, periodLabel } from '../lib/plan';
 import { useNetwork } from '../network/NetworkContext';
 import { explorerUrl } from '../network/networks';
 import { useHarbor, type Harbor } from './ClientGate';
@@ -171,7 +170,7 @@ function Unlock({ h }: { h: Harbor }) {
   // Only an unlock that takes a plan that counts today below its lock suspends it.
   const suspends = running && h.status === 'active' && units !== null && units > 0n && after < big(plan.lock_keel);
   const free = running ? shortfall(locked, big(plan.lock_keel)) : locked;
-  const wait = delay.data !== null && delay.data !== undefined ? formatDuration(delay.data) : null;
+  const wait = delay.data !== null && delay.data !== undefined ? periodLabel(delay.data) : null;
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (units === null || units === 0n) return;
@@ -261,7 +260,7 @@ export function FundsPage() {
         <h1>Funds</h1>
         <span className="sub">What the operator account holds, and the lock.</span>
       </div>
-      <OwedNotice client={h.client} funds={h.funds} />
+      <OwedNotice client={h.client} funds={h.funds} link={false} />
       <Balances h={h} />
       <div className="grid-2">
         <TopUp h={h} />

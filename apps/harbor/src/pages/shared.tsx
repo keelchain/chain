@@ -28,7 +28,7 @@ export function dateTime(ms: number): string {
 }
 
 /** What is owed and what that closes, shown wherever money is decided. */
-export function OwedNotice({ client, funds }: { client: ClientRecord; funds: Funds }) {
+export function OwedNotice({ client, funds, link = true }: { client: ClientRecord; funds: Funds; link?: boolean }) {
   const href = useHref();
   const owed = big(client.usage_owed);
   if (owed === 0n) return null;
@@ -39,9 +39,11 @@ export function OwedNotice({ client, funds }: { client: ClientRecord; funds: Fun
       tone="bad"
       title={`${money(owed, asset)} of usage is owed`}
       action={
+        link && (
         <Link className="btn" to={href('/funds')}>
           {missing > 0n ? `Add ${money(missing, asset)}` : 'Funds'}
         </Link>
+        )
       }
     >
       Until it is paid your users pay the protocol fees again, your pool pays for none of their actions, and no deposit address or payout is issued to them.{' '}

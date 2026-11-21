@@ -6,8 +6,7 @@ import { useHref } from '../network/NetworkContext';
 import { useWallet } from '../wallet/WalletContext';
 import { Amount, Hex } from './ui';
 
-/** Spendable balance of `asset` from a balances list, as a display string
- *  (used by the dashboard, which reads the node RPC for the nonce as well). */
+/** Spendable balance of `asset` from a balances list, as a display string. */
 export function spendable(balances: { asset: string; account_type: string; balance: string }[] | undefined, asset: string, decimals: number): string {
   const row = balances?.find((b) => b.asset === asset && b.account_type === 'deposit');
   if (!row) return '0';

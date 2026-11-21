@@ -1,0 +1,393 @@
+/**
+ * The client's business settings: the retail fees it charges its own
+ * users and what they have earned, and the custody tools for a client that
+ * runs its own vault (generations, rotation to a fresh key, float swaps).
+ */
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useCustody, useDecimals } from '../api/hooks';
+import type { Custody } from '../api/types';
+import { ActionResult, Field, Submit, useAction } from '../components/action';
+import { Amount, Badge, Card, ErrorState, Hex, KV, Loading, Tabs } from '../components/ui';
+import { toUnits } from '../lib/amounts';
+import { formatBps, formatInt } from '../lib/format';
+import { useHref } from '../network/NetworkContext';
+import { useHarbor, type Harbor } from './ClientGate';
+
+type Tab = 'fees' | 'vaults' | 'rotate' | 'swap';
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'fees', label: 'Retail fees' },
+  { id: 'vaults', label: 'Vaults' },
+  { id: 'rotate', label: 'Rotate' },
+  { id: 'swap', label: 'Float swap' },
+];
+
+const CHAINS = ['Bitcoin', 'Ethereum', 'Tron', 'Bsc', 'Solana'] as const;
+type Chain = (typeof CHAINS)[number];
+const CHAIN_BY_CODE: Record<string, Chain> = { BTC: 'Bitcoin', ETH: 'Ethereum', TRON: 'Tron', BSC: 'Bsc', SOL: 'Solana' };
+const CHAIN_NAME: Record<Chain, string> = { Bitcoin: 'Bitcoin', Ethereum: 'Ethereum', Tron: 'Tron', Bsc: 'BNB Smart Chain', Solana: 'Solana' };
+
+/** The chain as the action names it, from the code (`BTC`) or the name the RPC returns. */
+function chainOf(v: string): Chain | null {
+  return CHAIN_BY_CODE[v] ?? (CHAINS.includes(v as Chain) ? (v as Chain) : null);
+}
+function chainName(v: string): string {
+  const c = chainOf(v);
+  return c ? CHAIN_NAME[c] : v;
+}
+
+// ---------------------------------------------------------------- retail fees
+
+const BPS = /^\d{1,5}$/;
+
+function FeeInput({ label, value, onChange, cap }: { label: string; value: string; onChange: (v: string) => void; cap: number | null }) {
+  const ok = BPS.test(value);
+  const over = ok && cap !== null && Number(value) > cap;
+  return (
+    <Field
+      label={`${label} (basis points)`}
+      hint={over ? <span className="down">Above the cap of {cap} bps.</span> : ok ? `${formatBps(value)} of the amount${cap !== null ? ` · cap ${cap} bps` : ''}` : 'A whole number of basis points; 100 = 1%.'}
+    >
+      <input className="input" value={value} onChange={(e) => onChange(e.target.value)} inputMode="numeric" pattern="[0-9]{1,5}" required aria-invalid={!ok || over} />
+    </Field>
+  );
+}
+
+function Fees({ h }: { h: Harbor }) {
+  const act = useAction();
+  const c = h.client;
+  const [p2p, setP2p] = useState(String(c.fee?.p2p_bps ?? 0));
+  const [taker, setTaker] = useState(String(c.fee?.taker_bps ?? 0));
+  const [withdraw, setWithdraw] = useState(String(c.fee?.withdraw_bps ?? 0));
+  // With the protocol fee waived the schedule is the client's own business; otherwise governance caps it.
+  const caps = c.protocol_fee_waived ? null : c.caps;
+  const fields = [p2p, taker, withdraw];
+  const valid = fields.every((v) => BPS.test(v)) && (!caps || (Number(p2p) <= caps.p2p_bps && Number(taker) <= caps.taker_bps && Number(withdraw) <= caps.withdraw_bps));
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!valid) return;
+    void act.run(
+      { SetClientFee: { p2p_bps: Number(p2p), taker_bps: Number(taker), withdraw_bps: Number(withdraw) } },
+      'Set your retail fees',
+      `P2P ${formatBps(p2p)}, taker ${formatBps(taker)}, withdrawal ${formatBps(withdraw)}, charged to the accounts you attested.`,
+    );
+  };
+  return (
+    <div className="grid-2">
+      <Card title="Retail fees">
+        <form className="form" onSubmit={submit}>
+          <p className="small text-2">
+            What the accounts you attested pay you, taken from the payer and credited to this account in the same posting.{' '}
+            {caps ? 'Your users pay these on top of the protocol fee, and governance caps them.' : 'While your plan runs they pay no protocol fee, so this is all they pay; there is no cap.'}
+          </p>
+          <FeeInput label="P2P escrow release" value={p2p} onChange={setP2p} cap={caps?.p2p_bps ?? null} />
+          <FeeInput label="Order-book fill (taker)" value={taker} onChange={setTaker} cap={caps?.taker_bps ?? null} />
+          <FeeInput label="Withdrawal" value={withdraw} onChange={setWithdraw} cap={caps?.withdraw_bps ?? null} />
+          <div className="row">
+            <Submit act={act} disabled={!valid}>
+              Save fees
+            </Submit>
+            <span className="small text-2">{c.fee ? `Now: ${formatBps(c.fee.p2p_bps)} / ${formatBps(c.fee.taker_bps)} / ${formatBps(c.fee.withdraw_bps)}` : 'No retail fee is set yet.'}</span>
+          </div>
+          <ActionResult act={act} />
+        </form>
+      </Card>
+      <div className="stack">
+        <Card title="Earned" flush>
+          {c.earned.length === 0 ? (
+            <div className="empty">No retail fees earned yet.</div>
+          ) : (
+            <div className="table-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th className="num">Retail fees earned</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {c.earned.map((e) => (
+                    <tr key={e.asset}>
+                      <td>{e.asset}</td>
+                      <td className="num">
+                        <Amount value={e.amount} asset={e.asset} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="card-body small text-2">Totals since the account became a client; each fee is already in your balance in the asset it was paid in.</div>
+        </Card>
+        <Card title="Attested accounts">
+          <div className="big-figure">{formatInt(c.attested_accounts)}</div>
+          <p className="small text-2">Accounts whose attestation names you. They pay your retail fees, and while your plan runs their protocol fees are waived and their actions can come out of your daily pool.</p>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- custody
+
+function Vaults({ c }: { c: Custody }) {
+  const act = useAction();
+  return (
+    <>
+      {c.rotations.length > 0 && (
+        <Card title="Pending rotations">
+          <div className="stack-s">
+            {c.rotations.map((r) => {
+              const chain = chainOf(r.chain);
+              return (
+                <div key={`${r.chain}:${r.gen}`} className="row between">
+                  <span>
+                    {chainName(r.chain)} → generation {r.gen} at height {formatInt(r.activate_at)} · signer <span className="mono small">{r.signer_url}</span>
+                  </span>
+                  <button type="button" className="btn small" disabled={act.busy || !chain} onClick={() => chain && void act.run({ CancelCustodyRotation: { chain } }, `Cancel the scheduled ${chainName(r.chain)} rotation`)}>
+                    Cancel
+                  </button>
+                </div>
+              );
+            })}
+            <ActionResult act={act} />
+          </div>
+        </Card>
+      )}
+      {c.vaults.length === 0 && (
+        <Card title="Custody vaults">
+          <p className="text-2">
+            No custody vault is registered for this account. A client that holds its users' coins under its own key registers one with <span className="mono">RegisterCustodyVault</span> (SDK or CLI)
+            once its signer is up; it then appears here with its generations.
+          </p>
+        </Card>
+      )}
+      {c.vaults.map((v) => (
+        <Card
+          key={`${v.chain}:${v.gen}`}
+          title={
+            <h2>
+              {chainName(v.chain)} vault · generation {v.gen}
+            </h2>
+          }
+          actions={
+            <span className="row">
+              <Badge tone={v.status === 'Active' ? 'good' : v.status === 'Draining' ? 'warn' : 'neutral'}>{v.status}</Badge>
+              {v.status === 'Draining' && <Badge>empties through payouts</Badge>}
+            </span>
+          }
+          flush
+        >
+          <KV
+            rows={[
+              ['Key', <Hex value={v.vault.public_key} head={12} tail={8} />],
+              ['Signer', <span className="mono small">{v.signer_url}</span>],
+              ['Own address (index 0)', v.address ? <span className="mono small">{v.address}</span> : '—'],
+              ['Deposit indexes', formatInt(v.next_deposit_index - 1)],
+              ...(v.status === 'Draining'
+                ? [['Grace ends at height', formatInt(v.drain_until)] as [ReactNode, ReactNode], ['Observers reporting empty', formatInt(v.reported_empty)] as [ReactNode, ReactNode]]
+                : []),
+            ]}
+          />
+          {v.reserves.length > 0 && (
+            <div className="table-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th className="num">Reserve</th>
+                    <th className="num">Liabilities</th>
+                    <th>State</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.reserves.map((r) => (
+                    <tr key={r.asset}>
+                      <td>{r.asset}</td>
+                      <td className="num">
+                        <Amount value={r.reserve} asset={r.asset} />
+                      </td>
+                      <td className="num">
+                        <Amount value={r.liabilities} asset={r.asset} />
+                      </td>
+                      <td>{r.halted ? <Badge tone="bad">Halted</Badge> : <Badge tone="good">Covered</Badge>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      ))}
+      {c.floats.length > 0 && (
+        <Card title="Floats" flush>
+          <div className="table-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th className="num">In your vault (custody)</th>
+                  <th className="num">In the network vault (deposit)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {c.floats.map((f) => (
+                  <tr key={f.asset}>
+                    <td>{f.asset}</td>
+                    <td className="num">
+                      <Amount value={f.custody} asset={f.asset} />
+                    </td>
+                    <td className="num">
+                      <Amount value={f.deposit} asset={f.asset} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="card-body small text-2">What a float swap can draw on in each direction; {formatInt(c.accounts)} accounts in your custody.</div>
+        </Card>
+      )}
+    </>
+  );
+}
+
+function Rotate() {
+  const act = useAction();
+  const [chain, setChain] = useState<Chain>('Bitcoin');
+  const [pk, setPk] = useState('');
+  const [cc, setCc] = useState('');
+  const [url, setUrl] = useState('');
+  const [at, setAt] = useState('');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void act.run(
+      { RotateCustodyVault: { chain, public_key: pk.trim(), chain_code: cc.trim(), signer_url: url.trim(), activate_at: at.trim() ? Number(at) : null } },
+      `Rotate the ${CHAIN_NAME[chain]} vault to a fresh key`,
+    );
+  };
+  return (
+    <Card title="Rotate to a fresh pool">
+      <p className="text-2 small">
+        Start a second signer for a new key (its <span className="mono">keel-tss pubkey</span> prints the key and chain code), then register it here. Every account gets a new deposit address on that
+        chain; Keel accounts and balances do not change. The old key keeps crediting its addresses and paying withdrawals until it is empty and its grace is over. The two generations are separate
+        pools: nothing is ever moved from the old key to the new one.
+      </p>
+      <form className="form" onSubmit={submit}>
+        <Field label="Chain">
+          <select className="select" value={chain} onChange={(e) => setChain(e.target.value as Chain)}>
+            {CHAINS.map((c) => (
+              <option key={c} value={c}>
+                {CHAIN_NAME[c]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="New public key" hint="33 bytes, hex">
+          <input className="input mono" value={pk} onChange={(e) => setPk(e.target.value)} pattern="[0-9a-fA-F]{66}" required />
+        </Field>
+        <Field label="Chain code" hint="32 bytes, hex">
+          <input className="input mono" value={cc} onChange={(e) => setCc(e.target.value)} pattern="[0-9a-fA-F]{64}" required />
+        </Field>
+        <Field label="Signer URL" hint="The new key's signer; keep the old signer running for the draining generation.">
+          <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://signer-2.example.com" required />
+        </Field>
+        <Field label="Activate at height" hint="Empty = at once">
+          <input className="input" value={at} onChange={(e) => setAt(e.target.value)} inputMode="numeric" pattern="[0-9]*" />
+        </Field>
+        <div className="row">
+          <Submit act={act}>Rotate</Submit>
+        </div>
+        <ActionResult act={act} />
+      </form>
+    </Card>
+  );
+}
+
+function Swap({ c }: { c: Custody }) {
+  const act = useAction();
+  const dec = useDecimals();
+  const assets = c.floats.map((f) => f.asset);
+  const [asset, setAsset] = useState(assets[0] ?? 'BTC.BTC');
+  const [amount, setAmount] = useState('');
+  const [to, setTo] = useState<'deposit' | 'custody'>('deposit');
+  const [behalf, setBehalf] = useState('');
+  const units = toUnits(amount, dec(asset));
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (units === null || units === 0n) return;
+    void act.run(
+      { SwapCustody: { asset, amount: units, to, on_behalf_of: behalf.trim() ? behalf.trim() : null } },
+      to === 'deposit' ? `Swap ${amount} ${asset} from custody into the market` : `Swap ${amount} ${asset} back into custody`,
+    );
+  };
+  return (
+    <Card title="Float swap">
+      <p className="text-2 small">
+        Move a balance between your custody and the network vault against your own floats, in one posting, with no coins moving on any external chain. Into the market (deposit) it trades on the book
+        and escrow; back into custody it leaves. Each swap is charged the payout price. Sign for one of your accounts with the field below.
+      </p>
+      <form className="form" onSubmit={submit}>
+        <Field label="Asset">
+          <input className="input mono" list="swap-assets" value={asset} onChange={(e) => setAsset(e.target.value)} required />
+          <datalist id="swap-assets">
+            {assets.map((a) => (
+              <option key={a} value={a} />
+            ))}
+          </datalist>
+        </Field>
+        <Field label="Amount" hint={amount !== '' && units === null ? <span className="down">Not an amount of {asset}.</span> : undefined}>
+          <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" required aria-invalid={amount !== '' && units === null} />
+        </Field>
+        <Field label="Direction">
+          <select className="select" value={to} onChange={(e) => setTo(e.target.value as 'deposit' | 'custody')}>
+            <option value="deposit">custody → market (deposit)</option>
+            <option value="custody">market (deposit) → custody</option>
+          </select>
+        </Field>
+        <Field label="On behalf of" hint="An account in your custody (64 hex); empty = your own balance">
+          <input className="input mono" value={behalf} onChange={(e) => setBehalf(e.target.value)} pattern="[0-9a-fA-F]{64}" />
+        </Field>
+        <div className="row">
+          <Submit act={act} disabled={units === null || units === 0n}>
+            Swap
+          </Submit>
+        </div>
+        <ActionResult act={act} />
+      </form>
+    </Card>
+  );
+}
+
+function CustodyTab({ h, tab }: { h: Harbor; tab: Exclude<Tab, 'fees'> }) {
+  const custody = useCustody(h.address);
+  if (tab === 'rotate') return <Rotate />;
+  if (custody.isError) return <ErrorState error={custody.error} what="custody vaults" />;
+  if (!custody.data) {
+    return (
+      <Card>
+        <Loading rows={5} />
+      </Card>
+    );
+  }
+  return tab === 'vaults' ? <Vaults c={custody.data} /> : <Swap c={custody.data} />;
+}
+
+export function BusinessPage() {
+  const h = useHarbor();
+  const href = useHref();
+  const navigate = useNavigate();
+  const { tab: param } = useParams();
+  const tab: Tab = TABS.find((t) => t.id === param)?.id ?? 'fees';
+  return (
+    <>
+      <div className="page-head">
+        <h1>Business</h1>
+        <span className="sub">Your fees, your users and your vaults.</span>
+      </div>
+      <Tabs label="Business sections" tabs={TABS} value={tab} onChange={(t) => navigate(href(t === 'fees' ? '/business' : `/business/${t}`))} />
+      {tab === 'fees' ? <Fees h={h} /> : <CustodyTab h={h} tab={tab} />}
+    </>
+  );
+}

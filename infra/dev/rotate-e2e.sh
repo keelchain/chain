@@ -267,8 +267,15 @@ rotate() { # seed port
   local pk cc
   pk=$(head -1 "$log" | json 'd["public_key"]'); cc=$(head -1 "$log" | json 'd["chain_code"]')
   # Generations are separate pools: the action has no way to ask for a sweep.
-  "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 custody rotate BTC \
-    --public-key "$pk" --chain-code "$cc" --signer-url "http://127.0.0.1:$2" > "$KEEL_DEVNET_DIR/rotate-$2.json"
+  # The client is observer 0's key, and that observer reports the fee rate
+  # every few seconds: a send can find its nonce taken. Try again then.
+  local try
+  for try in 1 2 3 4 5; do
+    "$KEEL" --rpc "$RPC0" send --secret "$CLIENT_SECRET" --wait 30 custody rotate BTC \
+      --public-key "$pk" --chain-code "$cc" --signer-url "http://127.0.0.1:$2" > "$KEEL_DEVNET_DIR/rotate-$2.json" 2> "$KEEL_DEVNET_DIR/rotate-$2.err" && break
+    grep -q 'nonce already queued' "$KEEL_DEVNET_DIR/rotate-$2.err" || { cat "$KEEL_DEVNET_DIR/rotate-$2.err"; break; }
+    sleep 1
+  done
   grep -q '"PoolRotated"' "$KEEL_DEVNET_DIR/rotate-$2.json" || { cat "$KEEL_DEVNET_DIR/rotate-$2.json"; fail "rotation refused"; }
 }
 export -f gens gen_field user_addr lookup_gen json

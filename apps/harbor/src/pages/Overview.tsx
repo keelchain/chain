@@ -186,7 +186,7 @@ export function OverviewPage() {
           {h.client.attested_accounts === 1 ? '1 attested account' : `${formatInt(h.client.attested_accounts)} attested accounts`}
         </span>
       </div>
-      <OwedNotice client={h.client} funds={h.funds} />
+      <OwedNotice client={h.client} funds={h.funds} link={false} />
       <NextStepCard h={h} />
       <PlanSummary h={h} />
       <Meters h={h} />

@@ -20,6 +20,7 @@ Configuration (build time, Vite env):
 | `VITE_NETWORKS` | JSON list of `{id, name, api}`; first entry is the default. Ids must be `[a-z0-9-]+`. |
 | `VITE_API_MOCK` | `1` serves every network from the deterministic in-browser mock (design work, demos, tests). |
 | `VITE_BASE` | Base path when hosted under a prefix. |
+| `VITE_HARBOR_URL` | Where the dashboard sends a connected client (an attester) to manage its plan, lock, fees and vaults. Default `https://harbor.keelchain.com`. |
 
 Deploying for testnet + mainnet: run two indexers (their `--network` and
 databases differ), build once with
@@ -34,4 +35,7 @@ actions + events), accounts (balances, budget, transfers, orders, offers,
 trades, deposit addresses), assets, markets (live book, depth chart,
 candles, fills), orders, P2P offers and trades (status history, disputes),
 validators + epochs, vaults (deposits/outbounds with external chain links),
-governance (proposals, votes, params + history), search.
+governance (proposals, votes, params + history), search, and the dashboard
+behind Connect (the connected wallet's own balances). Clients manage their
+plan, KEEL lock, usage, retail fees and custody vaults in Keel Harbor
+(`apps/harbor`); the dashboard links a connected client there.

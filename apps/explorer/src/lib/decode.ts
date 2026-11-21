@@ -82,6 +82,11 @@ export const ACTION_LABELS: Record<string, string> = {
   Vote: 'Vote',
   ExecuteProposal: 'Execute proposal',
   Attest: 'Attest tier',
+  LockBudget: 'Lock KEEL',
+  UnlockBudget: 'Unlock KEEL',
+  SetClientFee: 'Set client fees',
+  BuyPlan: 'Buy client plan',
+  SetPlanRenewal: 'Set plan renewal',
   EpochBoundary: 'Epoch boundary',
 };
 
@@ -96,6 +101,7 @@ export const MODULE_LABELS: Record<string, string> = {
   staking: 'Staking',
   gov: 'Governance',
   attest: 'Attestations',
+  clients: 'Clients',
 };
 
 export function actionLabel(kind: string): string {
@@ -125,6 +131,8 @@ function feeNoteFor(kind: string): string {
     case 'ReportNetworkFee':
     case 'RegisterVault':
       return 'Observer action: budget-free, backed by the observer bond (slashable for false observations).';
+    case 'BuyPlan':
+      return 'The tier\u2019s plan fee is taken in USDT from the client\u2019s balance now (less the credit for a running period on an upgrade, plus any usage owed), and again at each renewal. No gas.';
     case 'EpochBoundary':
       return 'System action at the epoch boundary: no signer fee; rewards are distributed pro rata.';
     default:
@@ -439,6 +447,27 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
         { name: 'Tier', field: { k: 'number', value: num(p['tier']) } },
         { name: 'Expires', field: { k: 'timestamp', value: num(p['expires_at']) * 1000 } },
       ]);
+    case 'LockBudget':
+      return view('Lock KEEL (action capacity and the client plan lock)', [{ name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: 'KEEL' } }]);
+    case 'UnlockBudget':
+      return view('Unlock KEEL', [{ name: 'Amount', field: { k: 'amount', value: amountStr(p['amount']), asset: 'KEEL' } }]);
+    case 'SetClientFee':
+      return view('Set retail fees', [
+        { name: 'P2P releases', field: { k: 'bps', value: num(p['p2p_bps']) } },
+        { name: 'Order-book fills', field: { k: 'bps', value: num(p['taker_bps']) } },
+        { name: 'Withdrawals', field: { k: 'bps', value: num(p['withdraw_bps']) } },
+      ]);
+    case 'BuyPlan':
+      return view(`Buy client plan, tier ${amountStr(p['tier'])}`, [
+        { name: 'Tier', field: { k: 'number', value: num(p['tier']) } },
+        { name: 'Paid in', field: { k: 'asset', value: 'USDT' } },
+      ]);
+    case 'SetPlanRenewal': {
+      const tier = num(p['tier']);
+      return view(tier === 0 ? 'Stop renewing the client plan' : `Renew the client plan at tier ${tier}`, [
+        { name: 'Renews at', field: { k: 'text', value: tier === 0 ? 'Does not renew' : `Tier ${tier}` } },
+      ]);
+    }
     case 'EpochBoundary':
       return view('Epoch boundary', []);
     default:
@@ -459,7 +488,7 @@ export interface DecodedEvent {
   tone: 'good' | 'warn' | 'bad' | 'neutral';
 }
 
-const ADDRESS_KEYS = new Set(['from', 'to', 'owner', 'buyer', 'seller', 'by', 'voter', 'proposer', 'subject', 'observer', 'validator', 'admin']);
+const ADDRESS_KEYS = new Set(['from', 'to', 'owner', 'buyer', 'seller', 'by', 'voter', 'proposer', 'subject', 'observer', 'validator', 'admin', 'client', 'payer']);
 const ASSET_KEYS = new Set(['asset', 'from_asset', 'into']);
 const AMOUNT_KEYS = new Set(['amount', 'resting', 'quantity', 'quote', 'fee', 'released', 'paid', 'to_buyer', 'buyer_amount', 'seller_amount', 'weight', 'reserves', 'liabilities', 'refunded']);
 
@@ -483,6 +512,15 @@ export function decodeEvent(e: EventRecord): DecodedEvent {
     if (value === null || value === undefined) continue;
     if (type === 'StableMinted' && key === 'from') {
       fields.push({ name: 'Reserve asset', field: { k: 'asset', value: str(value) } });
+      continue;
+    }
+    // Client billing: usage and allowances are USD micro, the stable asset's smallest unit.
+    if ((key === 'allowance' && type === 'ClientPlanStarted') || (key === 'amount' && (type === 'UsageCovered' || type === 'UsageOwed'))) {
+      fields.push({ name, field: { k: 'amount', value: amountStr(value), asset: 'USDT' } });
+      continue;
+    }
+    if (key === 'ends_at' && type === 'ClientPlanStarted') {
+      fields.push({ name: 'Period ends', field: { k: 'timestamp', value: num(value) * 1000 } });
       continue;
     }
     if (ADDRESS_KEYS.has(key) && typeof value === 'string') {

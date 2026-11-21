@@ -26,7 +26,7 @@ export interface WalletValue {
 const WalletContext = createContext<WalletValue | null>(null);
 const SESSION_KEY = 'keel-harbor-connected';
 
-/** Stands in for the extension under `VITE_API_MOCK`: connects, signs nothing. */
+/** Stands in for the extension under `VITE_API_MOCK`: connected from the start, signs nothing. */
 function demoProvider(network: string): KeelProvider {
   const account: AccountInfo = { address: MOCK_ADDRESS, network, chainId: 0 };
   const refuse = () => Promise.reject(new Error('This is demo data: nothing is signed or sent.'));
@@ -67,9 +67,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         offAccount();
         offDisconnect();
       };
-      let wanted = false;
+      // The demo opens connected; Disconnect shows the landing page.
+      let wanted = isMockEnabled();
       try {
-        wanted = window.sessionStorage.getItem(SESSION_KEY) === '1';
+        wanted ||= window.sessionStorage.getItem(SESSION_KEY) === '1';
       } catch {
         // storage unavailable
       }
