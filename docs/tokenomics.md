@@ -96,15 +96,36 @@ own vault and charge them whatever you like on your own ledger; the chain
 never sees those fees. You pay a membership and a price per use of the
 rails. Your users pay Keel nothing.
 
-| What you pay | Price | When |
+Two different things are charged on the rails, and they are not the same
+money. The **service price** is Keel's: fixed, in dollars, the same on
+every network. The **network fee** is the external chain's: it changes
+with that network, Keel adds nothing to it and keeps none of it.
+
+| What you pay Keel | Price | When |
 |---|---|---|
 | KEEL kept locked | 100,000 / 500,000 / 2,000,000 by tier, returned in full on unlock | while the plan runs |
-| Plan fee | $300 / $1,000 / $3,000 by tier, in USDT; includes $300 / $1,200 / $4,000 of the usage below | every 30 days |
-| Deposit address issued in your vault | $0.02 | per address |
-| Withdrawal from your vault, or a float swap | $0.10 | per withdrawal or swap |
-| Vault rotation | $0 (`pools.usage_rotation_usd_micro`) | per rotation |
-| Network cost of a withdrawal | the actual cost, from the gas you keep in your own vault | per withdrawal |
+| Plan fee | $300 / $1,000 / $3,000 by tier, in USDT; includes $300 / $1,200 / $4,000 of the service prices below | every 30 days |
+| Service price: deposit address issued in your vault | $0.02, on any network | per address |
+| Service price: withdrawal from your vault, or a float swap | $0.10, on any network | per withdrawal or swap |
+| Service price: vault rotation | $0 (`pools.usage_rotation_usd_micro`) | per rotation |
 | A user's balance you swapped onto the book: filled order / escrow release / dispute ruling | $0.002 / $0.05 / $1 | per flow |
+
+How it is taken: from the USDT on your operator account on Keel, your
+plan's included usage first, inside the action that asks for the address
+or queues the withdrawal (`UsageCovered`, `UsageCharged`). If the account
+cannot cover it, that action is refused and nothing is taken.
+
+| What you pay the network | Price | When |
+|---|---|---|
+| Network fee of a withdrawal from your vault | what the transaction actually cost on that network at that moment (table below the tabs) | when the payout confirms |
+| Network fee of a deposit | nothing through Keel: the sender pays it on the external chain | never |
+
+How it is taken: your vault pays the fee, because it is your vault that
+sends. The chain then takes exactly that amount from your **gas**: the
+native coin of that network (BTC, TRX, BNB, SOL) you keep as a custody
+balance at your vault's own address. No estimate and no margin. If the gas
+is empty the payout still goes out and the fee is booked against you,
+settled from your next gas top-up.
 
 | What does not apply to you | |
 |---|---|
@@ -134,7 +155,8 @@ in full. You pay a membership and a small fixed price per flow.
 | What your users pay | |
 |---|---|
 | To you | the fee you set: a share of a P2P release, of a taker fill, of a withdrawal |
-| To Keel | nothing on trades, releases or rulings. On a withdrawal only the external network's cost, passed through at cost |
+| To Keel | nothing on trades, releases or rulings |
+| To the network | on a withdrawal, that network's fee at that moment (table below the tabs): an estimate is locked when the withdrawal is queued, in the network's native coin if the user holds it and otherwise in the coin being withdrawn; the actual fee is settled when the payout confirms and the difference is refunded |
 | To act | nothing, and no KEEL: their actions come out of your plan's daily pool |
 
 | What does not apply to you | |
@@ -154,7 +176,8 @@ you; these are the only fees.
 | Order book, taking an order | 10 bps | the taker, from what it receives |
 | Order book, making an order | 0 | nobody |
 | P2P trade released | 1% (+1% under $50) | the seller |
-| Withdrawal | the external network's cost + $1 flat | the withdrawer |
+| Withdrawal, to Keel | $1 flat | the withdrawer |
+| Withdrawal, to the network | that network's fee at that moment (table below the tabs): an estimate is locked when you withdraw, in the network's native coin if you hold it and otherwise in the coin you withdraw; the actual fee is settled when the payout confirms and the difference comes back to you | the withdrawer |
 | Dispute | 1% of the escrow | the side that loses |
 | Acting at all | no fee: 1 KEEL locked gives a hundred actions a day and comes back on unlock | you lock, you do not pay |
 
@@ -163,6 +186,19 @@ these fees stop and you pay what that exchange charges.
 
 </div>
 </div>
+
+**Network fees move, per network.** They are not a Keel parameter and no
+number here would stay true: the observers report each network's current
+rate to the chain (`ReportNetworkFee`), the chain uses the median, and the
+fee actually paid is what is charged. The live rate is `fee_rate` in `GET
+/v1/vaults/{chain}`.
+
+| Network | The rate the observers report | What a payout is sized at |
+|---|---|---|
+| Bitcoin | satoshis per virtual byte | about 200 vB |
+| Ethereum, BNB Smart Chain | gas price | 21,000 gas for the native coin, 65,000 for a token |
+| Tron | the cost of one transfer, in sun | one transfer |
+| Solana | lamports per signature | one signature for SOL; up to 410 for a token payout that has to create the recipient's token account |
 
 Two things are the same on every path. The liquidity pool pays 50% of its
 gain above its high-water mark, in kind, each epoch (it is the pool's
