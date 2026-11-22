@@ -5,6 +5,13 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **payouts for accounts without a key** (2026-11-22).
+  `WithdrawCustodyFor { owner, asset, via, to, amount }`: the custodian
+  pays out of an account in its custody in one action (`via` for USDT).
+  Session scope `client_payouts` (bit 8) lets a service key send it,
+  apart from `client_ops`. Event `CustodyNetworkFeePaid { custodian,
+  outbound_id, asset, amount }` reports the network fee each custody
+  payout cost its client.
 - Chain and API: **a key for the client's service, keyless user
   accounts, and an event log** (2026-11-22).
   - Session scope `client_ops` (bit 4): a key the operator authorizes for

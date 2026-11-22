@@ -1176,6 +1176,53 @@ fn a_client_runs_its_users_accounts_with_a_session_key_and_no_user_keys() {
     ]);
     assert!(matches!(err(&r[0]), VmError::Unauthorized));
     assert!(matches!(err(&r[1]), VmError::Unauthorized));
+    // Payouts are a scope of their own: the operator gives it to the key
+    // that should send coins out, and to no other.
+    let payout = |amount: u128| Action::WithdrawCustodyFor {
+        owner: customer,
+        asset: usdt(),
+        via: None,
+        to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+        amount,
+    };
+    let (r, _) = c.block(&[bridge.act(payout(1_000_000))]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
+    let mut cashier = Actor::new(91);
+    let now = T0 + c.height + 1;
+    let (r, _) = c.block(&[v.act(Action::AuthorizeSessionKey {
+        key: cashier.addr(),
+        scope: keel_actions::session_scope::CLIENT_PAYOUTS,
+        expires_at: now + 3_600,
+    })]);
+    ok(&r[0]);
+    // One action pays out of the keyless account: no transfer first.
+    let (r, _) = c.block(&[cashier.act(payout(1_000_000))]);
+    ok(&r[0]);
+    assert!(r[0].events.iter().any(|e| matches!(
+        e,
+        Event::CustodyWithdrawalQueued { owner, amount: 1_000_000, .. } if *owner == customer
+    )));
+    assert_eq!(custody::balance(&c.state, customer, &usdt()), 2_000_000);
+    assert_eq!(
+        acct(&c.state, customer, &usdt(), "custody_escrow"),
+        1_000_000
+    );
+    // The payout key does nothing else, a client pays out only of its
+    // own accounts, and USDT has to name its network.
+    let (r, _) = c.block(&[
+        cashier.act(transfer_custody(client, usdt(), 1, Some(customer), "x")),
+        alice.act(payout(1)),
+        cashier.act(Action::WithdrawCustodyFor {
+            owner: customer,
+            asset: usds(),
+            via: None,
+            to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+            amount: 1,
+        }),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
+    assert!(matches!(err(&r[1]), VmError::Unauthorized));
+    assert!(matches!(err(&r[2]), VmError::Invalid(_)));
     // Nobody but the custodian asks for someone else's address.
     let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
         chain: ExtChain::Tron,

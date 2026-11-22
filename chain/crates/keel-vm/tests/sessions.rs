@@ -124,7 +124,7 @@ fn session_authorization_is_validated_and_expires() {
             }),
             alice.act(Action::AuthorizeSessionKey {
                 key: sess.addr(),
-                scope: 8,
+                scope: 16,
                 expires_at: now + 10,
             }),
             alice.act(Action::AuthorizeSessionKey {

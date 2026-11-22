@@ -179,7 +179,8 @@ enum ActionCmd {
 enum SessionCmd {
     /// Let `key` sign for this account within `--scope`: `markets`,
     /// `p2p`, `client-ops` (a client's service: attestations, custody
-    /// addresses, transfers and swaps), or a sum of their bits.
+    /// addresses, transfers and swaps), `client-payouts` (payouts from the
+    /// accounts in its custody), or a sum of their bits.
     Authorize {
         key: String,
         #[arg(long)]
@@ -352,6 +353,17 @@ enum CustodyCmd {
         via: String,
         to: String,
         amount: Amount,
+    },
+    /// Pay out of an account in your custody, signed by you as its
+    /// custodian (or by a key with the `client-payouts` scope). For USDT,
+    /// `--via` names the network's USDT to pay on.
+    PayOut {
+        owner: String,
+        asset: String,
+        to: String,
+        amount: Amount,
+        #[arg(long)]
+        via: Option<String>,
     },
     /// Move a custody balance to other accounts of the same client (its
     /// escrow account, the buyer, a fee account). No coins move. Several
@@ -612,6 +624,7 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 "markets" => keel_actions::session_scope::MARKETS,
                 "p2p" => keel_actions::session_scope::P2P_MANAGE,
                 "client-ops" => keel_actions::session_scope::CLIENT_OPS,
+                "client-payouts" => keel_actions::session_scope::CLIENT_PAYOUTS,
                 n => n
                     .parse()
                     .map_err(|_| anyhow!("--scope is markets, p2p, client-ops or a number"))?,
@@ -641,6 +654,19 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
                 amount,
             })
         }
+        ActionCmd::Custody(CustodyCmd::PayOut {
+            owner,
+            asset,
+            to,
+            amount,
+            via,
+        }) => Action::WithdrawCustodyFor {
+            owner: parse_addr(&owner)?,
+            asset: Asset::new(asset),
+            via: via.map(Asset::new),
+            to,
+            amount,
+        },
         ActionCmd::Custody(CustodyCmd::WithdrawUsdt { via, to, amount }) => {
             Action::WithdrawCustodyStable(keel_actions::WithdrawStable {
                 via: Asset::new(via),

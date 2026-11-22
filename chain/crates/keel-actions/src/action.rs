@@ -271,6 +271,19 @@ pub enum Action {
     /// user picks (`via`): it is redeemed into that network's USDT out of
     /// the custodian's own vault and paid out in one step.
     WithdrawCustodyStable(WithdrawStable),
+    /// The custodian pays out of an account in its custody, in one
+    /// action: what `WithdrawCustody` (or, for `USDT`, with `via` naming
+    /// the network, `WithdrawCustodyStable`) does when the account signs
+    /// for itself. For accounts nobody holds a key for.
+    WithdrawCustodyFor {
+        owner: Address,
+        asset: Asset,
+        /// The network's USDT to pay on, when `asset` is the unified USDT.
+        #[serde(default)]
+        via: Option<Asset>,
+        to: String,
+        amount: Amount,
+    },
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -306,7 +319,12 @@ pub mod session_scope {
     /// moves balances, inside the client's own custody; a wallet never
     /// grants it to a site.
     pub const CLIENT_OPS: u32 = 4;
-    pub const ALL: u32 = MARKETS | P2P_MANAGE | CLIENT_OPS;
+    /// A client's payouts, for the service that sends them:
+    /// WithdrawCustodyFor. Separate from `CLIENT_OPS` because this is the
+    /// one that sends coins out of the client's vault; the operator
+    /// decides which key, if any, may do it.
+    pub const CLIENT_PAYOUTS: u32 = 8;
+    pub const ALL: u32 = MARKETS | P2P_MANAGE | CLIENT_OPS | CLIENT_PAYOUTS;
 }
 
 impl Action {
@@ -326,6 +344,7 @@ impl Action {
             | Action::RequestCustodyAddress { .. }
             | Action::TransferCustody(_)
             | Action::SwapCustody(_) => Some(session_scope::CLIENT_OPS),
+            Action::WithdrawCustodyFor { .. } => Some(session_scope::CLIENT_PAYOUTS),
             _ => None,
         }
     }
@@ -403,7 +422,8 @@ impl Action {
             | Action::WithdrawCustody(_)
             | Action::SwapCustody(_)
             | Action::TransferCustody(_)
-            | Action::WithdrawCustodyStable(_) => "custody",
+            | Action::WithdrawCustodyStable(_)
+            | Action::WithdrawCustodyFor { .. } => "custody",
             Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
             Action::RotateCustodyVault(_)
             | Action::CancelCustodyRotation { .. }

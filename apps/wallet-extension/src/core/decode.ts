@@ -82,6 +82,7 @@ export const ACTION_LABELS: Record<string, string> = {
   RequestCustodyAddress: 'Request custody address',
   WithdrawCustody: 'Withdraw from custody',
   WithdrawCustodyStable: 'Withdraw USDT from custody',
+  WithdrawCustodyFor: 'Pay out from custody',
   SwapCustody: 'Swap custody',
   TransferCustody: 'Transfer in custody',
   SetOfferArbitrators: 'Name offer arbitrators',
@@ -350,7 +351,9 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Scope bits', field: { k: 'number', value: String(bits) } },
         { name: 'Expires', field: { k: 'timestamp', value: exp, formatted: formatDate(exp) } },
         // Scope 4 is a client's operations key: it moves balances inside that client's custody.
-        (bits & 4) !== 0
+        (bits & 8) !== 0
+          ? { name: 'Can move funds', field: { k: 'badge', value: 'Yes, including payouts from your custody', tone: 'bad' } }
+          : (bits & 4) !== 0
           ? { name: 'Can move funds', field: { k: 'badge', value: 'Yes, inside your custody', tone: 'warn' } }
           : { name: 'Can move funds', field: { k: 'badge', value: 'Never', tone: 'good' } },
       ]);
@@ -391,6 +394,16 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
         { name: 'Custodian', field: { k: 'address', value: str(p['custodian']) } },
       ]);
+    case 'WithdrawCustodyFor': {
+      const asset = str(p['asset']);
+      const paid = present(p['via']) ? str(p['via']) : asset;
+      return view(`Pay out ${formatAmount(amountStr(p['amount']), decimalsOf(asset))} ${asset} from the custody of ${str(p['owner']).slice(0, 8)}… to ${str(p['to'])}`, [
+        { name: 'From account', field: { k: 'address', value: str(p['owner']) } },
+        { name: 'Amount', field: amount(p['amount'], asset) },
+        { name: 'Paid out in', field: { k: 'asset', value: paid } },
+        { name: 'Destination', field: { k: 'external', chain: paid.split('.')[0] ?? '', value: str(p['to']) } },
+      ]);
+    }
     case 'WithdrawCustodyStable': {
       const via = str(p['via']);
       const chain = via.split('.')[0] ?? '';

@@ -183,6 +183,60 @@ pub fn apply(
             Ok(events)
         }
         Action::TransferCustody(t) => transfer(state, signer, tx_id, t),
+        Action::WithdrawCustodyFor {
+            owner,
+            asset,
+            via,
+            to,
+            amount,
+        } => {
+            // Only the custodian of the account pays out of it.
+            let theirs = state.custody.custodian_of.get(owner).copied().or_else(|| {
+                state
+                    .custody
+                    .vaults
+                    .keys()
+                    .any(|(_, c)| c == owner)
+                    .then_some(*owner)
+            });
+            match theirs {
+                Some(c) if c == signer => {}
+                Some(_) => return Err(VmError::Unauthorized),
+                None => return Err(VmError::NotEnoughFunds),
+            }
+            let (custodian, mut events) = if *asset == state.tokens.stable {
+                let via = via.clone().ok_or_else(|| {
+                    VmError::Invalid("USDT needs `via`: the network to pay it on".into())
+                })?;
+                withdraw_stable(
+                    state,
+                    ctx,
+                    *owner,
+                    tx_id,
+                    &keel_actions::WithdrawStable {
+                        via,
+                        to: to.clone(),
+                        amount: *amount,
+                    },
+                )?
+            } else {
+                withdraw(
+                    state,
+                    ctx,
+                    *owner,
+                    tx_id,
+                    &Withdraw {
+                        asset: asset.clone(),
+                        to: to.clone(),
+                        amount: *amount,
+                    },
+                )?
+            };
+            events.extend(clients::charge_usage_to(
+                state, custodian, "outbound", tx_id,
+            )?);
+            Ok(events)
+        }
         Action::WithdrawCustodyStable(w) => {
             let (custodian, mut events) = withdraw_stable(state, ctx, signer, tx_id, w)?;
             events.extend(clients::charge_usage_to(
@@ -1091,6 +1145,12 @@ pub(crate) fn settle_outbound(
         sub_liability(state, custodian, &ob.asset, ob.amount);
         if fee_paid > 0 {
             charge_network_fee(state, custodian, &ob.fee_asset, fee_paid, &group)?;
+            events.push(Event::CustodyNetworkFeePaid {
+                custodian,
+                outbound_id: ob.id,
+                asset: ob.fee_asset.clone(),
+                amount: fee_paid,
+            });
         }
         let out = state.vaults.outbounds.get_mut(&ob.id).expect("exists");
         out.status = OutboundStatus::Confirmed;

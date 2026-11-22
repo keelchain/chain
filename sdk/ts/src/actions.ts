@@ -152,7 +152,9 @@ export type Action =
   | { SetPlanRenewal: { tier: number } }
   | { TransferCustody: CustodyTransfer }
   /** Withdraw unified USDT from a custody balance on the network `via` names. */
-  | { WithdrawCustodyStable: WithdrawStable };
+  | { WithdrawCustodyStable: WithdrawStable }
+  /** The custodian pays out of an account in its custody; `via` names the network when `asset` is USDT. */
+  | { WithdrawCustodyFor: { owner: Address; asset: string; via?: string | null; to: string; amount: Amount } };
 
 export interface RecoveryRequest {
   /** The address family (the chain whose deposit index the address is). */
@@ -228,8 +230,10 @@ export interface CustodyVaultRegistration {
  * `CLIENT_OPS` is for a client's own service (attestations, custody
  * addresses, custody transfers and swaps): it moves balances inside the
  * client's custody, so it is granted by the operator, never to a site.
+ * `CLIENT_PAYOUTS` is the same for payouts (`WithdrawCustodyFor`), kept
+ * apart so the operator decides which key may send coins out.
  */
-export const SESSION_SCOPE = { MARKETS: 1, P2P_MANAGE: 2, CLIENT_OPS: 4 } as const;
+export const SESSION_SCOPE = { MARKETS: 1, P2P_MANAGE: 2, CLIENT_OPS: 4, CLIENT_PAYOUTS: 8 } as const;
 
 const ACTION_VARIANTS = [
   "Transfer", "PlaceOrder", "CancelOrder", "HouseQuote", "BuyBudget", "CreateOffer", "UpdateOffer", "PauseOffer",
@@ -241,7 +245,7 @@ const ACTION_VARIANTS = [
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
-  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody", "WithdrawCustodyStable",
+  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody", "WithdrawCustodyStable", "WithdrawCustodyFor",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -433,6 +437,8 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "BuyPlan": w.u8(b.tier); break;
     case "SetPlanRenewal": w.u8(b.tier); break;
     case "WithdrawCustodyStable": w.string(b.via); w.string(b.to); w.u128(b.amount); break;
+    case "WithdrawCustodyFor":
+      address(w, b.owner); w.string(b.asset); w.option(b.via, (v) => w.string(v)); w.string(b.to); w.u128(b.amount); break;
     case "TransferCustody":
       w.vec(b.legs as CustodyLeg[], (l) => { w.option(l.from, (a) => address(w, a)); address(w, l.to); w.string(l.asset); w.u128(l.amount); });
       w.option(b.on_behalf_of, (a) => address(w, a)); w.option(b.memo, (m) => w.string(m)); break;

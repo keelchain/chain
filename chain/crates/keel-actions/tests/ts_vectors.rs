@@ -417,6 +417,16 @@ fn vectors() -> Vec<(&'static str, Action)> {
             }),
         ),
         (
+            "withdraw_custody_for",
+            Action::WithdrawCustodyFor {
+                owner: Address::tagged(7),
+                asset: Asset::new("USDT"),
+                via: Some(Asset::new("TRON.USDT")),
+                to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+                amount: 4_000_000,
+            },
+        ),
+        (
             "transfer_custody",
             Action::TransferCustody(keel_actions::CustodyTransfer {
                 legs: vec![

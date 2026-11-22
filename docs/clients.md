@@ -363,8 +363,9 @@ client's users.
 
 `GET /api/v1/events?address=<your operator address>&cursor=` on the
 indexer is every event that names your account, oldest first: custody
-credits, transfers and swaps of your users, payouts, plan periods, usage
-charged and owed. It includes the events a block emits by itself (a plan
+credits, transfers and swaps of your users, payouts and the network fee
+each one cost you (`CustodyNetworkFeePaid`: the figures for a gas report),
+plan periods, usage charged and owed. It includes the events a block emits by itself (a plan
 renewal, usage collected at an epoch boundary), which no transaction
 lists. Read a page, apply it, keep `next_cursor`, ask again; at the tip
 the same cursor returns what has arrived since, so a balance mirror is a
@@ -397,7 +398,10 @@ in your KMS. Two keys, with two jobs:
   your account: `Attest`, `RequestCustodyAddress`, `TransferCustody` and
   `SwapCustody`. It has **its own nonce**, so an action signed in Harbor
   or the CLI can never take a nonce your service already signed for, and
-  it cannot buy a plan, change fees or pay out. It expires
+  it cannot buy a plan, change fees or pay out. Payouts
+  (`WithdrawCustodyFor`) are a scope of their own, `client_payouts`
+  (bit 8): give it to the same key (scope 12) or to a separate one that
+  only sends coins out, as your own controls require. A key expires
   (`sessions.max_secs`, 30 days at most); renew it before then, or revoke
   it with `RevokeSessionKey` if the service is compromised.
 
@@ -410,7 +414,9 @@ and there is no seed to back up and nothing to lose: the mapping can be
 recomputed, and the chain lists every account in your custody
 (`GET /v1/custody/{addr}/{chain}/addresses`). A user who should sign for
 themselves keeps a real key in Keel Wallet instead. To pay a user out,
-transfer the amount to your own account and withdraw it from there.
+send `WithdrawCustodyFor { owner, asset, via, to, amount }`: one action
+that pays out of the user's account through your vault (`via` names the
+network when the asset is `USDT`).
 
 Withdrawals from your vault are signed by your own signer under the same
 policy every Keel signer runs: the transaction must pay open outbounds of a

@@ -415,6 +415,14 @@ pub enum Event {
         asset: Asset,
         amount: Amount,
     },
+    /// The network fee of a payout from `custodian`'s vault, taken from
+    /// its gas balance (or booked against it when it holds none).
+    CustodyNetworkFeePaid {
+        custodian: Address,
+        outbound_id: u64,
+        asset: Asset,
+        amount: Amount,
+    },
     /// A dollar stablecoin in `custodian`'s vault became unified USDT on
     /// `owner`'s custody balance (`amount_in` of `asset`, `minted` USDT).
     CustodyStableMinted {
