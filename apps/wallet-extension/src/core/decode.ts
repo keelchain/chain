@@ -394,6 +394,14 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
         { name: 'Custodian', field: { k: 'address', value: str(p['custodian']) } },
       ]);
+    case 'RotateCustodyVaults': {
+      const raw = typeof action === 'object' && action !== null ? (action as Record<string, unknown>)['RotateCustodyVaults'] : null;
+      const list = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+      return view(`Rotate your custody vaults on ${list.length} networks to a fresh key`, [
+        { name: 'Networks', field: { k: 'text', value: list.map((r) => str(r['chain'])).join(', ') } },
+        { name: 'New signer', field: { k: 'text', value: str(list[0]?.['signer_url']) } },
+      ]);
+    }
     case 'RegisterCustodyVaults': {
       const raw = typeof action === 'object' && action !== null ? (action as Record<string, unknown>)['RegisterCustodyVaults'] : null;
       const list = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];

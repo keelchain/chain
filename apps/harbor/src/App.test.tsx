@@ -30,8 +30,9 @@ function installWallet() {
   return { signAction };
 }
 
-function open(path: string, scenario: Scenario) {
+function open(path: string, scenario: Scenario, vaults: MockHarborApi['vaults'] = []) {
   const api = new MockHarborApi(scenario);
+  api.vaults = vaults;
   return render(
     <MemoryRouter initialEntries={[path]}>
       <App networks={networks} apiFactory={() => api} queryClient={makeQueryClient()} />
@@ -269,6 +270,29 @@ describe('usage and business', () => {
     const req = (signAction.mock.calls[0] as unknown as [{ envelope: { action: unknown } }])[0];
     const v = (chain: string) => ({ chain, epoch: 1, public_key: '02' + 'ab'.repeat(32), chain_code: 'cd'.repeat(32), signer_url: 'https://signer.example.com' });
     expect(req.envelope.action).toEqual({ RegisterCustodyVaults: [v('Bitcoin'), v('Tron')] });
+  });
+
+  it('rotates the ticked networks to a new signer in one action', async () => {
+    const { signAction } = installWallet();
+    const json = (v: unknown) => Promise.resolve(new Response(JSON.stringify(v), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', vi.fn((u: unknown) => (String(u).endsWith('/info') ? json({ public_key: '03' + 'ef'.repeat(32), chain_code: '12'.repeat(32) }) : json({ nonce: 7 }))));
+    const vault = (chain: string) => ({ chain, gen: 0, status: 'Active', drain_until: 0, reported_empty: 0, vault: { epoch: 1, public_key: '02' + 'ab'.repeat(32) }, signer_url: 'https://signer.example.com', address: null, next_deposit_index: 1, reserves: [] });
+    open('/testnet/business/rotate', 'active', [vault('BTC'), vault('TRON'), vault('BSC')]);
+    expect(((await screen.findByLabelText(/^Tron/)) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByLabelText(/^BNB Smart Chain/));
+    fireEvent.change(screen.getByLabelText(/The new signer's URL/), { target: { value: 'https://signer-2.example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /Read keys from the new signer/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rotate 2 vaults' }));
+    await waitFor(() => expect(signAction).toHaveBeenCalledTimes(1));
+    const req = (signAction.mock.calls[0] as unknown as [{ envelope: { action: unknown } }])[0];
+    const r = (chain: string) => ({ chain, public_key: '03' + 'ef'.repeat(32), chain_code: '12'.repeat(32), signer_url: 'https://signer-2.example.com', activate_at: null });
+    expect(req.envelope.action).toEqual({ RotateCustodyVaults: [r('Bitcoin'), r('Tron')] });
+  });
+
+  it('says there is nothing to rotate before a vault exists', async () => {
+    installWallet();
+    open('/testnet/business/rotate', 'active');
+    expect(await screen.findByText(/There is no vault to rotate yet/)).toBeTruthy();
   });
 
   it('prefills the retail fees and moves the vault tools under Business', async () => {

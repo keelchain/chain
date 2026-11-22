@@ -239,6 +239,50 @@ pub fn apply(
 ) -> Result<Vec<Event>, VmError> {
     match action {
         Action::RotateCustodyVault(r) => rotate(state, ctx, signer, tx_id, r),
+        Action::RotateCustodyVaults(list) => {
+            if list.is_empty() || list.len() > 8 {
+                return Err(VmError::Invalid("rotate 1 to 8 vaults at a time".into()));
+            }
+            // Every entry is checked, and the usage price of all of them
+            // is known to be payable, before any generation is opened.
+            for (i, r) in list.iter().enumerate() {
+                if list[..i].iter().any(|x| x.chain == r.chain) {
+                    return Err(VmError::Invalid(format!(
+                        "{} is listed twice",
+                        r.chain.as_str()
+                    )));
+                }
+                check_rotation(state, ctx, signer, r)?;
+            }
+            let price = state
+                .pools
+                .params
+                .usage_rotation_usd_micro
+                .saturating_mul(list.len() as u128);
+            if price > 0 {
+                let now = state.timestamp / 1000;
+                let stable = state.tokens.stable.clone();
+                let allowance = clients::active_plan(state, &signer, now)
+                    .map(|p| p.allowance_left_usd_micro)
+                    .unwrap_or(0);
+                let owed = state.clients.usage_owed.get(&signer).copied().unwrap_or(0);
+                let have = super::tokens::balance(state, signer, &stable);
+                if allowance.saturating_add(have) < price.saturating_add(owed) {
+                    return Err(VmError::Invalid(format!(
+                        "rotating {} vaults costs {price} USD micro of usage, which the account cannot pay",
+                        list.len()
+                    )));
+                }
+            }
+            let mut events = Vec::new();
+            for (i, r) in list.iter().enumerate() {
+                // Each rotation is its own usage charge and needs its own id.
+                let mut id = *tx_id;
+                id[31] ^= i as u8;
+                events.extend(rotate(state, ctx, signer, &id, r)?);
+            }
+            Ok(events)
+        }
         Action::CancelCustodyRotation { chain } => cancel(state, signer, *chain),
         Action::RetireCustodyGeneration {
             chain,
@@ -256,6 +300,19 @@ fn rotate(
     tx_id: &[u8; 32],
     r: &CustodyRotation,
 ) -> Result<Vec<Event>, VmError> {
+    check_rotation(state, ctx, signer, r)?;
+    let mut events = clients::charge_usage_to(state, signer, "rotation", tx_id)?;
+    rotate_checked(state, ctx, signer, r, &mut events)?;
+    Ok(events)
+}
+
+/// Whether `signer` may rotate its vault as `r` describes.
+fn check_rotation(
+    state: &State,
+    ctx: &BlockContext,
+    signer: Address,
+    r: &CustodyRotation,
+) -> Result<(), VmError> {
     let vault = state
         .custody
         .vault(r.chain, signer)
@@ -285,7 +342,16 @@ fn rotate(
     if rotation(state, r.chain, signer).is_some() {
         return Err(VmError::Invalid("a rotation is already pending".into()));
     }
-    let mut events = clients::charge_usage_to(state, signer, "rotation", tx_id)?;
+    Ok(())
+}
+
+fn rotate_checked(
+    state: &mut State,
+    ctx: &BlockContext,
+    signer: Address,
+    r: &CustodyRotation,
+    events: &mut Vec<Event>,
+) -> Result<(), VmError> {
     let pool = state
         .pools
         .pools
@@ -324,7 +390,7 @@ fn rotate(
             r.signer_url.clone(),
         )),
     }
-    Ok(events)
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

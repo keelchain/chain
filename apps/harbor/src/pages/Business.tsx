@@ -681,54 +681,137 @@ function Vaults({ c }: { c: Custody }) {
   );
 }
 
-function Rotate() {
-  const act = useAction();
-  const [chain, setChain] = useState<Chain>('Bitcoin');
-  const [pk, setPk] = useState('');
-  const [cc, setCc] = useState('');
+/**
+ * Rotate vaults to a fresh key: tick the networks, give the new signer's
+ * URL, the keys are read from it, one approval for all.
+ */
+function Rotate({ c }: { c: Custody }) {
+  const w = useWallet();
+  const qc = useQueryClient();
+  const pending = new Set(c.rotations.map((r) => chainOf(r.chain)));
+  const active = c.vaults.filter((v) => v.status === 'Active');
+  const have = CHAINS.filter((x) => active.some((v) => chainOf(v.chain) === x));
+  const [picked, setPicked] = useState<Chain[]>(have.filter((x) => !pending.has(x)));
   const [url, setUrl] = useState('');
+  const [info, setInfo] = useState<SignerInfo | null>(null);
+  const [reading, setReading] = useState(false);
   const [at, setAt] = useState('');
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    void act.run(
-      { RotateCustodyVault: { chain, public_key: pk.trim(), chain_code: cc.trim(), signer_url: url.trim(), activate_at: at.trim() ? Number(at) : null } },
-      `Rotate the ${CHAIN_NAME[chain]} vault to a fresh key`,
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  if (have.length === 0) {
+    return (
+      <Card title="Rotate to a fresh key">
+        <p className="text-2">There is no vault to rotate yet. Register one under Vaults first.</p>
+      </Card>
     );
+  }
+  const base = url.trim().replace(/\/+$/, '');
+  const urlOk = /^https?:\/\/\S+$/.test(base);
+  // Why a network cannot be rotated to this signer, or null when it can.
+  const blocked = (x: Chain): string | null => {
+    if (pending.has(x)) return 'a rotation is already scheduled';
+    const v = active.find((y) => chainOf(y.chain) === x);
+    if (!info || !v) return null;
+    const k = keysFor(x, info);
+    if (!k) return 'no key on this signer';
+    if (k.pk === v.vault.public_key.toLowerCase()) return 'this signer holds the key already in use';
+    if (base === v.signer_url.replace(/\/+$/, '')) return 'the new key needs its own signer address';
+    return null;
+  };
+  const chosen = picked.filter((x) => have.includes(x) && blocked(x) === null);
+  const heightOk = at.trim() === '' || /^[0-9]+$/.test(at.trim());
+
+  const read = async () => {
+    setError(null);
+    setInfo(null);
+    if (window.location.protocol === 'https:' && base.startsWith('http://')) {
+      setError('This page is served over HTTPS, and your browser will not let it read an http:// address. Put the new signer behind HTTPS and give that address.');
+      return;
+    }
+    setReading(true);
+    try {
+      const res = await fetch(`${base}/info`, { headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error(`the signer answered ${res.status}`);
+      const got = (await res.json()) as SignerInfo;
+      if (!got.public_key && !got.ed25519_public_key) throw new Error('the signer reported no keys');
+      setInfo(got);
+    } catch (e) {
+      setError(`Could not read the signer at ${base}/info: ${e instanceof Error ? e.message : String(e)}. Check that its port is open to the internet, that it is a current build, and the address.`);
+    } finally {
+      setReading(false);
+    }
+  };
+  const rotate = async () => {
+    if (!info || !urlOk || !heightOk || chosen.length === 0) return;
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    const list = chosen.map((chain) => {
+      const k = keysFor(chain, info)!;
+      return { chain, public_key: k.pk, chain_code: k.cc, signer_url: base, activate_at: at.trim() ? Number(at.trim()) : null };
+    });
+    const names = chosen.map((x) => CHAIN_NAME[x]).join(', ');
+    try {
+      const r = await w.signAndSubmit(list.length === 1 ? { RotateCustodyVault: list[0] } : { RotateCustodyVaults: list }, {
+        title: list.length === 1 ? `Rotate your ${names} vault to a fresh key` : `Rotate your vaults on ${list.length} networks to a fresh key`,
+        description: `${names}. Every user gets a new deposit address there; the old key keeps crediting and paying out until it is empty.`,
+      });
+      if (r.ok) setDone(`${names}: ${at.trim() ? `rotation scheduled for height ${at.trim()}` : 'rotated'}.`);
+      else setError(r.error?.message ?? 'The chain refused the rotation.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    await qc.invalidateQueries();
+    setBusy(false);
   };
   return (
-    <Card title="Rotate to a fresh pool">
-      <p className="text-2 small">
-        Start a second signer for a new key (its <span className="mono">keel-tss pubkey</span> prints the key and chain code), then register it here. Every account gets a new deposit address on that
-        chain; Keel accounts and balances do not change. The old key keeps crediting its addresses and paying withdrawals until it is empty and its grace is over. The two generations are separate
-        pools: nothing is ever moved from the old key to the new one.
-      </p>
-      <form className="form" onSubmit={submit}>
-        <Field label="Chain">
-          <select className="select" value={chain} onChange={(e) => setChain(e.target.value as Chain)}>
-            {CHAINS.map((c) => (
-              <option key={c} value={c}>
-                {CHAIN_NAME[c]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="New public key" hint="33 bytes, hex">
-          <input className="input mono" value={pk} onChange={(e) => setPk(e.target.value)} pattern="[0-9a-fA-F]{66}" required />
-        </Field>
-        <Field label="Chain code" hint="32 bytes, hex">
-          <input className="input mono" value={cc} onChange={(e) => setCc(e.target.value)} pattern="[0-9a-fA-F]{64}" required />
-        </Field>
-        <Field label="Signer URL" hint="The new key's signer; keep the old signer running for the draining generation.">
-          <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://signer-2.example.com" required />
-        </Field>
-        <Field label="Activate at height" hint="Empty = at once">
-          <input className="input" value={at} onChange={(e) => setAt(e.target.value)} inputMode="numeric" pattern="[0-9]*" />
+    <Card title="Rotate to a fresh key">
+      <div className="form">
+        <p className="small text-2">
+          For a suspected leak, a change of custody provider, or routine hygiene. Start a <strong>second</strong> signer holding a new key, then point the networks at it here. Every user gets a new
+          deposit address on those networks; Keel accounts and balances do not change. The old key keeps crediting its addresses and paying withdrawals until it is empty and its grace is over, so
+          keep the old signer running meanwhile. Nothing is ever moved from the old key to the new one.
+        </p>
+        <fieldset className="form">
+          <legend className="field-label">1. Networks to rotate</legend>
+          <div className="row">
+            {have.map((x) => {
+              const why = blocked(x);
+              return (
+                <label key={x} className="small">
+                  <input type="checkbox" disabled={why !== null || busy} checked={why === null && picked.includes(x)} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, x] : p.filter((y) => y !== x)))} /> {CHAIN_NAME[x]}
+                  {why && <span className="text-2"> ({why})</span>}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+        <Field label="2. The new signer's URL" hint="A different address from the signer in use: both run side by side until the old key has drained.">
+          <input className="input mono" value={url} onChange={(e) => { setUrl(e.target.value); setInfo(null); }} placeholder="https://signer-2.example.com" spellCheck={false} />
         </Field>
         <div className="row">
-          <Submit act={act}>Rotate</Submit>
+          <button type="button" className="btn" disabled={!urlOk || reading} onClick={() => void read()}>
+            {reading ? 'Reading…' : info ? 'Read again' : '3. Read keys from the new signer'}
+          </button>
         </div>
-        <ActionResult act={act} />
-      </form>
+        <details className="small text-2">
+          <summary>Schedule it for later</summary>
+          <Field label="Activate at height" hint="Empty = at once. A scheduled rotation can be cancelled under Vaults until it activates.">
+            <input className="input" value={at} onChange={(e) => setAt(e.target.value)} inputMode="numeric" />
+          </Field>
+        </details>
+        {error && <p className="small down">{error}</p>}
+        {info && (
+          <div className="row">
+            <button type="button" className="btn primary" disabled={busy || chosen.length === 0 || !urlOk || !heightOk} onClick={() => void rotate()}>
+              {busy ? 'Waiting for the wallet…' : `Rotate ${chosen.length} ${chosen.length === 1 ? 'vault' : 'vaults'}`}
+            </button>
+            {chosen.length > 1 && <span className="small text-2">One approval in Keel Wallet for all of them.</span>}
+          </div>
+        )}
+        {done && <p className="small up">{done}</p>}
+      </div>
     </Card>
   );
 }
@@ -790,7 +873,6 @@ function Swap({ c }: { c: Custody }) {
 
 function CustodyTab({ h, tab }: { h: Harbor; tab: Exclude<Tab, 'fees' | 'keys'> }) {
   const custody = useCustody(h.address);
-  if (tab === 'rotate') return <Rotate />;
   if (custody.isError) return <ErrorState error={custody.error} what="custody vaults" />;
   if (!custody.data) {
     return (
@@ -799,6 +881,7 @@ function CustodyTab({ h, tab }: { h: Harbor; tab: Exclude<Tab, 'fees' | 'keys'> 
       </Card>
     );
   }
+  if (tab === 'rotate') return <Rotate c={custody.data} />;
   return tab === 'vaults' ? <Vaults c={custody.data} /> : <Swap c={custody.data} />;
 }
 

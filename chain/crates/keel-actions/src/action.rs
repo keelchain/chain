@@ -309,6 +309,9 @@ pub enum Action {
     /// A client registers its vaults on several chains in one action:
     /// what `RegisterCustodyVault` does, for each entry, all or none.
     RegisterCustodyVaults(Vec<CustodyVaultRegistration>),
+    /// A client rotates its vaults on several chains to fresh keys in one
+    /// action: what `RotateCustodyVault` does, for each entry, all or none.
+    RotateCustodyVaults(Vec<CustodyRotation>),
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -456,6 +459,7 @@ impl Action {
             | Action::ReleaseCustodyHold { .. } => "custody",
             Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
             Action::RotateCustodyVault(_)
+            | Action::RotateCustodyVaults(_)
             | Action::CancelCustodyRotation { .. }
             | Action::RetireCustodyGeneration { .. } => "pools",
             Action::DepositLiquidity { .. } | Action::WithdrawLiquidity { .. } => "liquidity",

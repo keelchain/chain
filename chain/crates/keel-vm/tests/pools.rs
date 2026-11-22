@@ -311,3 +311,47 @@ fn scheduled_rotation_opens_in_end_block_and_can_be_cancelled() {
     assert_eq!(pools::get_param(&c.state, "pools.grace_blocks"), Some(50));
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }
+
+#[test]
+fn several_vaults_rotate_in_one_action_or_not_at_all() {
+    let (state, _alice, _bob, mut v) = setup(0);
+    let mut c = Chain::new(state);
+    let client = v.addr();
+    let on = |chain: ExtChain| CustodyVaultRegistration {
+        chain,
+        ..registration()
+    };
+    let (r, _) = c.block(&[v.act(Action::RegisterCustodyVaults(vec![
+        on(ExtChain::Tron),
+        on(ExtChain::Bsc),
+    ]))]);
+    ok(&r[0]);
+    let fresh = |chain: ExtChain, url: &str| keel_actions::CustodyRotation {
+        chain,
+        public_key: vec![3u8; 33],
+        chain_code: [8u8; 32],
+        signer_url: url.into(),
+        activate_at: None,
+    };
+    let new_url = "https://signer-b.example.com";
+    // Bitcoin has no vault to rotate: the whole set is refused, and the
+    // Tron vault keeps its key.
+    let (r, _) = c.block(&[v.act(Action::RotateCustodyVaults(vec![
+        fresh(ExtChain::Tron, new_url),
+        fresh(ExtChain::Bitcoin, new_url),
+    ]))]);
+    assert!(!r[0].ok);
+    assert_eq!(statuses(&c, client), vec![(0, GenStatus::Active)]);
+    let (r, _) = c.block(&[v.act(Action::RotateCustodyVaults(vec![
+        fresh(ExtChain::Tron, new_url),
+        fresh(ExtChain::Bsc, new_url),
+    ]))]);
+    ok(&r[0]);
+    for chain in [ExtChain::Tron, ExtChain::Bsc] {
+        let active = pools::active(&c.state, chain, client).unwrap();
+        assert_eq!(active.public_key, vec![3u8; 33]);
+        assert_eq!(active.signer_url, new_url);
+        assert_eq!(pools::live(&c.state, chain, client).len(), 2);
+    }
+    assert!(c.state.ledger.audit().mismatches.is_empty());
+}

@@ -180,8 +180,10 @@ export class MockHarborApi implements HarborApi {
     const level = (price: number, size: number) => ({ price: String(Math.round(price * 1e6)), size: String(BigInt(size) * KEEL), orders: 1 });
     return Promise.resolve({ symbol: pair, asks: [level(0.412, 18_000), level(0.415, 42_000), level(0.42, 150_000), level(0.431, 400_000)], bids: [level(0.405, 25_000)], house: null });
   }
+  /** Vaults the demo client has registered; none unless a test or a demo sets them. */
+  vaults: Custody['vaults'] = [];
   custody(addr: string): Promise<Custody> {
-    return Promise.resolve({ custodian: addr, vaults: [], rotations: [], accounts: 0, floats: [] });
+    return Promise.resolve({ custodian: addr, vaults: this.vaults, rotations: [], accounts: 0, floats: [] });
   }
   assets(): Promise<{ asset: string; decimals: number }[]> {
     return Promise.resolve([

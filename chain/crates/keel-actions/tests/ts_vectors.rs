@@ -450,6 +450,16 @@ fn vectors() -> Vec<(&'static str, Action)> {
             ]),
         ),
         (
+            "rotate_custody_vaults",
+            Action::RotateCustodyVaults(vec![keel_actions::CustodyRotation {
+                chain: Chain::Tron,
+                public_key: vec![3u8; 33],
+                chain_code: [8u8; 32],
+                signer_url: "https://signer-b.example.com".into(),
+                activate_at: Some(9_000),
+            }]),
+        ),
+        (
             "set_custody_options",
             Action::SetCustodyOptions {
                 hold_deposits: true,

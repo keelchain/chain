@@ -365,6 +365,7 @@ fn apply_one(
             arbitration::apply(state, signer, action)
         }
         Action::RotateCustodyVault(_)
+        | Action::RotateCustodyVaults(_)
         | Action::CancelCustodyRotation { .. }
         | Action::RetireCustodyGeneration { .. } => {
             pools::apply(state, ctx, signer, &tx_id, action)

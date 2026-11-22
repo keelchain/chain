@@ -492,6 +492,7 @@ pub fn module_of_kind(kind: &str) -> &'static str {
         | "WithdrawCustodyStable"
         | "WithdrawCustodyFor"
         | "RegisterCustodyVaults"
+        | "RotateCustodyVaults"
         | "SetCustodyOptions"
         | "ReleaseCustodyHold" => "custody",
         "Bond" | "Unbond" | "Delegate" | "Undelegate" | "ClaimRewards" => "staking",
