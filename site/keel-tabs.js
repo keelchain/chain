@@ -2,6 +2,8 @@
  *
  * A doc section that reads differently per mode is written as
  *
+ * (groups: `client`, `wallet`, and `os` for Linux / macOS / Windows)
+ *
  *   <div class="tabs" data-group="client">
  *   <div class="tab" data-mode="custodial"> ...markdown... </div>
  *   <div class="tab" data-mode="noncustodial"> ... </div>
@@ -30,6 +32,16 @@
       modes: [
         ['keel', 'In Keel'],
         ['wallet', 'In your wallet'],
+      ],
+    },
+    os: {
+      cookie: 'keel_mode_os',
+      // The reader's own system, until they pick another.
+      fallback: /Windows/i.test(navigator.userAgent) ? 'windows' : /Mac/i.test(navigator.userAgent) ? 'macos' : 'linux',
+      modes: [
+        ['linux', 'Linux'],
+        ['macos', 'macOS'],
+        ['windows', 'Windows'],
       ],
     },
   };

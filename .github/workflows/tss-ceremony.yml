@@ -29,7 +29,7 @@ jobs:
     steps:
       - name: SSH key
         env:
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS || format('[{{"ip":"{0}","user":"{1}"}}]', vars.DEPLOY_HOST, vars.DEPLOY_USER || 'ubuntu') }}
           HOST_INDEX: ${{ matrix.host }}
           KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
         run: |
@@ -40,7 +40,7 @@ jobs:
           else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
       - name: Keygen on host ${{ matrix.host }}
         env:
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS || format('[{{"ip":"{0}","user":"{1}"}}]', vars.DEPLOY_HOST, vars.DEPLOY_USER || 'ubuntu') }}
           HOST_INDEX: ${{ matrix.host }}
         run: |
           H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[int(os.environ["HOST_INDEX"])]; print(h.get("user","ubuntu")+"@"+h["ip"])')
@@ -75,7 +75,7 @@ jobs:
           PY
       - name: SSH key
         env:
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS || format('[{{"ip":"{0}","user":"{1}"}}]', vars.DEPLOY_HOST, vars.DEPLOY_USER || 'ubuntu') }}
           KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -85,7 +85,7 @@ jobs:
           else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
       - name: Register the vaults from host 0
         env:
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS || format('[{{"ip":"{0}","user":"{1}"}}]', vars.DEPLOY_HOST, vars.DEPLOY_USER || 'ubuntu') }}
         run: |
           H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[0]; print(h.get("user","ubuntu")+"@"+h["ip"])')
           # The signers are the hosts' validator/observer accounts, in host order.

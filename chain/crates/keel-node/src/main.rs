@@ -54,7 +54,7 @@ const ACTIONS: u64 = 5;
 const MAX_MESSAGE_SIZE: u32 = 8 * 1024 * 1024;
 
 #[derive(Parser, Debug)]
-#[command(name = "keel-node", about = "Keelchain validator")]
+#[command(name = "keel-node", version, about = "Keelchain validator")]
 struct Args {
     /// `<seed>@<port>`: this validator's key seed and listen port.
     #[arg(long)]

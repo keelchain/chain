@@ -101,6 +101,14 @@ jobs:
             gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir out/site/wallet/downloads --pattern '*.xpi' --pattern 'updates.json' || true
             ls out/site/wallet/downloads
           fi
+          # The command-line tools: the newest `keel-v*` release made by
+          # release-cli.yml, served under /downloads/ with stable names.
+          mkdir -p out/site/downloads
+          TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName --jq '[.[] | select(.tagName | startswith("keel-v"))][0].tagName' 2>/dev/null || true)
+          if [ -n "$TAG" ] && [ "$TAG" != null ]; then
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir out/site/downloads || true
+            ls out/site/downloads
+          fi
       - name: Render docs pages
         run: |
           sudo apt-get update && sudo apt-get install -y pandoc

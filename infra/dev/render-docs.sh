@@ -15,6 +15,7 @@ mkdir -p "$OUT"
 
 # slug | source | title | one-line description (for the index)
 PAGES=(
+  "install|docs/install.md|Install the command-line tools|Download keel, keel-node and the other programs for Linux, macOS and Windows, verify them, or build from source."
   "exchange|docs/exchange.md|Run an exchange on Keel: getting started|The steps from a wallet to a running client: Keel Harbor, registration, the lock, the plan, fees, users, integration, and what it costs."
   "models|docs/models.md|Two ways to run an exchange on Keel|Custodial clients with their own wallets, P2P clients on Keel Wallet, and a person with a wallet and no client: where funds sit, who signs, what it costs."
   "clients|docs/clients.md|Building a client|The integration contract: accounts and roles, the per-network switch and readiness, idempotency and reconciliation, streams, signing, pricing."

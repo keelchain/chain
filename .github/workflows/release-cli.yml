@@ -1,0 +1,104 @@
+name: Release command-line tools
+
+# Builds the command-line programs for Linux, macOS and Windows and attaches
+# them to a GitHub release `keel-v<version>` (the version in
+# chain/Cargo.toml). The site deploy serves the newest such release under
+# keelchain.com/downloads/, which is where the install scripts and the docs
+# point (docs/install.md).
+#
+#   keel           the CLI: accounts, sending actions, governance, custody
+#   keel-node      a validator or a follower
+#   keel-indexer   the read API behind the explorer (needs Postgres)
+#   keel-observer  the observer and signer daemon
+#   keel-tss       the threshold signer (Linux and macOS: it needs GMP)
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04: the oldest glibc still supported, so the binaries run on newer systems too.
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: linux-x86_64, tss: true }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, name: linux-arm64, tss: true }
+          - { os: macos-14, target: aarch64-apple-darwin, name: macos-arm64, tss: true }
+          - { os: macos-13, target: x86_64-apple-darwin, name: macos-x86_64, tss: true }
+          - { os: windows-2022, target: x86_64-pc-windows-msvc, name: windows-x86_64, tss: false }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chain
+          key: ${{ matrix.target }}
+      - name: m4 (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y m4
+      - name: NASM (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@v1
+      - name: Build
+        working-directory: chain
+        shell: bash
+        run: |
+          PKGS="-p keel-cli -p keel-node -p keel-indexer -p keel-observer"
+          [ "${{ matrix.tss }}" = true ] && PKGS="$PKGS -p keel-tss"
+          cargo build --release --locked --target ${{ matrix.target }} $PKGS
+      - name: Package
+        shell: bash
+        run: |
+          DIR="keel-${{ matrix.name }}"; mkdir "$DIR"
+          EXT=""; [ "${{ runner.os }}" = Windows ] && EXT=".exe"
+          for b in keel keel-node keel-indexer keel-observer keel-tss; do
+            f="chain/target/${{ matrix.target }}/release/$b$EXT"
+            [ -f "$f" ] && cp "$f" "$DIR/"
+          done
+          cp LICENSE "$DIR/" 2>/dev/null || true
+          "$DIR/keel$EXT" --version
+          if [ "${{ runner.os }}" = Windows ]; then 7z a "$DIR.zip" "$DIR" >/dev/null
+          else tar -czf "$DIR.tar.gz" "$DIR"; fi
+          ls -la keel-${{ matrix.name }}.*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keel-${{ matrix.name }}
+          path: |
+            keel-${{ matrix.name }}.tar.gz
+            keel-${{ matrix.name }}.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    # Publish what built: one platform failing must not hold back the others.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' chain/Cargo.toml | head -1)
+          TAG="keel-v$VERSION"
+          cd dist
+          ls -la
+          [ -n "$(ls keel-linux-x86_64.tar.gz 2>/dev/null)" ] || { echo "::error::the Linux x86_64 build is missing"; exit 1; }
+          sha256sum keel-* > SHA256SUMS
+          printf '%s\n' "$VERSION" > VERSION
+          cat SHA256SUMS
+          NOTES="Command-line tools $VERSION, built from ${GITHUB_SHA}. Install: https://keelchain.com/docs/install/"
+          # Not marked latest: /releases/latest stays whatever it was.
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "Keel command-line tools $VERSION" --notes "$NOTES" --latest=false --target "$GITHUB_SHA"
+          gh release upload "$TAG" keel-* SHA256SUMS VERSION --clobber

@@ -56,7 +56,7 @@ const SECRET_ENV: &str = "KEEL_TSS_SECRET";
 const CONTROL_SESSION: &str = "control";
 
 #[derive(Parser)]
-#[command(name = "keel-tss", about = "KEEL threshold signer")]
+#[command(name = "keel-tss", version, about = "KEEL threshold signer")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

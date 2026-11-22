@@ -21,6 +21,29 @@ infra/dev/              local devnet, e2e scripts (regtest bitcoind, LND, Tron m
 docs/                   how-it-works, whitepaper, tokenomics, wallet, explorer API, testnet
 ```
 
+## Install the command-line tools
+
+`keel` (the CLI), `keel-node`, `keel-indexer`, `keel-observer` and
+`keel-tss`, built for Linux, macOS and Windows:
+
+| System | Install | Or download |
+|---|---|---|
+| Linux, macOS | `curl -fsSL https://keelchain.com/install.sh \| sh` | [linux-x86_64](https://keelchain.com/downloads/keel-linux-x86_64.tar.gz), [linux-arm64](https://keelchain.com/downloads/keel-linux-arm64.tar.gz), [macos-arm64](https://keelchain.com/downloads/keel-macos-arm64.tar.gz), [macos-x86_64](https://keelchain.com/downloads/keel-macos-x86_64.tar.gz) |
+| Windows (PowerShell) | `irm https://keelchain.com/install.ps1 \| iex` | [windows-x86_64](https://keelchain.com/downloads/keel-windows-x86_64.zip) (no `keel-tss`; use WSL for it) |
+
+Checksums are in [SHA256SUMS](https://keelchain.com/downloads/SHA256SUMS)
+and both scripts verify them. Then:
+
+```
+keel --version
+keel --rpc https://testnet.keelchain.com/rpc status
+```
+
+`docs/install.md` ([keelchain.com/docs/install](https://keelchain.com/docs/install/))
+has the steps per system, first commands, and building from source. The
+`Release command-line tools` workflow publishes a release `keel-v<version>`;
+the site deploy serves the newest one under `/downloads/`.
+
 ## Build and test
 
 ```

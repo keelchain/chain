@@ -17,7 +17,7 @@ use keel_types::Address;
 use std::{path::PathBuf, sync::Arc};
 
 #[derive(Parser)]
-#[command(name = "keel-observer", about = "Keel observer-signer daemon")]
+#[command(name = "keel-observer", version, about = "Keel observer-signer daemon")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

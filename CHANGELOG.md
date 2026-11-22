@@ -5,6 +5,13 @@ Dates are UTC.
 
 ## Unreleased
 
+- **Command-line tools as downloads** (2026-11-22). The
+  `Release command-line tools` workflow builds `keel`, `keel-node`,
+  `keel-indexer`, `keel-observer` and `keel-tss` for Linux (x86_64,
+  arm64), macOS (arm64, x86_64) and Windows (x86_64, without `keel-tss`)
+  into a release `keel-v<version>`; the site serves the newest under
+  `keelchain.com/downloads/` with `install.sh` and `install.ps1`.
+  `docs/install.md`. Every program answers `--version`.
 - Chain: **custody deposit events identify the deposit** (2026-11-22).
   `CustodyDepositCredited` carries `tx_hash` and `index`, and
   `CustodyDepositHeld` gains `index`: the external transaction and the

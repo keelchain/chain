@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: SSH key
         env:
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS || format('[{{"ip":"{0}","user":"{1}"}}]', vars.DEPLOY_HOST, vars.DEPLOY_USER || 'ubuntu') }}
           KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -37,7 +37,7 @@ jobs:
           else ssh-keyscan -H "$IP" > ~/.ssh/known_hosts 2>/dev/null; fi
       - name: Run on host 0
         env:
-          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS }}
+          HOSTS_JSON: ${{ vars.DEPLOY_HOSTS || format('[{{"ip":"{0}","user":"{1}"}}]', vars.DEPLOY_HOST, vars.DEPLOY_USER || 'ubuntu') }}
           ADDRESS: ${{ github.event.inputs.address }}
         run: |
           H=$(python3 -c 'import json,os; h=json.loads(os.environ["HOSTS_JSON"])[0]; print(h.get("user","ubuntu")+"@"+h["ip"])')

@@ -13,7 +13,7 @@ use keel_types::{Address, Amount, Asset, OrderId, OrderType, Side};
 use serde_json::{json, Value};
 
 #[derive(Parser, Debug)]
-#[command(name = "keel", about = "Keelchain CLI")]
+#[command(name = "keel", version, about = "Keelchain CLI")]
 struct Cli {
     /// Node RPC base URL.
     #[arg(long, global = true, default_value = "http://127.0.0.1:5000")]
