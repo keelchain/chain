@@ -258,16 +258,17 @@ describe('usage and business', () => {
     vi.stubGlobal('fetch', vi.fn((u: unknown) => (String(u).endsWith('/info') ? json({ public_key: '02' + 'AB'.repeat(32), chain_code: 'cd'.repeat(32), ed25519_public_key: null }) : json({ nonce: 7 }))));
     open('/testnet/business/vaults', 'active');
     fireEvent.change(await screen.findByLabelText(/Your signer's URL/), { target: { value: 'https://signer.example.com/' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Read keys from the signer' }));
-    const solana = (await screen.findByLabelText(/Solana/)) as HTMLInputElement;
-    expect(solana.disabled).toBe(true);
+    expect((screen.getByLabelText(/^Solana/) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /Read keys from the signer/ }));
+    await waitFor(() => expect((screen.getByLabelText(/^Solana/) as HTMLInputElement).disabled).toBe(true));
     expect((screen.getByLabelText(/^Bitcoin/) as HTMLInputElement).checked).toBe(true);
-    // Leave only Tron ticked.
-    for (const name of [/^Bitcoin/, /^Ethereum/, /^BNB Smart Chain/]) fireEvent.click(screen.getByLabelText(name));
-    fireEvent.click(screen.getByRole('button', { name: 'Register 1 vault' }));
+    // Bitcoin and Tron in one action, one approval.
+    for (const name of [/^Ethereum/, /^BNB Smart Chain/]) fireEvent.click(screen.getByLabelText(name));
+    fireEvent.click(screen.getByRole('button', { name: 'Register 2 vaults' }));
     await waitFor(() => expect(signAction).toHaveBeenCalledTimes(1));
     const req = (signAction.mock.calls[0] as unknown as [{ envelope: { action: unknown } }])[0];
-    expect(req.envelope.action).toEqual({ RegisterCustodyVault: { chain: 'Tron', epoch: 1, public_key: '02' + 'ab'.repeat(32), chain_code: 'cd'.repeat(32), signer_url: 'https://signer.example.com' } });
+    const v = (chain: string) => ({ chain, epoch: 1, public_key: '02' + 'ab'.repeat(32), chain_code: 'cd'.repeat(32), signer_url: 'https://signer.example.com' });
+    expect(req.envelope.action).toEqual({ RegisterCustodyVaults: [v('Bitcoin'), v('Tron')] });
   });
 
   it('prefills the retail fees and moves the vault tools under Business', async () => {

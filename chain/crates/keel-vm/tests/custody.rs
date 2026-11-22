@@ -1328,3 +1328,55 @@ fn a_client_runs_its_users_accounts_with_a_session_key_and_no_user_keys() {
     assert!(matches!(err(&r[0]), VmError::Unauthorized));
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }
+
+#[test]
+fn several_vaults_are_registered_in_one_action_or_not_at_all() {
+    let (state, mut alice, _bob, mut v) = setup(0);
+    let mut c = Chain::new(state);
+    let on = |chain: ExtChain| CustodyVaultRegistration {
+        chain,
+        ..registration(1)
+    };
+    let sol = CustodyVaultRegistration {
+        chain: ExtChain::Solana,
+        public_key: vec![9u8; 32],
+        ..registration(1)
+    };
+    // One bad entry (a key of the wrong length for Solana) refuses the set.
+    let (r, _) = c.block(&[v.act(Action::RegisterCustodyVaults(vec![
+        on(ExtChain::Tron),
+        on(ExtChain::Solana),
+    ]))]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    assert!(c.state.custody.vaults.is_empty());
+    // So do a chain listed twice, an empty list, and a non-client.
+    let (r, _) = c.block(&[
+        v.act(Action::RegisterCustodyVaults(vec![
+            on(ExtChain::Tron),
+            on(ExtChain::Tron),
+        ])),
+        v.act(Action::RegisterCustodyVaults(vec![])),
+        alice.act(Action::RegisterCustodyVaults(vec![on(ExtChain::Tron)])),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    assert!(matches!(err(&r[1]), VmError::Invalid(_)));
+    assert!(matches!(err(&r[2]), VmError::Unauthorized));
+    assert!(c.state.custody.vaults.is_empty());
+
+    let (r, _) = c.block(&[v.act(Action::RegisterCustodyVaults(vec![
+        on(ExtChain::Bitcoin),
+        on(ExtChain::Tron),
+        on(ExtChain::Bsc),
+        sol,
+    ]))]);
+    ok(&r[0]);
+    assert_eq!(r[0].events.len(), 4);
+    assert_eq!(c.state.custody.vaults.len(), 4);
+    // A chain that already has a vault refuses a set that names it again.
+    let (r, _) = c.block(&[v.act(Action::RegisterCustodyVaults(vec![
+        on(ExtChain::Ethereum),
+        on(ExtChain::Tron),
+    ]))]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    assert_eq!(c.state.custody.vaults.len(), 4);
+}

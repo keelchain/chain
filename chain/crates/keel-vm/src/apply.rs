@@ -358,6 +358,7 @@ fn apply_one(
         | Action::TransferCustody(_)
         | Action::WithdrawCustodyStable(_)
         | Action::WithdrawCustodyFor { .. }
+        | Action::RegisterCustodyVaults(_)
         | Action::SetCustodyOptions { .. }
         | Action::ReleaseCustodyHold { .. } => custody::apply(state, ctx, signer, &tx_id, action),
         Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => {

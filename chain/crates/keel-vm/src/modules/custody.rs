@@ -151,6 +151,27 @@ pub fn apply(
 ) -> Result<Vec<Event>, VmError> {
     match action {
         Action::RegisterCustodyVault(r) => register(state, ctx, signer, r),
+        Action::RegisterCustodyVaults(list) => {
+            if list.is_empty() || list.len() > 8 {
+                return Err(VmError::Invalid("register 1 to 8 vaults at a time".into()));
+            }
+            // Every entry is checked before any vault is recorded, so the
+            // set is registered whole or not at all.
+            for (i, r) in list.iter().enumerate() {
+                if list[..i].iter().any(|x| x.chain == r.chain) {
+                    return Err(VmError::Invalid(format!(
+                        "{} is listed twice",
+                        r.chain.as_str()
+                    )));
+                }
+                check_registration(state, signer, r)?;
+            }
+            let mut events = Vec::with_capacity(list.len());
+            for r in list {
+                events.extend(register(state, ctx, signer, r)?);
+            }
+            Ok(events)
+        }
         Action::RequestCustodyAddress {
             chain,
             custodian,
@@ -305,6 +326,32 @@ fn register(
     signer: Address,
     r: &CustodyVaultRegistration,
 ) -> Result<Vec<Event>, VmError> {
+    check_registration(state, signer, r)?;
+    state.custody.vaults.insert(
+        (r.chain, signer),
+        CustodyVault {
+            custodian: signer,
+            chain: r.chain,
+            epoch: r.epoch,
+            public_key: r.public_key.clone(),
+            chain_code: r.chain_code,
+            signer_url: r.signer_url.clone(),
+            registered_height: ctx.height,
+        },
+    );
+    Ok(vec![Event::CustodyVaultRegistered {
+        custodian: signer,
+        chain: r.chain.as_str().into(),
+        epoch: r.epoch,
+    }])
+}
+
+/// Whether `signer` may register the vault `r` describes.
+fn check_registration(
+    state: &State,
+    signer: Address,
+    r: &CustodyVaultRegistration,
+) -> Result<(), VmError> {
     if !state.attest.attesters.contains(&signer) {
         return Err(VmError::Unauthorized);
     }
@@ -326,23 +373,7 @@ fn register(
             "vault already registered; rotate to a fresh key with RotateCustodyVault".into(),
         ));
     }
-    state.custody.vaults.insert(
-        (r.chain, signer),
-        CustodyVault {
-            custodian: signer,
-            chain: r.chain,
-            epoch: r.epoch,
-            public_key: r.public_key.clone(),
-            chain_code: r.chain_code,
-            signer_url: r.signer_url.clone(),
-            registered_height: ctx.height,
-        },
-    );
-    Ok(vec![Event::CustodyVaultRegistered {
-        custodian: signer,
-        chain: r.chain.as_str().into(),
-        epoch: r.epoch,
-    }])
+    Ok(())
 }
 
 pub(crate) fn valid_signer_url(url: &str) -> bool {

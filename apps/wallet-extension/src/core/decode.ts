@@ -394,6 +394,14 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
         { name: 'Custodian', field: { k: 'address', value: str(p['custodian']) } },
       ]);
+    case 'RegisterCustodyVaults': {
+      const raw = typeof action === 'object' && action !== null ? (action as Record<string, unknown>)['RegisterCustodyVaults'] : null;
+      const list = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+      return view(`Register your custody vaults on ${list.length} networks`, [
+        { name: 'Networks', field: { k: 'text', value: list.map((r) => str(r['chain'])).join(', ') } },
+        { name: 'Signer', field: { k: 'text', value: str(list[0]?.['signer_url']) } },
+      ]);
+    }
     case 'SetCustodyOptions':
       return view(p['hold_deposits'] ? 'Hold deposits to your users until you release them' : 'Credit deposits to your users at once', [
         { name: 'Deposits', field: { k: 'badge', value: p['hold_deposits'] ? 'Held for release' : 'Credited at once', tone: 'neutral' } },

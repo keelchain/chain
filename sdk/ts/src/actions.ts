@@ -157,6 +157,8 @@ export type Action =
   | { WithdrawCustodyFor: { owner: Address; asset: string; via?: string | null; to: string; amount: Amount; fee?: { to: Address; amount: Amount } | null } }
   /** A custodian has deposits to its users credited on hold until it releases them. */
   | { SetCustodyOptions: { hold_deposits: boolean } }
+  /** Register vaults on several chains in one action: all or none. */
+  | { RegisterCustodyVaults: CustodyVaultRegistration[] }
   /** Release a held deposit of `owner`: to the owner, or to another account in the custodian's custody. */
   | { ReleaseCustodyHold: { owner: Address; asset: string; amount: Amount; to?: Address | null } };
 
@@ -249,7 +251,7 @@ const ACTION_VARIANTS = [
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
-  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody", "WithdrawCustodyStable", "WithdrawCustodyFor", "SetCustodyOptions", "ReleaseCustodyHold",
+  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody", "WithdrawCustodyStable", "WithdrawCustodyFor", "SetCustodyOptions", "ReleaseCustodyHold", "RegisterCustodyVaults",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -445,6 +447,9 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
       address(w, b.owner); w.string(b.asset); w.option(b.via, (v) => w.string(v)); w.string(b.to); w.u128(b.amount);
       w.option(b.fee, (f) => { address(w, f.to); w.u128(f.amount); }); break;
     case "SetCustodyOptions": w.bool(b.hold_deposits); break;
+    case "RegisterCustodyVaults":
+      w.vec(b as CustodyVaultRegistration[], (r) => { unitEnum(w, CHAINS, r.chain); w.u64(r.epoch); w.vecU8(toBytes(r.public_key)); w.option(r.chain_code, (h) => hash(w, h)); w.string(r.signer_url); });
+      break;
     case "ReleaseCustodyHold": address(w, b.owner); w.string(b.asset); w.u128(b.amount); w.option(b.to, (a) => address(w, a)); break;
     case "TransferCustody":
       w.vec(b.legs as CustodyLeg[], (l) => { w.option(l.from, (a) => address(w, a)); address(w, l.to); w.string(l.asset); w.u128(l.amount); });

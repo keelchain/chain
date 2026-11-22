@@ -5,6 +5,10 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **several vaults in one action** (2026-11-22).
+  `RegisterCustodyVaults([...])` registers a client's vaults on up to 8
+  chains at once, all or none. Harbor sends it when more than one
+  network is ticked, so the wallet asks once. Keel Wallet 1.7.0.
 - **Vault registration from the signer's URL** (2026-11-22). `keel-tss
   serve` and the development signer answer `GET /info` with the public
   keys and chain codes they hold (any origin: it is public data). Harbor's

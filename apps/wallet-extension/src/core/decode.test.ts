@@ -97,6 +97,13 @@ describe('decodeAction', () => {
     expect(decodeAction({ SetPlanRenewal: { tier: 0 } }).summary).toBe('Stop renewing the client plan');
   });
 
+  it('RegisterCustodyVaults names the networks', () => {
+    const v = (chain: string) => ({ chain, epoch: 1, public_key: '02' + 'ab'.repeat(32), chain_code: 'cd'.repeat(32), signer_url: 'https://s.example.com' });
+    const d = decodeAction({ RegisterCustodyVaults: [v('Bitcoin'), v('Tron')] });
+    expect(d.summary).toBe('Register your custody vaults on 2 networks');
+    expect(d.fields[0]).toEqual({ name: 'Networks', field: { k: 'text', value: 'Bitcoin, Tron' } });
+  });
+
   it('LockBudget / UnlockBudget in KEEL', () => {
     const d = decodeAction({ LockBudget: { amount: 25_000_000 } });
     expect(d.summary).toBe('Lock 25 KEEL as action budget');

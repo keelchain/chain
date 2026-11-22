@@ -431,6 +431,25 @@ fn vectors() -> Vec<(&'static str, Action)> {
             },
         ),
         (
+            "register_custody_vaults",
+            Action::RegisterCustodyVaults(vec![
+                keel_actions::CustodyVaultRegistration {
+                    chain: Chain::Bitcoin,
+                    epoch: 1,
+                    public_key: vec![2u8; 33],
+                    chain_code: Some([7u8; 32]),
+                    signer_url: "https://signer.example.com".into(),
+                },
+                keel_actions::CustodyVaultRegistration {
+                    chain: Chain::Solana,
+                    epoch: 1,
+                    public_key: vec![9u8; 32],
+                    chain_code: Some([7u8; 32]),
+                    signer_url: "https://signer.example.com".into(),
+                },
+            ]),
+        ),
+        (
             "set_custody_options",
             Action::SetCustodyOptions {
                 hold_deposits: true,

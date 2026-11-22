@@ -369,7 +369,7 @@ function keysFor(chain: Chain, info: SignerInfo): { pk: string; cc: string } | n
  * `RegisterCustodyVault` for the networks the client ticks. The keys are
  * read from the client's own signer (`GET <signer>/info`), so the only
  * thing typed is the signer's URL. One action, and one wallet approval,
- * per network.
+ * for all of them.
  */
 function RegisterVault({ c }: { c: Custody }) {
   const w = useWallet();
@@ -379,7 +379,7 @@ function RegisterVault({ c }: { c: Custody }) {
   const [url, setUrl] = useState('');
   const [info, setInfo] = useState<SignerInfo | null>(null);
   const [reading, setReading] = useState(false);
-  const [picked, setPicked] = useState<Chain[]>([]);
+  const [picked, setPicked] = useState<Chain[]>(() => CHAINS.filter((x) => !c.vaults.some((v) => chainOf(v.chain) === x)));
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<{ chain: Chain; ok: boolean; text: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -391,22 +391,28 @@ function RegisterVault({ c }: { c: Custody }) {
   const urlOk = /^https?:\/\/\S+$/.test(base);
   const manualInfo: SignerInfo | null = manual && /^[0-9a-fA-F]{64,66}$/.test(pk.trim()) && /^[0-9a-fA-F]{64}$/.test(cc.trim()) ? (pk.trim().length === 64 ? { ed25519_public_key: pk.trim(), ed25519_chain_code: cc.trim() } : { public_key: pk.trim(), chain_code: cc.trim() }) : null;
   const keys = manual ? manualInfo : info;
-  const offered = keys ? free.filter((x) => keysFor(x, keys) !== null) : [];
+  // Before the keys are known every network can be ticked; after, only those the signer has a key for.
+  const offered = keys ? free.filter((x) => keysFor(x, keys) !== null) : free;
   const chosen = picked.filter((x) => offered.includes(x));
 
   const read = async () => {
-    setReading(true);
     setError(null);
     setInfo(null);
+    // A browser refuses a plain-HTTP request made from an HTTPS page, before it ever leaves the machine.
+    if (window.location.protocol === 'https:' && base.startsWith('http://')) {
+      setError('This page is served over HTTPS, and your browser will not let it read an http:// address. Put the signer behind HTTPS (a web server or a tunnel in front of its port) and give that https:// address. The observers reach it the same way.');
+      return;
+    }
+    setReading(true);
     try {
       const res = await fetch(`${base}/info`, { headers: { accept: 'application/json' } });
       if (!res.ok) throw new Error(`the signer answered ${res.status}`);
       const got = (await res.json()) as SignerInfo;
       if (!got.public_key && !got.ed25519_public_key) throw new Error('the signer reported no keys');
       setInfo(got);
-      setPicked(free.filter((x) => keysFor(x, got) !== null));
+      setPicked((p) => p.filter((x) => keysFor(x, got) !== null));
     } catch (e) {
-      setError(`Could not read the signer at ${base}/info: ${e instanceof Error ? e.message : String(e)}. Check the address, that the signer is running and reachable over HTTPS, or enter its keys by hand.`);
+      setError(`Could not read the signer at ${base}/info: ${e instanceof Error ? e.message : String(e)}. Three things to check: the signer's port is open to the internet (not only to its own machine, and not blocked by a firewall); it is a build that answers /info (the current command-line tools); and the address is right. Or enter its keys by hand.`);
     } finally {
       setReading(false);
     }
@@ -416,19 +422,21 @@ function RegisterVault({ c }: { c: Custody }) {
     setBusy(true);
     setError(null);
     setLog([]);
-    for (const chain of chosen) {
+    // One action for every network ticked: a single approval, and either
+    // all of them are registered or none.
+    const list = chosen.map((chain) => {
       const k = keysFor(chain, keys)!;
-      try {
-        const r = await w.signAndSubmit(
-          { RegisterCustodyVault: { chain, epoch: 1, public_key: k.pk, chain_code: k.cc, signer_url: base } },
-          { title: `Register your ${CHAIN_NAME[chain]} vault`, description: 'Deposit addresses for your users are derived from this key, and your signer at that URL signs their payouts.' },
-        );
-        setLog((l) => [...l, { chain, ok: r.ok, text: r.ok ? 'registered' : (r.error?.message ?? 'refused') }]);
-        if (!r.ok) break;
-      } catch (e) {
-        setLog((l) => [...l, { chain, ok: false, text: e instanceof Error ? e.message : String(e) }]);
-        break;
-      }
+      return { chain, epoch: 1, public_key: k.pk, chain_code: k.cc, signer_url: base };
+    });
+    const names = chosen.map((x) => CHAIN_NAME[x]).join(', ');
+    try {
+      const r = await w.signAndSubmit(list.length === 1 ? { RegisterCustodyVault: list[0] } : { RegisterCustodyVaults: list }, {
+        title: list.length === 1 ? `Register your ${names} vault` : `Register your vaults on ${list.length} networks`,
+        description: `${names}. Deposit addresses for your users are derived from these keys, and your signer at ${base} signs their payouts.`,
+      });
+      setLog(chosen.map((chain) => ({ chain, ok: r.ok, text: r.ok ? 'registered' : (r.error?.message ?? 'refused') })));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
     await qc.invalidateQueries();
     setBusy(false);
@@ -438,15 +446,45 @@ function RegisterVault({ c }: { c: Custody }) {
       <div className="form">
         <p className="small text-2">
           A vault is a key <strong>you</strong> hold, on a signer you run (<span className="mono">keel-tss serve</span>, or your own KMS behind the same two routes). Keel never has the key: it learns
-          the public half and where to ask for signatures. Give the signer's address, tick the networks, approve.
+          the public half and where to ask for signatures. Tick the networks, give the signer's address, approve.
         </p>
-        <Field label="Your signer's URL" hint="Public HTTPS address of the signer. The observers that build your payouts call it too.">
+        <details className="small text-2">
+          <summary>I don't have a signer yet</summary>
+          <p>
+            The signer is a small program on a server of yours that holds the vault key and signs your users' payouts after checking each one against the chain. Until it runs there is nothing to
+            register. On the testnet, the quickest way is the development signer from the command-line tools (<a href="https://keelchain.com/docs/install/">install</a>):
+          </p>
+          <p className="mono" style={{ wordBreak: 'break-all' }}>
+            keel-observer dev-signer --seed &lt;64 hex characters you generate and keep&gt; --listen 127.0.0.1:7300
+          </p>
+          <p>
+            Put it behind HTTPS on a public name (your web server or a tunnel), and give that address below. For real funds use <span className="mono">keel-tss serve</span> with key shares, or your own
+            key service answering the same two routes; see <a href="https://keelchain.com/docs/models/">the custody model</a>. If you would rather not hold keys at all, you do not need a vault: your
+            users can keep their coins in Keel's network vault, with nothing to register.
+          </p>
+        </details>
+        <fieldset className="form">
+          <legend className="field-label">1. Networks to open a vault on</legend>
+          <div className="row">
+            {free.map((x) => {
+              const can = offered.includes(x);
+              return (
+                <label key={x} className="small" title={can ? undefined : 'This signer holds no key for it'}>
+                  <input type="checkbox" disabled={!can || busy} checked={can && picked.includes(x)} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, x] : p.filter((y) => y !== x)))} /> {CHAIN_NAME[x]}
+                  {!can && <span className="text-2"> (no key on this signer)</span>}
+                </label>
+              );
+            })}
+          </div>
+          {taken.size > 0 && <span className="small text-2">Already registered: {CHAINS.filter((x) => taken.has(x)).map((x) => CHAIN_NAME[x]).join(', ')}.</span>}
+        </fieldset>
+        <Field label="2. Your signer's URL" hint="Public HTTPS address of the signer. The observers that build your payouts call it too.">
           <input className="input mono" value={url} onChange={(e) => { setUrl(e.target.value); setInfo(null); }} placeholder="https://signer.example.com" spellCheck={false} />
         </Field>
         {!manual && (
           <div className="row">
             <button type="button" className="btn" disabled={!urlOk || reading} onClick={() => void read()}>
-              {reading ? 'Reading…' : info ? 'Read again' : 'Read keys from the signer'}
+              {reading ? 'Reading…' : info ? 'Read again' : '3. Read keys from the signer'}
             </button>
             <button type="button" className="btn small" onClick={() => setManual(true)}>
               Enter the keys by hand
@@ -470,26 +508,11 @@ function RegisterVault({ c }: { c: Custody }) {
         )}
         {error && <p className="small down">{error}</p>}
         {keys && (
-          <fieldset className="form">
-            <legend className="small text-2">Networks to open a vault on</legend>
-            {free.map((x) => {
-              const can = offered.includes(x);
-              return (
-                <label key={x} className="small">
-                  <input type="checkbox" disabled={!can || busy} checked={can && picked.includes(x)} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, x] : p.filter((y) => y !== x)))} /> {CHAIN_NAME[x]}
-                  {!can && <span className="text-2"> · this signer holds no key for it</span>}
-                </label>
-              );
-            })}
-            {taken.size > 0 && <span className="small text-2">Already registered: {CHAINS.filter((x) => taken.has(x)).map((x) => CHAIN_NAME[x]).join(', ')}.</span>}
-          </fieldset>
-        )}
-        {keys && (
           <div className="row">
             <button type="button" className="btn primary" disabled={busy || chosen.length === 0 || !urlOk} onClick={() => void register()}>
               {busy ? 'Waiting for the wallet…' : `Register ${chosen.length} ${chosen.length === 1 ? 'vault' : 'vaults'}`}
             </button>
-            {chosen.length > 1 && <span className="small text-2">Keel Wallet asks once per network.</span>}
+            {chosen.length > 1 && <span className="small text-2">One approval in Keel Wallet for all of them.</span>}
           </div>
         )}
         {log.map((l) => (

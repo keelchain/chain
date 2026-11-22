@@ -306,6 +306,9 @@ pub enum Action {
         #[serde(default)]
         to: Option<Address>,
     },
+    /// A client registers its vaults on several chains in one action:
+    /// what `RegisterCustodyVault` does, for each entry, all or none.
+    RegisterCustodyVaults(Vec<CustodyVaultRegistration>),
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -448,6 +451,7 @@ impl Action {
             | Action::TransferCustody(_)
             | Action::WithdrawCustodyStable(_)
             | Action::WithdrawCustodyFor { .. }
+            | Action::RegisterCustodyVaults(_)
             | Action::SetCustodyOptions { .. }
             | Action::ReleaseCustodyHold { .. } => "custody",
             Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
