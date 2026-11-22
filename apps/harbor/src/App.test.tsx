@@ -214,6 +214,38 @@ describe('usage and business', () => {
     expect(screen.getByText(/None. Until you authorize one/)).toBeTruthy();
   });
 
+  it('pays a user out of custody on a chosen network with the fee on top, and releases a held deposit', async () => {
+    const { signAction } = installWallet();
+    open('/testnet/users', 'active');
+    fireEvent.click(await screen.findByRole('button', { name: 'My own account' }));
+    expect(await screen.findByText('On hold')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Destination address/), { target: { value: 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE' } });
+    const amounts = screen.getAllByLabelText(/^Amount/);
+    fireEvent.change(amounts[amounts.length - 1]!, { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText(/Your fee on top/), { target: { value: '1.5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Pay out' }));
+    await waitFor(() => expect(signAction).toHaveBeenCalledTimes(1));
+    const sent = (i: number) => (signAction.mock.calls[i] as unknown as [{ envelope: { action: unknown } }])[0].envelope.action;
+    expect(sent(0)).toEqual({
+      WithdrawCustodyFor: { owner: MOCK_ADDRESS, asset: 'USDT', via: 'TRON.USDT', to: 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE', amount: 100_000_000n, fee: { to: MOCK_ADDRESS, amount: 1_500_000n } },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Release to the user' }));
+    await waitFor(() => expect(signAction).toHaveBeenCalledTimes(2));
+    expect(sent(1)).toEqual({ ReleaseCustodyHold: { owner: MOCK_ADDRESS, asset: 'TRON.USDT', amount: 40_000_000n, to: null } });
+  });
+
+  it('registers a vault and switches deposit screening from the Vaults tab', async () => {
+    const { signAction } = installWallet();
+    open('/testnet/business/vaults', 'active');
+    fireEvent.change(await screen.findByLabelText(/^Public key/), { target: { value: '02' + 'AB'.repeat(32) } });
+    fireEvent.change(screen.getByLabelText(/^Chain code/), { target: { value: 'cd'.repeat(32) } });
+    fireEvent.change(screen.getByLabelText(/^Signer URL/), { target: { value: 'https://signer.example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    await waitFor(() => expect(signAction).toHaveBeenCalledTimes(1));
+    const req = (signAction.mock.calls[0] as unknown as [{ envelope: { action: unknown } }])[0];
+    expect(req.envelope.action).toEqual({ RegisterCustodyVault: { chain: 'Bitcoin', epoch: 1, public_key: '02' + 'ab'.repeat(32), chain_code: 'cd'.repeat(32), signer_url: 'https://signer.example.com' } });
+  });
+
   it('prefills the retail fees and moves the vault tools under Business', async () => {
     installWallet();
     open('/testnet/business', 'active');

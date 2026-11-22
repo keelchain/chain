@@ -191,6 +191,21 @@ beyond the 1 KEEL lock.
 </div>
 </div>
 
+## Everything is in Harbor
+
+Nothing a client does day to day needs the command line. In Harbor:
+
+| Where | What |
+|---|---|
+| Plans | buy, upgrade, renewal |
+| Funds | lock and unlock KEEL, buy KEEL, where to send USDT |
+| Usage | prices, allowance, what you paid |
+| Users | look a user up, attest or renew, issue a deposit address in your vault, move a balance inside custody, pay out (with your own fee), release a held deposit |
+| Business | retail fees; service keys for your backend; vaults: register, rotate, retire, deposit screening; float swap |
+
+Each is one action approved in Keel Wallet. The CLI and the SDK send the
+same actions, for automation (`install.md`).
+
 ## What stays with you
 
 Keel is infrastructure. Your licences, the identification of your users

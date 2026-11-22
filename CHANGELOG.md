@@ -5,6 +5,12 @@ Dates are UTC.
 
 ## Unreleased
 
+- Harbor: **every client action has a screen** (2026-11-22). New Users
+  page (attest, deposit address, move inside custody, pay out with a
+  fee, release held deposits) and, under Business, service keys
+  (authorize, revoke), vault registration, generation retirement and the
+  deposit-screening switch. Keel Wallet 1.6.0 encodes the actions added
+  since 1.5.0; older versions cannot sign them.
 - **Command-line tools as downloads** (2026-11-22). The
   `Release command-line tools` workflow builds `keel`, `keel-node`,
   `keel-indexer`, `keel-observer` and `keel-tss` for Linux (x86_64,

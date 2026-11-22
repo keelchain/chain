@@ -11,6 +11,7 @@ const NAV: { to: string; label: string; end?: boolean }[] = [
   { to: '/plans', label: 'Plans' },
   { to: '/funds', label: 'Funds' },
   { to: '/usage', label: 'Usage' },
+  { to: '/users', label: 'Users' },
   { to: '/business', label: 'Business' },
 ];
 

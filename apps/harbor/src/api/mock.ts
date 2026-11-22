@@ -63,13 +63,15 @@ export function mockClient(over: Partial<ClientRecord> = {}): ClientRecord {
   };
 }
 
-export function mockAccount(over: { usdt?: bigint; keel?: bigint; locked?: bigint; unlocking?: { ready_at: number; amount: string }[] } = {}): AccountRecord {
+export function mockAccount(over: { usdt?: bigint; keel?: bigint; locked?: bigint; unlocking?: { ready_at: number; amount: string }[]; custody?: bigint; held?: bigint } = {}): AccountRecord {
   return {
     address: MOCK_ADDRESS,
     nonce: 7,
     balances: [
       { asset: 'USDT', account_type: 'deposit', balance: String(over.usdt ?? 0n) },
       { asset: 'KEEL', account_type: 'deposit', balance: String(over.keel ?? 0n) },
+      { asset: 'USDT', account_type: 'custody', balance: String(over.custody ?? 0n) },
+      { asset: 'TRON.USDT', account_type: 'custody_hold', balance: String(over.held ?? 0n) },
     ],
     budget: { locked: String(over.locked ?? 0n), unlocking: over.unlocking ?? [] },
     sessions: [],
@@ -113,7 +115,7 @@ export function scenario(s: Scenario, nowSecs: number = MOCK_NOW_SECS): { client
           tier: 2,
           plan: mockPlan(2, 12, { allowance_left_usd_micro: String(742n * USD), user_actions_used_today: 18_650 }, nowSecs),
         }),
-        account: mockAccount({ usdt: 1_840n * USD, keel: 25_000n * KEEL, locked: 500_000n * KEEL }),
+        account: mockAccount({ usdt: 1_840n * USD, keel: 25_000n * KEEL, locked: 500_000n * KEEL, custody: 900n * USD, held: 40n * USD }),
       };
     case 'suspended':
       return {

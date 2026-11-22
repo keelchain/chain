@@ -235,6 +235,89 @@ function Fees({ h }: { h: Harbor }) {
 
 // ---------------------------------------------------------------- custody
 
+/** `RegisterCustodyVault`: the first vault on a network (a later key change is a rotation). */
+function RegisterVault({ c }: { c: Custody }) {
+  const act = useAction();
+  const taken = new Set(c.vaults.map((v) => chainOf(v.chain)));
+  const free = CHAINS.filter((x) => !taken.has(x));
+  const [chain, setChain] = useState<Chain>(free[0] ?? 'Bitcoin');
+  const [pk, setPk] = useState('');
+  const [cc, setCc] = useState('');
+  const [url, setUrl] = useState('');
+  if (free.length === 0) return null;
+  const picked = free.includes(chain) ? chain : free[0]!;
+  // Solana's vault key is 32 bytes (Ed25519); the others are 33-byte compressed secp256k1 keys.
+  const keyOk = picked === 'Solana' ? /^[0-9a-fA-F]{64}$/.test(pk.trim()) : /^[0-9a-fA-F]{66}$/.test(pk.trim());
+  const ok = keyOk && /^[0-9a-fA-F]{64}$/.test(cc.trim()) && /^https?:\/\/\S+$/.test(url.trim());
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!ok) return;
+    void act.run(
+      { RegisterCustodyVault: { chain: picked, epoch: 1, public_key: pk.trim().toLowerCase(), chain_code: cc.trim().toLowerCase(), signer_url: url.trim() } },
+      `Register your ${CHAIN_NAME[picked]} vault`,
+      'Deposit addresses for your users are derived from this key, and your signer at that URL signs their payouts.',
+    );
+  };
+  return (
+    <Card title="Register a vault">
+      <form className="form" onSubmit={submit}>
+        <p className="small text-2">
+          Your signer prints the public key and chain code when it starts (<span className="mono">keel-tss serve</span>, or your own KMS hook). You keep the key; Keel only learns its public half and
+          where to ask for signatures. One vault per network; to change a key later, use Rotate.
+        </p>
+        <Field label="Network">
+          <select className="select" value={picked} onChange={(e) => setChain(e.target.value as Chain)}>
+            {free.map((x) => (
+              <option key={x} value={x}>
+                {CHAIN_NAME[x]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Public key" hint={picked === 'Solana' ? '32 bytes, hex (Ed25519)' : '33 bytes, hex (compressed)'}>
+          <input className="input mono" value={pk} onChange={(e) => setPk(e.target.value)} spellCheck={false} />
+        </Field>
+        <Field label="Chain code" hint="32 bytes, hex">
+          <input className="input mono" value={cc} onChange={(e) => setCc(e.target.value)} spellCheck={false} />
+        </Field>
+        <Field label="Signer URL" hint="Reachable by the observers that build your payout batches.">
+          <input className="input mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://signer.example.com" />
+        </Field>
+        <div className="row">
+          <Submit act={act} disabled={!ok}>
+            Register
+          </Submit>
+        </div>
+        <ActionResult act={act} />
+      </form>
+    </Card>
+  );
+}
+
+/** `SetCustodyOptions`: whether deposits to the client's users wait for its release. */
+function Screening({ c }: { c: Custody }) {
+  const act = useAction();
+  const on = c.hold_deposits === true;
+  return (
+    <Card title="Deposit screening">
+      <div className="form">
+        <p className="small text-2">
+          {on
+            ? 'On: a deposit to one of your users is credited on hold. It is in your vault and owed, and the user cannot spend it until you release it under Users.'
+            : 'Off: a deposit to one of your users is credited to their balance at once. Turn it on to screen deposits first; each then waits for your release under Users.'}{' '}
+          Your own top-ups are never held.
+        </p>
+        <div className="row">
+          <button type="button" className="btn" disabled={act.busy} onClick={() => void act.run({ SetCustodyOptions: { hold_deposits: !on } }, on ? 'Credit deposits at once' : 'Hold deposits for release')}>
+            {on ? 'Turn off: credit at once' : 'Turn on: hold deposits'}
+          </button>
+        </div>
+        <ActionResult act={act} />
+      </div>
+    </Card>
+  );
+}
+
 function Vaults({ c }: { c: Custody }) {
   const act = useAction();
   return (
@@ -261,12 +344,11 @@ function Vaults({ c }: { c: Custody }) {
       )}
       {c.vaults.length === 0 && (
         <Card title="Custody vaults">
-          <p className="text-2">
-            No custody vault is registered for this account. A client that holds its users' coins under its own key registers one with <span className="mono">RegisterCustodyVault</span> (SDK or CLI)
-            once its signer is up; it then appears here with its generations.
-          </p>
+          <p className="text-2">No custody vault is registered for this account. A client that holds its users' coins under its own key registers one below, once its signer is up.</p>
         </Card>
       )}
+      <RegisterVault c={c} />
+      {c.vaults.length > 0 && <Screening c={c} />}
       {c.vaults.map((v) => (
         <Card
           key={`${v.chain}:${v.gen}`}
@@ -279,6 +361,17 @@ function Vaults({ c }: { c: Custody }) {
             <span className="row">
               <Badge tone={v.status === 'Active' ? 'good' : v.status === 'Draining' ? 'warn' : 'neutral'}>{v.status}</Badge>
               {v.status === 'Draining' && <Badge>empties through payouts</Badge>}
+              {v.status === 'Draining' && chainOf(v.chain) && (
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={act.busy}
+                  title="Once it is empty and its grace is over"
+                  onClick={() => void act.run({ RetireCustodyGeneration: { chain: chainOf(v.chain), custodian: c.custodian, gen: v.gen } }, `Retire ${chainName(v.chain)} generation ${v.gen}`, 'Refused until the generation is empty and its grace has passed.')}
+                >
+                  Retire
+                </button>
+              )}
             </span>
           }
           flush

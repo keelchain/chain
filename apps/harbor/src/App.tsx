@@ -10,6 +10,7 @@ import { ClientGate } from './pages/ClientGate';
 import { FundsPage } from './pages/Funds';
 import { OverviewPage } from './pages/Overview';
 import { PlansPage } from './pages/Plans';
+import { UsersPage } from './pages/Users';
 import { UsagePage } from './pages/Usage';
 import { WalletProvider } from './wallet/WalletContext';
 
@@ -60,6 +61,7 @@ function NetworkRoutes({ networks, apiFactory }: { networks: Network[]; apiFacto
               <Route path="plans" element={<PlansPage />} />
               <Route path="funds" element={<FundsPage />} />
               <Route path="usage" element={<UsagePage />} />
+              <Route path="users" element={<UsersPage />} />
               <Route path="business" element={<BusinessPage />} />
               <Route path="business/:tab" element={<BusinessPage />} />
               <Route path="*" element={<Navigate to={`/${network.id}`} replace />} />

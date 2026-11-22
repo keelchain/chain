@@ -95,6 +95,11 @@ export interface AccountRecord {
   };
   /** Keys authorized to sign for this account: `scope` is a bitset, `expires_at` in seconds. */
   sessions?: { key: string; scope: number; expires_at: number }[];
+  /** KYC tier and when it lapses (seconds), the client that attested the account, and the custodian of its custody balances. */
+  tier?: number;
+  tier_expires_at?: number;
+  attester?: string | null;
+  custodian?: string | null;
 }
 
 export interface CustodyEntry {
@@ -117,6 +122,8 @@ export interface Custody {
   rotations: { chain: string; gen: number; activate_at: number; signer_url: string }[];
   accounts: number;
   floats: { asset: string; custody: AmountStr; deposit: AmountStr }[];
+  /** Deposits to this client's users are credited on hold until it releases them. */
+  hold_deposits?: boolean;
 }
 
 export type EventRecord = { type: string } & Record<string, unknown>;
