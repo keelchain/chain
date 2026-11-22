@@ -128,6 +128,13 @@ function ServiceKeys({ h }: { h: Harbor }) {
               <span className="small text-2">or paste the address of a key the service already has.</span>
             </div>
           )}
+          {!asked && (
+            <p className="small text-2">
+              <strong>Where a key created here lives.</strong> It is generated in this browser tab and held in its memory only. Harbor has no server: the secret is never stored, never sent
+              anywhere, and never written to this browser's storage. It is shown to you once; closing or reloading the page discards it, and nobody, Keel included, can show it again. From then on
+              the only copy is the one you put in your service. See the <a href="https://keelchain.com/policy/#harbor-keys">policy</a>.
+            </p>
+          )}
           {made && (
             <Notice tone="warn" title="Copy this secret into your service now. It is shown only this once.">
               <p className="small">
