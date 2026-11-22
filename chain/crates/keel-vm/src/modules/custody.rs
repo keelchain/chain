@@ -1300,6 +1300,8 @@ pub(crate) fn settle_outbound(
             outbound_id: ob.id,
             tx_hash: tokens::hex(tx_hash),
             external_tx,
+            owner: ob.owner,
+            custodian: Some(custodian),
         });
     } else {
         state.ledger.post(
@@ -1317,6 +1319,8 @@ pub(crate) fn settle_outbound(
         events.push(Event::OutboundFailed {
             outbound_id: ob.id,
             refunded: ob.amount,
+            owner: ob.owner,
+            custodian: Some(custodian),
         });
         // A failed payout of redeemed USDT goes back to being USDT.
         if state.custody.stable_outbounds.contains(&ob.id) {

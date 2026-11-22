@@ -192,6 +192,12 @@ pub(crate) fn event_addresses(e: &Event) -> Vec<Address> {
         Event::TradeCancelled { by, .. } | Event::DisputeOpened { by, .. } => vec![*by],
         Event::ProposalCreated { proposer, .. } => vec![*proposer],
         Event::Voted { voter, .. } => vec![*voter],
+        Event::OutboundConfirmed {
+            owner, custodian, ..
+        }
+        | Event::OutboundFailed {
+            owner, custodian, ..
+        } => std::iter::once(*owner).chain(*custodian).collect(),
         _ => Vec::new(),
     }
 }

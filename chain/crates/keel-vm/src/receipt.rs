@@ -197,6 +197,11 @@ pub enum Event {
         outbound_id: u64,
         tx_hash: String,
         external_tx: Option<String>,
+        /// Whose withdrawal it was, and the client whose vault paid it
+        /// (`None`: the network vault), so the account's and the client's
+        /// event feeds carry the end of a payout as well as its start.
+        owner: Address,
+        custodian: Option<Address>,
     },
     VaultRegistered {
         chain: String,
@@ -293,6 +298,8 @@ pub enum Event {
     OutboundFailed {
         outbound_id: u64,
         refunded: Amount,
+        owner: Address,
+        custodian: Option<Address>,
     },
     /// A client's retail fee, paid by one of its attested accounts into
     /// the client's deposit account (`flow`: p2p | taker | withdraw).

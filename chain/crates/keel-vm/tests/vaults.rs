@@ -909,6 +909,8 @@ fn outbounds_batch_confirm_and_fail_refund() {
             outbound_id: 0,
             tx_hash: "aa".repeat(32),
             external_tx: None,
+            owner: state.vaults.outbounds[&0].owner,
+            custodian: None,
         }]
     );
     assert_eq!(
@@ -942,7 +944,9 @@ fn outbounds_batch_confirm_and_fail_refund() {
         r[1].events,
         vec![Event::OutboundFailed {
             outbound_id: 1,
-            refunded: 500_000
+            refunded: 500_000,
+            owner: state.vaults.outbounds[&1].owner,
+            custodian: None,
         }]
     );
     assert_eq!(

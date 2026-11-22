@@ -5,6 +5,11 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **the end of a payout names its account** (2026-11-22).
+  `OutboundConfirmed` and `OutboundFailed` carry `owner` and `custodian`
+  (null for the network vault). Until now they held only the outbound
+  id, so they never reached an account's stream or `/v1/events` filtered
+  by address: a client saw a withdrawal start and never saw it finish.
 - Chain and API: **withdrawal fee, held deposits, one outbound**
   (2026-11-22).
   - `WithdrawCustodyFor` takes `fee: { to, amount }`: the client's own

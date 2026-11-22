@@ -363,7 +363,9 @@ client's users.
 
 `GET /api/v1/events?address=<your operator address>&cursor=` on the
 indexer is every event that names your account, oldest first: custody
-credits, transfers and swaps of your users, payouts and the network fee
+credits (held or not), transfers and swaps of your users, payouts from
+the moment they are queued to `OutboundConfirmed` or `OutboundFailed`
+(both name the account and you), and the network fee
 each one cost you (`CustodyNetworkFeePaid`: the figures for a gas report),
 plan periods, usage charged and owed. It includes the events a block emits by itself (a plan
 renewal, usage collected at an epoch boundary), which no transaction

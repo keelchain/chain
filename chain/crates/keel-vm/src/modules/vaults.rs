@@ -914,11 +914,15 @@ fn observe_outbound(
                 outbound_id: ob.id,
                 tx_hash: tokens::hex(&o.tx_hash),
                 external_tx: ob.external_tx.clone(),
+                owner: ob.owner,
+                custodian: None,
             }
         } else {
             Event::OutboundFailed {
                 outbound_id: ob.id,
                 refunded: 0,
+                owner: ob.owner,
+                custodian: None,
             }
         });
         return Ok(events);
@@ -967,6 +971,8 @@ fn observe_outbound(
             outbound_id: ob.id,
             tx_hash: tokens::hex(&o.tx_hash),
             external_tx: ob.external_tx.clone(),
+            owner: ob.owner,
+            custodian: None,
         });
     } else {
         // Failed on chain: everything back to the owner.
@@ -1002,6 +1008,8 @@ fn observe_outbound(
         events.push(Event::OutboundFailed {
             outbound_id: ob.id,
             refunded,
+            owner: ob.owner,
+            custodian: None,
         });
     }
     let _ = ctx;
