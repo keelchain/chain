@@ -209,6 +209,10 @@ describe('usage and business', () => {
     const { Keypair } = await import('@keelchain/sdk');
     expect(Keypair.fromSecret(secret).address).toBe(address);
     expect((screen.getByRole('button', { name: 'Authorize in wallet' }) as HTMLButtonElement).disabled).toBe(false);
+    // Pasting the secret where the address goes is caught and cannot be sent.
+    fireEvent.change(screen.getByLabelText(/The service's Keel address/), { target: { value: secret } });
+    expect(screen.getByText('You pasted a secret, not an address.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Authorize in wallet' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('authorizes a service key from its address, with the scopes ticked', async () => {
@@ -247,16 +251,23 @@ describe('usage and business', () => {
     expect(sent(1)).toEqual({ ReleaseCustodyHold: { owner: MOCK_ADDRESS, asset: 'TRON.USDT', amount: 40_000_000n, to: null } });
   });
 
-  it('registers a vault and switches deposit screening from the Vaults tab', async () => {
+  it('registers vaults from the signer URL alone: keys are read from it and networks are ticked', async () => {
     const { signAction } = installWallet();
+    const json = (v: unknown) => Promise.resolve(new Response(JSON.stringify(v), { status: 200, headers: { 'content-type': 'application/json' } }));
+    // The signer holds a secp256k1 key and no Ed25519 one: Solana cannot be offered.
+    vi.stubGlobal('fetch', vi.fn((u: unknown) => (String(u).endsWith('/info') ? json({ public_key: '02' + 'AB'.repeat(32), chain_code: 'cd'.repeat(32), ed25519_public_key: null }) : json({ nonce: 7 }))));
     open('/testnet/business/vaults', 'active');
-    fireEvent.change(await screen.findByLabelText(/^Public key/), { target: { value: '02' + 'AB'.repeat(32) } });
-    fireEvent.change(screen.getByLabelText(/^Chain code/), { target: { value: 'cd'.repeat(32) } });
-    fireEvent.change(screen.getByLabelText(/^Signer URL/), { target: { value: 'https://signer.example.com' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    fireEvent.change(await screen.findByLabelText(/Your signer's URL/), { target: { value: 'https://signer.example.com/' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Read keys from the signer' }));
+    const solana = (await screen.findByLabelText(/Solana/)) as HTMLInputElement;
+    expect(solana.disabled).toBe(true);
+    expect((screen.getByLabelText(/^Bitcoin/) as HTMLInputElement).checked).toBe(true);
+    // Leave only Tron ticked.
+    for (const name of [/^Bitcoin/, /^Ethereum/, /^BNB Smart Chain/]) fireEvent.click(screen.getByLabelText(name));
+    fireEvent.click(screen.getByRole('button', { name: 'Register 1 vault' }));
     await waitFor(() => expect(signAction).toHaveBeenCalledTimes(1));
     const req = (signAction.mock.calls[0] as unknown as [{ envelope: { action: unknown } }])[0];
-    expect(req.envelope.action).toEqual({ RegisterCustodyVault: { chain: 'Bitcoin', epoch: 1, public_key: '02' + 'ab'.repeat(32), chain_code: 'cd'.repeat(32), signer_url: 'https://signer.example.com' } });
+    expect(req.envelope.action).toEqual({ RegisterCustodyVault: { chain: 'Tron', epoch: 1, public_key: '02' + 'ab'.repeat(32), chain_code: 'cd'.repeat(32), signer_url: 'https://signer.example.com' } });
   });
 
   it('prefills the retail fees and moves the vault tools under Business', async () => {

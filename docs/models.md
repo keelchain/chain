@@ -50,7 +50,9 @@ show its users what it holds. On Keel it keeps its keys and gets the rest.
    context}` answering `{r, s, recovery_id}`, exactly what `keel-tss serve`
    answers. The URL must be reachable by the observers that build its
    batches (a public HTTPS endpoint behind the client's own allow-list).
-2. Registers the vault on chain with `RegisterCustodyVault`: chain, epoch,
+2. Registers the vault on chain (in Harbor: Business, Vaults: give the
+   signer's URL, Harbor reads the keys from the signer's `GET /info`, tick
+   the networks). The action is `RegisterCustodyVault`: chain, epoch,
    the compressed public key, the chain code and the signer URL. Only an
    attester (a client onboarded by governance) can register, and only its
    own vaults; a higher epoch rotates the key.

@@ -276,37 +276,58 @@ pub async fn serve_local(seed: &[u8], listen: std::net::SocketAddr) -> anyhow::R
         ed25519_chain_code = hex::encode(signer.ed25519_chain_code()),
         "development signer serving /sign"
     );
-    let app = Router::new().route(
-        "/sign",
-        post(move |Json(req): Json<Req>| {
-            let signer = signer.clone();
-            async move {
-                let bad = |m: String| (axum::http::StatusCode::BAD_REQUEST, m);
-                if req.scheme.as_deref() == Some("eddsa") {
-                    let message = hex::decode(req.message.unwrap_or_default())
-                        .map_err(|e| bad(format!("message: {e}")))?;
-                    let sig = signer
-                        .sign_message_sync(&message, &req.path)
-                        .map_err(|e| bad(e.to_string()))?;
-                    return Ok::<_, (axum::http::StatusCode, String)>(Json(
-                        serde_json::json!({ "signature": hex::encode(sig) }),
-                    ));
+    // The public half, for whoever registers this signer's vault (Harbor
+    // reads it from a browser, so it answers any origin).
+    let info = serde_json::json!({
+        "public_key": hex::encode(signer.public_key()),
+        "chain_code": hex::encode(signer.chain_code()),
+        "ed25519_public_key": hex::encode(signer.ed25519_public_key()),
+        "ed25519_chain_code": hex::encode(signer.ed25519_chain_code()),
+    });
+    let app = Router::new()
+        .route(
+            "/info",
+            axum::routing::get(move || {
+                let info = info.clone();
+                async move {
+                    (
+                        [(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")],
+                        Json(info),
+                    )
                 }
-                let digest: [u8; 32] = hex::decode(&req.digest)
-                    .ok()
-                    .and_then(|d| d.try_into().ok())
-                    .ok_or_else(|| bad("digest".to_string()))?;
-                let sig = signer
-                    .sign_sync(digest, &req.path)
-                    .map_err(|e| bad(e.to_string()))?;
-                Ok(Json(serde_json::json!({
-                    "r": hex::encode(sig.r),
-                    "s": hex::encode(sig.s),
-                    "v": sig.v,
-                })))
-            }
-        }),
-    );
+            }),
+        )
+        .route(
+            "/sign",
+            post(move |Json(req): Json<Req>| {
+                let signer = signer.clone();
+                async move {
+                    let bad = |m: String| (axum::http::StatusCode::BAD_REQUEST, m);
+                    if req.scheme.as_deref() == Some("eddsa") {
+                        let message = hex::decode(req.message.unwrap_or_default())
+                            .map_err(|e| bad(format!("message: {e}")))?;
+                        let sig = signer
+                            .sign_message_sync(&message, &req.path)
+                            .map_err(|e| bad(e.to_string()))?;
+                        return Ok::<_, (axum::http::StatusCode, String)>(Json(
+                            serde_json::json!({ "signature": hex::encode(sig) }),
+                        ));
+                    }
+                    let digest: [u8; 32] = hex::decode(&req.digest)
+                        .ok()
+                        .and_then(|d| d.try_into().ok())
+                        .ok_or_else(|| bad("digest".to_string()))?;
+                    let sig = signer
+                        .sign_sync(digest, &req.path)
+                        .map_err(|e| bad(e.to_string()))?;
+                    Ok(Json(serde_json::json!({
+                        "r": hex::encode(sig.r),
+                        "s": hex::encode(sig.s),
+                        "v": sig.v,
+                    })))
+                }
+            }),
+        );
     let listener = tokio::net::TcpListener::bind(listen).await?;
     axum::serve(listener, app).await?;
     Ok(())

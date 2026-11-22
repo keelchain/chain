@@ -31,7 +31,12 @@
 #![allow(clippy::disallowed_types, clippy::disallowed_methods)]
 
 use anyhow::{bail, Context as _};
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
 use clap::{Parser, Subcommand};
 use keel_chains::policy::SignContext;
 use keel_tss::{
@@ -386,6 +391,8 @@ struct LocalJob {
 
 #[derive(Clone)]
 struct HttpState {
+    /// The public half of the vault keys this signer holds (`GET /info`).
+    info: serde_json::Value,
     jobs: mpsc::Sender<LocalJob>,
     policy: Option<Arc<policy::Policy>>,
     has_ecdsa: bool,
@@ -414,6 +421,12 @@ fn serve(
     let transport = Arc::new(transport);
     let has_ecdsa = shares.ecdsa.is_some();
     let has_eddsa = shares.eddsa.is_some();
+    let info = serde_json::json!({
+        "public_key": shares.ecdsa.as_ref().map(|s| hex::encode(ecdsa::vault_public_key(s))),
+        "chain_code": shares.ecdsa.as_ref().and_then(|s| ecdsa::chain_code(s)).map(hex::encode),
+        "ed25519_public_key": shares.eddsa.as_ref().map(|s| hex::encode(eddsa::vault_public_key(s))),
+        "ed25519_chain_code": shares.eddsa.as_ref().map(|s| hex::encode(eddsa::chain_code(s))),
+    });
     {
         let transport = transport.clone();
         let policy = policy.clone();
@@ -425,7 +438,9 @@ fn serve(
     rt.block_on(async move {
         let app = Router::new()
             .route("/sign", post(handle_sign))
+            .route("/info", get(handle_info))
             .with_state(HttpState {
+                info,
                 jobs: jobs_tx,
                 policy,
                 has_ecdsa,
@@ -436,6 +451,21 @@ fn serve(
         axum::serve(listener, app).await?;
         Ok::<(), anyhow::Error>(())
     })
+}
+
+/// `GET /info`: the public keys and chain codes of this signer's vaults,
+/// what `RegisterCustodyVault` takes. Public data, readable from a browser
+/// (Harbor fills its registration form from it), so it answers any origin.
+async fn handle_info(
+    State(state): State<HttpState>,
+) -> (
+    [(axum::http::HeaderName, &'static str); 1],
+    Json<serde_json::Value>,
+) {
+    (
+        [(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")],
+        Json(state.info.clone()),
+    )
 }
 
 /// The digest and, for eddsa, the message bytes it must be the hash of.

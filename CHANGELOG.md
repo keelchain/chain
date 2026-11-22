@@ -5,6 +5,12 @@ Dates are UTC.
 
 ## Unreleased
 
+- **Vault registration from the signer's URL** (2026-11-22). `keel-tss
+  serve` and the development signer answer `GET /info` with the public
+  keys and chain codes they hold (any origin: it is public data). Harbor's
+  Vaults tab asks for the signer's URL only, reads the keys from it, and
+  registers the networks ticked, one approval each. Entering the keys by
+  hand remains.
 - Harbor: **every client action has a screen** (2026-11-22). New Users
   page (attest, deposit address, move inside custody, pay out with a
   fee, release held deposits) and, under Business, service keys
