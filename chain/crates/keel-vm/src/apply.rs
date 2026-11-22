@@ -73,39 +73,43 @@ pub fn check_admission(state: &State, sa: &SignedAction) -> Result<(), VmError> 
         }
         return Ok(());
     }
-    if !exempt_from_activation(&sa.envelope.action, sa.envelope.signer) {
-        // A session key acts for its principal: the principal's KEEL counts.
-        let principal = sessions::principal_of(
-            state,
-            sa.envelope.signer,
-            &sa.envelope.action,
-            state.timestamp / 1000,
-        )
-        .unwrap_or(None)
-        .unwrap_or(sa.envelope.signer);
-        if clients::sponsor_of(state, &principal, state.timestamp / 1000).is_none() {
-            budgets::require_activated(state, principal)?;
-        }
+    // A live session key acts as its principal for an in-scope action, as
+    // it does when the action is applied: the principal's KEEL, capacity
+    // and sponsor count, not the key's own (which has none). Only the
+    // nonce above belongs to the key.
+    let now_secs = state.timestamp / 1000;
+    let principal =
+        sessions::principal_of(state, sa.envelope.signer, &sa.envelope.action, now_secs)?
+            .unwrap_or(sa.envelope.signer);
+    let sponsor = clients::sponsor_of(state, &principal, now_secs);
+    if !exempt_from_activation(&sa.envelope.action, principal) && sponsor.is_none() {
+        budgets::require_activated(state, principal)?;
     }
-    if budgets::is_free_lock(state, sa.envelope.signer, &sa.envelope.action) {
+    if budgets::is_free_lock(state, principal, &sa.envelope.action) {
         return Ok(());
     }
     let p = &state.params.budget;
+    let mut budget = state
+        .account_ref(&principal)
+        .map(|m| m.budget.clone())
+        .unwrap_or_default();
+    // What the lock has refilled since the account last acted counts too.
+    budget.regen(p, state.timestamp);
     let limit = if sa.envelope.action.is_cancel() {
-        meta.budget.cancel_limit(p)
+        budget.cancel_limit(p)
     } else {
-        meta.budget.limit(p)
+        budget.limit(p)
     };
-    if meta.budget.used >= limit && meta.budget.lock_pool == 0 {
-        // The signer's client pays from its plan.
-        if clients::sponsor_of(state, &sa.envelope.signer, state.timestamp / 1000).is_some() {
+    if budget.used >= limit && budget.lock_pool == 0 {
+        // The principal's client pays from its plan.
+        if sponsor.is_some() {
             return Ok(());
         }
-        // Fee mode: the action is admitted if the signer can pay for it.
+        // Fee mode: the action is admitted if the principal can pay for it.
         let fee = state.limits.action_fee_keel;
         if limits::fee_mode(state)
             && fee > 0
-            && tokens::balance(state, sa.envelope.signer, &state.tokens.native) >= fee
+            && tokens::balance(state, principal, &state.tokens.native) >= fee
         {
             return Ok(());
         }

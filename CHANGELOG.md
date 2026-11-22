@@ -5,6 +5,13 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain fix: **a session key is admitted on its principal's capacity**
+  (2026-11-22). The mempool's admission check looked at the session
+  key's own account for capacity, which has none, so on a network
+  (no free budget) every action a service key signed was refused before
+  it reached a block, although applying it charged the principal
+  correctly. Admission now resolves the principal first, as applying
+  does, and counts what the lock has refilled since the last action.
 - Chain: **several vaults in one action** (2026-11-22).
   `RegisterCustodyVaults([...])` registers a client's vaults on up to 8
   chains at once, all or none. Harbor sends it when more than one

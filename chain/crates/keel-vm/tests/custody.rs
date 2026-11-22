@@ -1165,6 +1165,35 @@ fn a_client_runs_its_users_accounts_with_a_session_key_and_no_user_keys() {
     ok(&r[0]);
     assert_eq!(custody::balance(&c.state, customer, &usdt()), 3_000_000);
     assert_eq!(custody::balance(&c.state, client, &usdt()), 2_000_000);
+    // On a network there is no free budget: the service key has no KEEL
+    // and no capacity of its own, and is admitted on its principal's.
+    {
+        let mut net = c.state.clone();
+        net.params.budget.base = 0;
+        let p = net.params.budget.clone();
+        let ts = net.timestamp;
+        net.account(client).budget.lock(&p, ts, 5_000_000);
+        // Signed without advancing the key's nonce: these are only checked.
+        let mut probe = |a: Action| {
+            let sa = bridge.act(a);
+            bridge.nonce -= 1;
+            sa
+        };
+        let moved = probe(transfer_custody(client, usdt(), 1, Some(customer), "x"));
+        keel_vm::check_admission(&net, &moved).expect("admitted on the operator's capacity");
+        // Outside its scope the key is refused at the door, as when applied.
+        let plan = probe(Action::BuyPlan { tier: 1 });
+        assert!(matches!(
+            keel_vm::check_admission(&net, &plan),
+            Err(VmError::Unauthorized)
+        ));
+        // With the operator out of capacity, so is its key.
+        net.account(client).budget.unlock(&p, ts, 5_000_000);
+        assert!(matches!(
+            keel_vm::check_admission(&net, &moved),
+            Err(VmError::BudgetExhausted)
+        ));
+    }
     // None of it used the operator's nonce: Harbor and the CLI sign with
     // the operator key in the meantime without colliding.
     assert_eq!(c.state.account_ref(&client).unwrap().nonce, operator_nonce);
