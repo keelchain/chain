@@ -283,6 +283,28 @@ pub enum Action {
         via: Option<Asset>,
         to: String,
         amount: Amount,
+        /// The client's own withdrawal fee, charged to `owner` on top of
+        /// `amount` and paid to an account in the client's custody, in
+        /// the same posting as the payout is queued.
+        #[serde(default)]
+        fee: Option<CustodyFee>,
+    },
+    /// A custodian chooses how deposits to the accounts in its custody
+    /// are credited. With `hold_deposits`, a deposit lands on hold, not
+    /// spendable, until the custodian releases it (`ReleaseCustodyHold`):
+    /// time to screen it first.
+    SetCustodyOptions {
+        hold_deposits: bool,
+    },
+    /// The custodian releases `amount` of `asset` held for `owner`: to
+    /// the owner's custody balance, or to another account in its custody
+    /// (`to`) when the deposit is not to be spent by the owner.
+    ReleaseCustodyHold {
+        owner: Address,
+        asset: Asset,
+        amount: Amount,
+        #[serde(default)]
+        to: Option<Address>,
     },
 }
 
@@ -313,7 +335,8 @@ pub mod session_scope {
     /// CreateOffer, UpdateOffer, PauseOffer, CloseOffer, MarkPaid.
     pub const P2P_MANAGE: u32 = 2;
     /// A client's day-to-day operations, for the service that runs them:
-    /// Attest, RequestCustodyAddress, TransferCustody, SwapCustody. The key
+    /// Attest, RequestCustodyAddress, TransferCustody, SwapCustody,
+    /// ReleaseCustodyHold. The key
     /// has its own nonce, so the service never competes with the operator
     /// key used in Harbor or the CLI. Unlike the two scopes above this one
     /// moves balances, inside the client's own custody; a wallet never
@@ -343,7 +366,8 @@ impl Action {
             Action::Attest { .. }
             | Action::RequestCustodyAddress { .. }
             | Action::TransferCustody(_)
-            | Action::SwapCustody(_) => Some(session_scope::CLIENT_OPS),
+            | Action::SwapCustody(_)
+            | Action::ReleaseCustodyHold { .. } => Some(session_scope::CLIENT_OPS),
             Action::WithdrawCustodyFor { .. } => Some(session_scope::CLIENT_PAYOUTS),
             _ => None,
         }
@@ -423,7 +447,9 @@ impl Action {
             | Action::SwapCustody(_)
             | Action::TransferCustody(_)
             | Action::WithdrawCustodyStable(_)
-            | Action::WithdrawCustodyFor { .. } => "custody",
+            | Action::WithdrawCustodyFor { .. }
+            | Action::SetCustodyOptions { .. }
+            | Action::ReleaseCustodyHold { .. } => "custody",
             Action::SetOfferArbitrators { .. } | Action::ChooseArbitrator { .. } => "arbitration",
             Action::RotateCustodyVault(_)
             | Action::CancelCustodyRotation { .. }
@@ -841,6 +867,13 @@ pub struct CustodyTransfer {
     pub on_behalf_of: Option<Address>,
     /// The client's own reference (a trade id, a leg), echoed in the event.
     pub memo: Option<String>,
+}
+
+/// A fee a custodian charges an account in its custody.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct CustodyFee {
+    pub to: Address,
+    pub amount: Amount,
 }
 
 /// One payment of a `CustodyTransfer`.

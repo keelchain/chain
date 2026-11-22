@@ -79,6 +79,9 @@ pub struct CustodyState {
     /// Outbounds that pay out redeemed USDT: a failed one is converted
     /// back, so the account is not left holding a per-network asset.
     pub stable_outbounds: BTreeSet<OutboundId>,
+    /// Custodians whose users' deposits are credited on hold
+    /// (`SetCustodyOptions`), to be released after screening.
+    pub hold_deposits: BTreeSet<Address>,
 }
 
 impl CustodyState {
@@ -104,6 +107,10 @@ fn escrow_key(owner: Address, asset: &Asset) -> AccountKey {
 }
 
 /// Spendable custody balance of `owner` in `asset`.
+pub fn hold_key(owner: Address, asset: &Asset) -> AccountKey {
+    AccountKey::new(owner, asset.clone(), "custody_hold").expect("catalog type")
+}
+
 fn stable_reserve_key(custodian: Address, asset: &Asset) -> AccountKey {
     AccountKey::new(custodian, asset.clone(), "custody_stable_reserve").expect("catalog type")
 }
@@ -189,6 +196,7 @@ pub fn apply(
             via,
             to,
             amount,
+            fee,
         } => {
             // Only the custodian of the account pays out of it.
             let theirs = state.custody.custodian_of.get(owner).copied().or_else(|| {
@@ -203,6 +211,26 @@ pub fn apply(
                 Some(c) if c == signer => {}
                 Some(_) => return Err(VmError::Unauthorized),
                 None => return Err(VmError::NotEnoughFunds),
+            }
+            // The client's own fee first, as a ledger posting only: if
+            // the payout below is refused, it is rolled back with it.
+            let mut fee_events = Vec::new();
+            if let Some(f) = fee {
+                fee_events = transfer(
+                    state,
+                    signer,
+                    tx_id,
+                    &keel_actions::CustodyTransfer {
+                        legs: vec![keel_actions::CustodyLeg {
+                            from: None,
+                            to: f.to,
+                            asset: asset.clone(),
+                            amount: f.amount,
+                        }],
+                        on_behalf_of: Some(*owner),
+                        memo: Some("withdrawal fee".into()),
+                    },
+                )?;
             }
             let (custodian, mut events) = if *asset == state.tokens.stable {
                 let via = via.clone().ok_or_else(|| {
@@ -235,8 +263,31 @@ pub fn apply(
             events.extend(clients::charge_usage_to(
                 state, custodian, "outbound", tx_id,
             )?);
-            Ok(events)
+            fee_events.append(&mut events);
+            Ok(fee_events)
         }
+        Action::SetCustodyOptions { hold_deposits } => {
+            if !state.custody.vaults.keys().any(|(_, c)| *c == signer) {
+                return Err(VmError::Invalid(
+                    "only a client with a custody vault sets custody options".into(),
+                ));
+            }
+            if *hold_deposits {
+                state.custody.hold_deposits.insert(signer);
+            } else {
+                state.custody.hold_deposits.remove(&signer);
+            }
+            Ok(vec![Event::CustodyOptionsSet {
+                custodian: signer,
+                hold_deposits: *hold_deposits,
+            }])
+        }
+        Action::ReleaseCustodyHold {
+            owner,
+            asset,
+            amount,
+            to,
+        } => release_hold(state, signer, tx_id, *owner, asset, *amount, *to),
         Action::WithdrawCustodyStable(w) => {
             let (custodian, mut events) = withdraw_stable(state, ctx, signer, tx_id, w)?;
             events.extend(clients::charge_usage_to(
@@ -491,6 +542,15 @@ fn observe_deposit(
         tokens::hex(&o.tx_hash),
         o.index
     );
+    // A client that screens deposits has its users' deposits credited on
+    // hold: in the reserve and owed, but not spendable until it releases
+    // them. Its own top-ups are never held.
+    let held = owner != custodian && state.custody.hold_deposits.contains(&custodian);
+    let credit = if held {
+        hold_key(owner, &o.asset)
+    } else {
+        custody_key(owner, &o.asset)
+    };
     state.ledger.post(
         &external_id,
         TxType::VaultDeposit,
@@ -498,11 +558,21 @@ fn observe_deposit(
         None,
         vec![
             Record::debit(reserve_key(custodian, &o.asset), o.amount),
-            Record::credit(custody_key(owner, &o.asset), o.amount),
+            Record::credit(credit, o.amount),
         ],
     )?;
     state.custody.credited.insert(key);
     add_liability(state, custodian, &o.asset, o.amount);
+    if held {
+        events.push(Event::CustodyDepositHeld {
+            custodian,
+            owner,
+            asset: o.asset.clone(),
+            amount: o.amount,
+            tx_hash: tokens::hex(&o.tx_hash),
+        });
+        return Ok(events);
+    }
     events.push(Event::CustodyDepositCredited {
         custodian,
         owner,
@@ -519,6 +589,78 @@ fn observe_deposit(
         owner,
         &o.asset,
         o.amount,
+        &external_id,
+    )?);
+    Ok(events)
+}
+
+/// `ReleaseCustodyHold`: the custodian moves a held deposit to where it
+/// may be spent: the owner's custody balance, or another account in its
+/// custody (its own, a compliance account) when the owner is not to have
+/// it. A dollar stablecoin becomes USDT as it is released, as it would
+/// have on arrival.
+fn release_hold(
+    state: &mut State,
+    signer: Address,
+    tx_id: &[u8; 32],
+    owner: Address,
+    asset: &Asset,
+    amount: Amount,
+    to: Option<Address>,
+) -> Result<Vec<Event>, VmError> {
+    if amount == 0 {
+        return Err(VmError::Invalid("amount must be > 0".into()));
+    }
+    let custodian = match state.custody.custodian_of.get(&owner) {
+        Some(c) => *c,
+        None => return Err(VmError::NotEnoughFunds),
+    };
+    if signer != custodian {
+        return Err(VmError::Unauthorized);
+    }
+    let to = to.unwrap_or(owner);
+    match state.custody.custodian_of.get(&to) {
+        Some(c) if *c == custodian => {}
+        Some(_) => {
+            return Err(VmError::Invalid(
+                "the recipient is in another client's custody".into(),
+            ))
+        }
+        None if to == custodian => {}
+        None => require_member(state, to, custodian).map_err(|_| {
+            VmError::Invalid("the recipient is not an account of this client".into())
+        })?,
+    }
+    if (state.ledger.balance(&hold_key(owner, asset)).max(0) as Amount) < amount {
+        return Err(VmError::NotEnoughFunds);
+    }
+    let external_id = format!("custody:release:{}", tokens::hex(tx_id));
+    state.ledger.post(
+        &external_id,
+        TxType::InternalTransferComplete,
+        None,
+        None,
+        vec![
+            Record::debit(hold_key(owner, asset), amount),
+            Record::credit(custody_key(to, asset), amount),
+        ],
+    )?;
+    if to != custodian {
+        state.custody.custodian_of.entry(to).or_insert(custodian);
+    }
+    let mut events = vec![Event::CustodyHoldReleased {
+        custodian,
+        owner,
+        to,
+        asset: asset.clone(),
+        amount,
+    }];
+    events.extend(mint_stable(
+        state,
+        custodian,
+        to,
+        asset,
+        amount,
         &external_id,
     )?);
     Ok(events)

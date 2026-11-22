@@ -338,6 +338,13 @@ grep -q '"CustodyTransferred"' "$KEEL_DEVNET_DIR/ct-cancel.json" || { cat "$KEEL
 read -r RES LIA HALT <<<"$(reserves)"
 [[ "$RES" == "$LIA" && "$HALT" == False ]] || fail "reserve $RES vs liabilities $LIA halted=$HALT after the custody transfers"
 say "custody transfers: escrow and return posted on chain, reserve == liabilities == $RES"
+# ---------------------------------------------------------------- one outbound by id
+# A client tracks one withdrawal without reading the whole list.
+OB_ID=$(curl -sf "$RPC0/v1/vaults/outbounds?owner=$USER&limit=1" | json 'd["outbounds"][0]["id"]')
+OB=$(curl -sf "$RPC0/v1/vaults/outbounds/$OB_ID" | json '"%s %s %s" % (d["owner"], d["status"], d["custodian"])')
+[[ "$OB" == "$USER Confirmed $CLIENT" ]] || fail "outbound $OB_ID by id: $OB"
+[[ "$(curl -s -o /dev/null -w '%{http_code}' "$RPC0/v1/vaults/outbounds/999999")" == 404 ]] || fail "a missing outbound is not a 404"
+say "outbound $OB_ID read by id: confirmed, paid from the client's vault"
 # ---------------------------------------------------------------- the client's plan
 # A plan is a lock and a fee: the client locks tier 1's KEEL, buys the tier
 # with one action, and the period runs from that block. Its attested user

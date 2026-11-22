@@ -395,8 +395,8 @@ in your KMS. Two keys, with two jobs:
 - **A session key for your service**, authorized once by the operator key
   (`AuthorizeSessionKey`, scope `client_ops`, bit 4; `keel send session
   authorize <key> --scope client-ops`). It signs the day-to-day work for
-  your account: `Attest`, `RequestCustodyAddress`, `TransferCustody` and
-  `SwapCustody`. It has **its own nonce**, so an action signed in Harbor
+  your account: `Attest`, `RequestCustodyAddress`, `TransferCustody`,
+  `SwapCustody` and `ReleaseCustodyHold`. It has **its own nonce**, so an action signed in Harbor
   or the CLI can never take a nonce your service already signed for, and
   it cannot buy a plan, change fees or pay out. Payouts
   (`WithdrawCustodyFor`) are a scope of their own, `client_payouts`
@@ -414,9 +414,23 @@ and there is no seed to back up and nothing to lose: the mapping can be
 recomputed, and the chain lists every account in your custody
 (`GET /v1/custody/{addr}/{chain}/addresses`). A user who should sign for
 themselves keeps a real key in Keel Wallet instead. To pay a user out,
-send `WithdrawCustodyFor { owner, asset, via, to, amount }`: one action
-that pays out of the user's account through your vault (`via` names the
-network when the asset is `USDT`).
+send `WithdrawCustodyFor { owner, asset, via, to, amount, fee }`: one
+action that pays out of the user's account through your vault (`via` names
+the network when the asset is `USDT`). `fee: { to, amount }` charges your
+own withdrawal fee on top, to an account in your custody, in the same
+posting: the payout is queued and the fee taken together, or neither.
+
+**Screening deposits before they can be spent.** By default a deposit is
+credited straight to the user's balance. Send `SetCustodyOptions {
+hold_deposits: true }` once (operator key) and every deposit to one of
+your users is credited **on hold** instead (`CustodyDepositHeld`, with the
+external transaction hash): it is in your vault's reserve and counted as
+owed, and nobody can spend, transfer or withdraw it. After screening,
+`ReleaseCustodyHold { owner, asset, amount, to }` moves it to the user's
+balance, or with `to` to another account in your custody when the user is
+not to have it. A release can be partial. Your own top-ups are never held.
+The node does not report who sent a deposit; look the senders up on the
+external chain from the transaction hash.
 
 Withdrawals from your vault are signed by your own signer under the same
 policy every Keel signer runs: the transaction must pay open outbounds of a

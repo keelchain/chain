@@ -1184,6 +1184,7 @@ fn a_client_runs_its_users_accounts_with_a_session_key_and_no_user_keys() {
         via: None,
         to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
         amount,
+        fee: None,
     };
     let (r, _) = c.block(&[bridge.act(payout(1_000_000))]);
     assert!(matches!(err(&r[0]), VmError::Unauthorized));
@@ -1218,11 +1219,101 @@ fn a_client_runs_its_users_accounts_with_a_session_key_and_no_user_keys() {
             via: None,
             to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
             amount: 1,
+            fee: None,
         }),
     ]);
     assert!(matches!(err(&r[0]), VmError::Unauthorized));
     assert!(matches!(err(&r[1]), VmError::Unauthorized));
     assert!(matches!(err(&r[2]), VmError::Invalid(_)));
+    // The client's own withdrawal fee rides in the same action: paid to
+    // its account as the payout is queued, or not at all.
+    let with_fee = |amount: u128, fee: u128| Action::WithdrawCustodyFor {
+        owner: customer,
+        asset: usdt(),
+        via: None,
+        to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+        amount,
+        fee: Some(keel_actions::CustodyFee {
+            to: client,
+            amount: fee,
+        }),
+    };
+    let fees_before = custody::balance(&c.state, client, &usdt());
+    let (r, _) = c.block(&[cashier.act(with_fee(500_000, 20_000))]);
+    ok(&r[0]);
+    assert_eq!(custody::balance(&c.state, customer, &usdt()), 1_480_000);
+    assert_eq!(
+        custody::balance(&c.state, client, &usdt()),
+        fees_before + 20_000
+    );
+    // Amount plus fee above the balance: nothing is charged, nothing queued.
+    let (r, _) = c.block(&[cashier.act(with_fee(1_470_000, 20_000))]);
+    assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
+    assert_eq!(custody::balance(&c.state, customer, &usdt()), 1_480_000);
+    assert_eq!(
+        custody::balance(&c.state, client, &usdt()),
+        fees_before + 20_000
+    );
+
+    // Screening: the client has deposits to its users held. A deposit is
+    // then in the reserve and owed, and not spendable, until released.
+    let (r, _) = c.block(&[
+        alice.act(Action::SetCustodyOptions {
+            hold_deposits: true,
+        }),
+        v.act(Action::SetCustodyOptions {
+            hold_deposits: true,
+        }),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::Invalid(_)));
+    ok(&r[1]);
+    let spendable = custody::balance(&c.state, customer, &usds());
+    let (r, _) = c.block(&[v.act(Action::ObserveCustodyDeposit {
+        custodian: client,
+        observation: obs(usdt(), 1, 7_000_000, 41),
+    })]);
+    ok(&r[0]);
+    assert!(r[0].events.iter().any(|e| matches!(
+        e,
+        Event::CustodyDepositHeld { owner, amount: 7_000_000, .. } if *owner == customer
+    )));
+    assert!(!r[0]
+        .events
+        .iter()
+        .any(|e| matches!(e, Event::CustodyDepositCredited { .. })));
+    assert_eq!(acct(&c.state, customer, &usdt(), "custody_hold"), 7_000_000);
+    assert_eq!(custody::balance(&c.state, customer, &usds()), spendable);
+    let (r, _) =
+        c.block(&[bridge.act(transfer_custody(client, usds(), 1, Some(customer), "held"))]);
+    assert!(matches!(err(&r[0]), VmError::NotEnoughFunds));
+    // Released in part to the user (who then holds USDT), and the flagged
+    // part to the client's own account; only the custodian decides.
+    let release = |amount: u128, to: Option<Address>| Action::ReleaseCustodyHold {
+        owner: customer,
+        asset: usdt(),
+        amount,
+        to,
+    };
+    let (r, _) = c.block(&[alice.act(release(1, None))]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
+    let (r, _) = c.block(&[
+        bridge.act(release(5_000_000, None)),
+        bridge.act(release(2_000_000, Some(client))),
+        bridge.act(release(1, None)),
+    ]);
+    ok(&r[0]);
+    ok(&r[1]);
+    assert!(matches!(err(&r[2]), VmError::NotEnoughFunds));
+    assert_eq!(acct(&c.state, customer, &usdt(), "custody_hold"), 0);
+    assert_eq!(
+        custody::balance(&c.state, customer, &usds()),
+        spendable + 5_000_000
+    );
+    assert_eq!(custody::balance(&c.state, client, &usds()), 2_000_000);
+    let (_, end) = c.block(&[]);
+    assert!(!end
+        .iter()
+        .any(|e| matches!(e, Event::CustodyReserveBreached { .. })));
     // Nobody but the custodian asks for someone else's address.
     let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
         chain: ExtChain::Tron,

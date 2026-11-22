@@ -394,6 +394,19 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Chain', field: { k: 'text', value: str(p['chain']) } },
         { name: 'Custodian', field: { k: 'address', value: str(p['custodian']) } },
       ]);
+    case 'SetCustodyOptions':
+      return view(p['hold_deposits'] ? 'Hold deposits to your users until you release them' : 'Credit deposits to your users at once', [
+        { name: 'Deposits', field: { k: 'badge', value: p['hold_deposits'] ? 'Held for release' : 'Credited at once', tone: 'neutral' } },
+      ]);
+    case 'ReleaseCustodyHold': {
+      const asset = str(p['asset']);
+      const fields: NamedField[] = [
+        { name: 'Held for', field: { k: 'address', value: str(p['owner']) } },
+        { name: 'Amount', field: amount(p['amount'], asset) },
+      ];
+      if (present(p['to'])) fields.push({ name: 'Released to', field: { k: 'address', value: str(p['to']) } });
+      return view(`Release ${formatAmount(amountStr(p['amount']), decimalsOf(asset))} ${asset} held for ${str(p['owner']).slice(0, 8)}…`, fields);
+    }
     case 'WithdrawCustodyFor': {
       const asset = str(p['asset']);
       const paid = present(p['via']) ? str(p['via']) : asset;
@@ -402,6 +415,9 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Amount', field: amount(p['amount'], asset) },
         { name: 'Paid out in', field: { k: 'asset', value: paid } },
         { name: 'Destination', field: { k: 'external', chain: paid.split('.')[0] ?? '', value: str(p['to']) } },
+        ...(typeof p['fee'] === 'object' && p['fee'] !== null
+          ? [{ name: 'Your fee on top', field: amount((p['fee'] as Record<string, unknown>)['amount'], asset) } as NamedField]
+          : []),
       ]);
     }
     case 'WithdrawCustodyStable': {

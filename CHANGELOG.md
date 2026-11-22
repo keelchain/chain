@@ -5,6 +5,16 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain and API: **withdrawal fee, held deposits, one outbound**
+  (2026-11-22).
+  - `WithdrawCustodyFor` takes `fee: { to, amount }`: the client's own
+    fee, charged with the payout in one posting.
+  - `SetCustodyOptions { hold_deposits }`: deposits to a client's users
+    are credited on hold (`CustodyDepositHeld`) and not spendable until
+    `ReleaseCustodyHold { owner, asset, amount, to }` releases them
+    (`CustodyHoldReleased`). Account type `custody_hold`.
+  - Node `GET /v1/vaults/outbounds/{id}`, and `owner`, `custodian`,
+    `after` and `limit` on the list. Snapshot schema 19.
 - Chain: **payouts for accounts without a key** (2026-11-22).
   `WithdrawCustodyFor { owner, asset, via, to, amount }`: the custodian
   pays out of an account in its custody in one action (`via` for USDT).

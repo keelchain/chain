@@ -415,6 +415,29 @@ pub enum Event {
         asset: Asset,
         amount: Amount,
     },
+    /// A deposit to `owner` in `custodian`'s vault was credited on hold:
+    /// counted in the vault's reserve, not spendable until released.
+    CustodyDepositHeld {
+        custodian: Address,
+        owner: Address,
+        asset: Asset,
+        amount: Amount,
+        /// The external transaction, as in `DepositObserved`.
+        tx_hash: String,
+    },
+    /// The custodian released a held deposit of `owner` to `to`.
+    CustodyHoldReleased {
+        custodian: Address,
+        owner: Address,
+        to: Address,
+        asset: Asset,
+        amount: Amount,
+    },
+    /// A custodian set how deposits to its accounts are credited.
+    CustodyOptionsSet {
+        custodian: Address,
+        hold_deposits: bool,
+    },
     /// The network fee of a payout from `custodian`'s vault, taken from
     /// its gas balance (or booked against it when it holds none).
     CustodyNetworkFeePaid {

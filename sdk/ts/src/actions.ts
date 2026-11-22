@@ -154,7 +154,11 @@ export type Action =
   /** Withdraw unified USDT from a custody balance on the network `via` names. */
   | { WithdrawCustodyStable: WithdrawStable }
   /** The custodian pays out of an account in its custody; `via` names the network when `asset` is USDT. */
-  | { WithdrawCustodyFor: { owner: Address; asset: string; via?: string | null; to: string; amount: Amount } };
+  | { WithdrawCustodyFor: { owner: Address; asset: string; via?: string | null; to: string; amount: Amount; fee?: { to: Address; amount: Amount } | null } }
+  /** A custodian has deposits to its users credited on hold until it releases them. */
+  | { SetCustodyOptions: { hold_deposits: boolean } }
+  /** Release a held deposit of `owner`: to the owner, or to another account in the custodian's custody. */
+  | { ReleaseCustodyHold: { owner: Address; asset: string; amount: Amount; to?: Address | null } };
 
 export interface RecoveryRequest {
   /** The address family (the chain whose deposit index the address is). */
@@ -245,7 +249,7 @@ const ACTION_VARIANTS = [
   "SetClientFee", "RegisterCustodyVault", "RequestCustodyAddress", "ObserveCustodyDeposit", "WithdrawCustody",
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
-  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody", "WithdrawCustodyStable", "WithdrawCustodyFor",
+  "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody", "WithdrawCustodyStable", "WithdrawCustodyFor", "SetCustodyOptions", "ReleaseCustodyHold",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -438,7 +442,10 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "SetPlanRenewal": w.u8(b.tier); break;
     case "WithdrawCustodyStable": w.string(b.via); w.string(b.to); w.u128(b.amount); break;
     case "WithdrawCustodyFor":
-      address(w, b.owner); w.string(b.asset); w.option(b.via, (v) => w.string(v)); w.string(b.to); w.u128(b.amount); break;
+      address(w, b.owner); w.string(b.asset); w.option(b.via, (v) => w.string(v)); w.string(b.to); w.u128(b.amount);
+      w.option(b.fee, (f) => { address(w, f.to); w.u128(f.amount); }); break;
+    case "SetCustodyOptions": w.bool(b.hold_deposits); break;
+    case "ReleaseCustodyHold": address(w, b.owner); w.string(b.asset); w.u128(b.amount); w.option(b.to, (a) => address(w, a)); break;
     case "TransferCustody":
       w.vec(b.legs as CustodyLeg[], (l) => { w.option(l.from, (a) => address(w, a)); address(w, l.to); w.string(l.asset); w.u128(l.amount); });
       w.option(b.on_behalf_of, (a) => address(w, a)); w.option(b.memo, (m) => w.string(m)); break;

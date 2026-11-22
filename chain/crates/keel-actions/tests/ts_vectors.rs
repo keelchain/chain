@@ -424,6 +424,25 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 via: Some(Asset::new("TRON.USDT")),
                 to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
                 amount: 4_000_000,
+                fee: Some(keel_actions::CustodyFee {
+                    to: Address::tagged(3),
+                    amount: 50_000,
+                }),
+            },
+        ),
+        (
+            "set_custody_options",
+            Action::SetCustodyOptions {
+                hold_deposits: true,
+            },
+        ),
+        (
+            "release_custody_hold",
+            Action::ReleaseCustodyHold {
+                owner: Address::tagged(7),
+                asset: Asset::new("TRON.USDT"),
+                amount: 9_000_000,
+                to: None,
             },
         ),
         (

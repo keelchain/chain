@@ -364,6 +364,22 @@ enum CustodyCmd {
         amount: Amount,
         #[arg(long)]
         via: Option<String>,
+        /// Your own fee on top, as `<address>=<amount>`, paid to an
+        /// account in your custody in the same posting.
+        #[arg(long)]
+        fee: Option<String>,
+    },
+    /// Credit deposits to your users on hold (`on`) until you release
+    /// them, or straight to their balance (`off`).
+    HoldDeposits { mode: String },
+    /// Release a held deposit of `owner`: to the owner, or with `--to` to
+    /// another account in your custody.
+    Release {
+        owner: String,
+        asset: String,
+        amount: Amount,
+        #[arg(long)]
+        to: Option<String>,
     },
     /// Move a custody balance to other accounts of the same client (its
     /// escrow account, the buyer, a fee account). No coins move. Several
@@ -660,12 +676,42 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
             to,
             amount,
             via,
+            fee,
         }) => Action::WithdrawCustodyFor {
             owner: parse_addr(&owner)?,
             asset: Asset::new(asset),
             via: via.map(Asset::new),
             to,
             amount,
+            fee: fee
+                .map(|f| {
+                    let (addr, amount) = f
+                        .split_once('=')
+                        .ok_or_else(|| anyhow!("--fee is <address>=<amount>"))?;
+                    Ok::<_, anyhow::Error>(keel_actions::CustodyFee {
+                        to: parse_addr(addr)?,
+                        amount: amount.parse()?,
+                    })
+                })
+                .transpose()?,
+        },
+        ActionCmd::Custody(CustodyCmd::HoldDeposits { mode }) => Action::SetCustodyOptions {
+            hold_deposits: match mode.as_str() {
+                "on" => true,
+                "off" => false,
+                _ => return Err(anyhow!("hold-deposits is on or off")),
+            },
+        },
+        ActionCmd::Custody(CustodyCmd::Release {
+            owner,
+            asset,
+            amount,
+            to,
+        }) => Action::ReleaseCustodyHold {
+            owner: parse_addr(&owner)?,
+            asset: Asset::new(asset),
+            amount,
+            to: to.as_deref().map(parse_addr).transpose()?,
         },
         ActionCmd::Custody(CustodyCmd::WithdrawUsdt { via, to, amount }) => {
             Action::WithdrawCustodyStable(keel_actions::WithdrawStable {

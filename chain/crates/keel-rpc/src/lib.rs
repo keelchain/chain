@@ -195,6 +195,7 @@ pub fn router(node: Node) -> Router {
         .route("/v1/offers/{id}", get(offer))
         .route("/v1/trades/{id}", get(trade))
         .route("/v1/vaults/outbounds", get(outbounds))
+        .route("/v1/vaults/outbounds/{id}", get(outbound))
         .route("/v1/vaults/deposits", get(deposits))
         .route(
             "/v1/vaults/{chain}/addresses/lookup",
@@ -938,6 +939,9 @@ async fn custody_client(
         "vaults": vaults,
         "rotations": rotations,
         "accounts": accounts,
+        // Whether deposits to this client's users are credited on hold
+        // until it releases them (`SetCustodyOptions`).
+        "hold_deposits": s.custody.hold_deposits.contains(&custodian),
         "floats": floats,
         // One USDT in custody: what the accounts hold, and the dollar
         // stablecoins in this vault that back it, per network.
@@ -1228,6 +1232,37 @@ async fn deposits(
 #[derive(Deserialize)]
 struct StatusQuery {
     status: Option<String>,
+    /// Only outbounds of this account.
+    owner: Option<String>,
+    /// Only outbounds paid from this client's vault.
+    custodian: Option<String>,
+    /// Only outbounds with an id above this one (ids ascend).
+    after: Option<u64>,
+    /// At most this many (the list is unbounded without it).
+    limit: Option<usize>,
+}
+
+/// One outbound with its custodian and generation, as the list shows it.
+fn outbound_row(s: &keel_vm::State, o: &keel_vm::modules::vaults::Outbound) -> Value {
+    let mut v = outbound_json(o);
+    v["custodian"] = json!(s.custody.outbound_vault.get(&o.id).map(Address::to_hex));
+    // The custody generation its batch should be paid from.
+    v["gen"] = json!(o.batch_id.and_then(|b| s.pools.batch_gen.get(&b).copied()));
+    v
+}
+
+/// A single outbound by id: the status of one withdrawal.
+async fn outbound(
+    AxumState(node): AxumState<Node>,
+    Path(id): Path<u64>,
+) -> Result<Json<Value>, (StatusCode, Json<ErrorBody>)> {
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    s.vaults
+        .outbounds
+        .get(&id)
+        .map(|o| Json(outbound_row(&s, o)))
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "NOT_FOUND", "no such outbound"))
 }
 
 fn outbound_json(o: &keel_vm::modules::vaults::Outbound) -> Value {
@@ -1309,22 +1344,27 @@ async fn lightning(AxumState(node): AxumState<Node>) -> Json<Value> {
 async fn outbounds(AxumState(node): AxumState<Node>, Query(q): Query<StatusQuery>) -> Json<Value> {
     let state = node.state();
     let s = state.lock().expect("state lock");
+    let hex = |a: &Option<String>| a.as_deref().map(|x| x.trim().to_ascii_lowercase());
+    let (owner, custodian) = (hex(&q.owner), hex(&q.custodian));
     let list: Vec<Value> = s
         .vaults
         .outbounds
-        .values()
+        .range(q.after.map_or(0, |a| a.saturating_add(1))..)
+        .map(|(_, o)| o)
         .filter(|o| {
             q.status
                 .as_deref()
                 .is_none_or(|st| format!("{:?}", o.status).eq_ignore_ascii_case(st))
+                && owner.as_deref().is_none_or(|a| o.owner.to_hex() == a)
+                && custodian.as_deref().is_none_or(|c| {
+                    s.custody
+                        .outbound_vault
+                        .get(&o.id)
+                        .is_some_and(|x| x.to_hex() == c)
+                })
         })
-        .map(|o| {
-            let mut v = outbound_json(o);
-            v["custodian"] = json!(s.custody.outbound_vault.get(&o.id).map(Address::to_hex));
-            // The custody generation its batch should be paid from.
-            v["gen"] = json!(o.batch_id.and_then(|b| s.pools.batch_gen.get(&b).copied()));
-            v
-        })
+        .take(q.limit.unwrap_or(usize::MAX))
+        .map(|o| outbound_row(&s, o))
         .collect();
     let batches: Vec<Value> = s
         .vaults

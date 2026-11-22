@@ -40,6 +40,9 @@ pub const ACCOUNT_TYPES: &[(&str, NormalSide, bool)] = &[
     // custody vault is checked against its own reserve.
     ("custody", NormalSide::Credit, true),
     ("custody_escrow", NormalSide::Credit, true),
+    // A custody deposit its custodian has not released yet (the client
+    // screens deposits before its user can spend them).
+    ("custody_hold", NormalSide::Credit, true),
     // One USDT in custody (2026-11-21): the dollar stablecoins in a
     // client's vault that back the unified USDT its accounts hold. Owned
     // by the client, restricted, and counted with its custody balances.
