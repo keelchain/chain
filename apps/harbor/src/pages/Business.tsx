@@ -3,15 +3,16 @@
  * users and what they have earned, and the custody tools for a client that
  * runs its own vault (generations, rotation to a fresh key, float swaps).
  */
+import { Keypair } from '@keelchain/sdk';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useCustody, useDecimals } from '../api/hooks';
 import type { Custody } from '../api/types';
 import { ActionResult, Field, Submit, useAction } from '../components/action';
-import { Amount, Badge, Card, ErrorState, Hex, KV, Loading, Tabs } from '../components/ui';
+import { Amount, Badge, Card, ErrorState, Hex, KV, Loading, Notice, Tabs } from '../components/ui';
 import { toUnits } from '../lib/amounts';
 import { formatBps, formatInt } from '../lib/format';
-import { SCOPE_OPS, SCOPE_PAYOUTS, SCOPE_TEXT, authorizeProblem, parseKey, scopeLabels } from '../lib/serviceKeys';
+import { SCOPE_OPS, SCOPE_PAYOUTS, SCOPE_TEXT, authorizeProblem, hexOf, parseKey, requestFromQuery, scopeLabels } from '../lib/serviceKeys';
 import { useHref } from '../network/NetworkContext';
 import { useHarbor, type Harbor } from './ClientGate';
 import { day } from './shared';
@@ -47,10 +48,25 @@ const MAX_KEY_DAYS = 29;
 function ServiceKeys({ h }: { h: Harbor }) {
   const act = useAction();
   const revoke = useAction();
-  const [text, setText] = useState('');
-  const [ops, setOps] = useState(true);
-  const [payouts, setPayouts] = useState(false);
+  // A link from the service's operator carries its address and what it asks for.
+  const [asked] = useState(() => requestFromQuery(window.location.search));
+  const [text, setText] = useState(asked?.key ?? '');
+  const [ops, setOps] = useState(asked ? (asked.scope & SCOPE_OPS) !== 0 : true);
+  const [payouts, setPayouts] = useState(asked ? (asked.scope & SCOPE_PAYOUTS) !== 0 : false);
   const [days, setDays] = useState(String(MAX_KEY_DAYS));
+  // A key made on this page: its secret is held in memory only, shown once, never stored or sent.
+  const [made, setMade] = useState<{ address: string; secret: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const create = () => {
+    const kp = Keypair.random();
+    setMade({ address: kp.address, secret: hexOf(kp.secret) });
+    setText(kp.address);
+    setCopied(false);
+  };
+  const copySecret = () => {
+    if (!made) return;
+    void navigator.clipboard?.writeText(made.secret).then(() => setCopied(true));
+  };
   const key = parseKey(text);
   const scope = (ops ? SCOPE_OPS : 0) | (payouts ? SCOPE_PAYOUTS : 0);
   const problem = authorizeProblem(key, scope, Number(days), h.address, MAX_KEY_DAYS);
@@ -66,13 +82,69 @@ function ServiceKeys({ h }: { h: Harbor }) {
     );
   };
   return (
+    <div className="stack">
+      <Card title="How a service key works">
+        <div className="prose small">
+          <p>
+            Your exchange's backend (a bridge, a bot, a server) has to sign actions for this account: attest users, issue deposit addresses, move balances, pay out. It should not hold this
+            account's own key. So it gets <strong>a key of its own</strong>, and you tell the chain, once, that this key may act for you, for what, and until when.
+          </p>
+          <ol>
+            <li>
+              <strong>The service gets a key.</strong> Either it already has one (whoever runs it gives you its <em>address</em>, or a link that fills this page in), or you create one here with the
+              button below and put its <em>secret</em> into the service's configuration.
+            </li>
+            <li>
+              <strong>You authorize the address</strong> below: tick what it may do, set how long, approve in Keel Wallet.
+            </li>
+            <li>
+              <strong>The service signs with its secret.</strong> The chain accepts its actions as yours, within the permissions, until the date. Renew before then; revoke at any time from the
+              list at the bottom.
+            </li>
+          </ol>
+          <p>
+            An address is public (64 hex characters) and is what goes in this page. A secret is the private half: it belongs only in the service's own configuration, and is never typed into Harbor.
+          </p>
+        </div>
+      </Card>
     <div className="grid-2">
       <Card title="Authorize a service key">
         <form className="form" onSubmit={submit}>
           <p className="small text-2">
             The service that runs your exchange (your bridge or backend) signs with a key of its own, so it never holds this account's key and never competes with what you sign here. It creates the
-            key; you paste its <strong>address</strong> below and approve in Keel Wallet. Never paste a secret here.
+            key and sends you a link that fills this form in, or its <strong>address</strong> to paste below; you approve in Keel Wallet. Never paste a secret here.
           </p>
+          {asked && (
+            <Notice tone="info" title={`${asked.name ?? 'A service'} asks to sign for this account.`}>
+              The link you opened filled in its address and the permissions it asks for. Check them, change them if you wish, and approve in Keel Wallet. Only do this for a service you run or
+              trust.
+            </Notice>
+          )}
+          {!asked && !made && (
+            <div className="row">
+              <button type="button" className="btn" onClick={create}>
+                Create a new key here
+              </button>
+              <span className="small text-2">or paste the address of a key the service already has.</span>
+            </div>
+          )}
+          {made && (
+            <Notice tone="warn" title="Copy this secret into your service now. It is shown only this once.">
+              <p className="small">
+                It was created in your browser and is not saved or sent anywhere. Put it in the service's configuration as its Keel signing secret (for the CLI: <span className="mono">--secret</span>
+                ; for the SDK: <span className="mono">Keypair.fromSecret</span>). If you lose it, create another key and revoke this one.
+              </p>
+              <p className="mono small" style={{ wordBreak: 'break-all' }} aria-label="Secret of the new key">
+                {made.secret}
+              </p>
+              <div className="row">
+                <button type="button" className="btn small" onClick={copySecret}>
+                  {copied ? 'Copied' : 'Copy secret'}
+                </button>
+                <span className="small text-2">Its address is filled in below. Authorize it once the secret is stored.</span>
+              </div>
+            </Notice>
+          )}
           <Field label="The service's Keel address" hint={text !== '' && !key ? <span className="down">A Keel address is 64 hex characters.</span> : 'Ask whoever runs the service for it. It is public.'}>
             <input className="input mono" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} autoComplete="off" aria-invalid={text !== '' && !key} />
           </Field>
@@ -134,6 +206,21 @@ function ServiceKeys({ h }: { h: Harbor }) {
         )}
         <div className="pad">
           <ActionResult act={revoke} />
+        </div>
+      </Card>
+    </div>
+      <Card title="If someone else runs the service">
+        <div className="prose small">
+          <p>
+            They create the key on their side (<span className="mono">keel keygen</span> prints an address and a secret; the SDK's <span className="mono">Keypair.random()</span> does the same), keep
+            the secret, and send you only the address. To spare you the copying they can send this link with their address in it; opening it fills the form above:
+          </p>
+          <p className="mono" style={{ wordBreak: 'break-all' }}>
+            {`${window.location.origin}${window.location.pathname}?key=<their address>&scope=12&name=Bridge`}
+          </p>
+          <p>
+            <span className="mono">scope</span> is 4 for operations, 8 for payouts, 12 for both. You still choose what to grant before you approve.
+          </p>
         </div>
       </Card>
     </div>

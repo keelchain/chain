@@ -398,7 +398,11 @@ in your KMS. Two keys, with two jobs:
   (`AuthorizeSessionKey`, scope `client_ops`, bit 4; `keel send session
   authorize <key> --scope client-ops`). It signs the day-to-day work for
   your account: `Attest`, `RequestCustodyAddress`, `TransferCustody`,
-  `SwapCustody` and `ReleaseCustodyHold`. It has **its own nonce**, so an action signed in Harbor
+  `SwapCustody` and `ReleaseCustodyHold`. The operator approves it in
+  Harbor (Business, Service keys); your service can hand them a link that
+  fills the form in, so no address is copied:
+  `https://harbor.keelchain.com/testnet/business/keys?key=<address>&scope=12&name=<your service>`.
+  It has **its own nonce**, so an action signed in Harbor
   or the CLI can never take a nonce your service already signed for, and
   it cannot buy a plan, change fees or pay out. Payouts
   (`WithdrawCustodyFor`) are a scope of their own, `client_payouts`

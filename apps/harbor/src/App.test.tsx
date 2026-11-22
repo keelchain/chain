@@ -198,6 +198,19 @@ describe('usage and business', () => {
     expect(screen.getAllByText('From allowance').length).toBe(2);
   });
 
+  it('creates a service key on the page: the secret shown once matches the address filled in', async () => {
+    installWallet();
+    open('/testnet/business/keys', 'active');
+    expect(await screen.findByText('How a service key works')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Create a new key here' }));
+    const secret = screen.getByLabelText('Secret of the new key').textContent!.trim();
+    expect(secret).toMatch(/^[0-9a-f]{64}$/);
+    const address = (screen.getByLabelText(/The service's Keel address/) as HTMLInputElement).value;
+    const { Keypair } = await import('@keelchain/sdk');
+    expect(Keypair.fromSecret(secret).address).toBe(address);
+    expect((screen.getByRole('button', { name: 'Authorize in wallet' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('authorizes a service key from its address, with the scopes ticked', async () => {
     const { signAction } = installWallet();
     open('/testnet/business/keys', 'active');

@@ -26,6 +26,33 @@ export function parseKey(text: string): string | null {
   return /^[0-9a-f]{64}$/.test(t) ? t : null;
 }
 
+/**
+ * A request carried in a link (`…/business/keys?key=<address>&scope=12&name=Bridge`),
+ * so the service's operator sends a link and nobody copies an address.
+ * Scope is limited to the two service permissions; anything else is dropped.
+ */
+export function requestFromQuery(search: string): { key: string; scope: number; name: string | null } | null {
+  const q = new URLSearchParams(search);
+  const key = parseKey(q.get('key') ?? '');
+  if (!key) return null;
+  const asked = Number(q.get('scope') ?? SCOPE_OPS);
+  const scope = (Number.isInteger(asked) ? asked : SCOPE_OPS) & (SCOPE_OPS | SCOPE_PAYOUTS);
+  const name = (q.get('name') ?? '').replace(/[^\w .-]/g, '').slice(0, 40).trim();
+  return { key, scope: scope === 0 ? SCOPE_OPS : scope, name: name || null };
+}
+
+/** The link that asks an operator to authorize `key`. */
+export function requestLink(base: string, key: string, scope: number, name?: string): string {
+  const q = new URLSearchParams({ key, scope: String(scope) });
+  if (name) q.set('name', name);
+  return `${base}?${q.toString()}`;
+}
+
+/** Bytes as lowercase hex, the form the CLI and the SDK take a secret in. */
+export function hexOf(bytes: Uint8Array): string {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** Why this authorization cannot be sent, or null when it can. */
 export function authorizeProblem(key: string | null, scope: number, days: number, own: string, maxDays: number): string | null {
   if (!key) return 'Paste the service\'s Keel address: 64 hex characters.';
