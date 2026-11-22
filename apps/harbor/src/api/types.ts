@@ -93,6 +93,8 @@ export interface AccountRecord {
     /** Unlocks on their way back to the balance; `ready_at` in ms. */
     unlocking: { ready_at: number; amount: AmountStr }[];
   };
+  /** Keys authorized to sign for this account: `scope` is a bitset, `expires_at` in seconds. */
+  sessions?: { key: string; scope: number; expires_at: number }[];
 }
 
 export interface CustodyEntry {

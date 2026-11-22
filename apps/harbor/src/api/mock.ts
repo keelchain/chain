@@ -72,6 +72,7 @@ export function mockAccount(over: { usdt?: bigint; keel?: bigint; locked?: bigin
       { asset: 'KEEL', account_type: 'deposit', balance: String(over.keel ?? 0n) },
     ],
     budget: { locked: String(over.locked ?? 0n), unlocking: over.unlocking ?? [] },
+    sessions: [],
   };
 }
 

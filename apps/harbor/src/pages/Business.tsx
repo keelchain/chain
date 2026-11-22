@@ -11,12 +11,15 @@ import { ActionResult, Field, Submit, useAction } from '../components/action';
 import { Amount, Badge, Card, ErrorState, Hex, KV, Loading, Tabs } from '../components/ui';
 import { toUnits } from '../lib/amounts';
 import { formatBps, formatInt } from '../lib/format';
+import { SCOPE_OPS, SCOPE_PAYOUTS, SCOPE_TEXT, authorizeProblem, parseKey, scopeLabels } from '../lib/serviceKeys';
 import { useHref } from '../network/NetworkContext';
 import { useHarbor, type Harbor } from './ClientGate';
+import { day } from './shared';
 
-type Tab = 'fees' | 'vaults' | 'rotate' | 'swap';
+type Tab = 'fees' | 'keys' | 'vaults' | 'rotate' | 'swap';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'fees', label: 'Retail fees' },
+  { id: 'keys', label: 'Service keys' },
   { id: 'vaults', label: 'Vaults' },
   { id: 'rotate', label: 'Rotate' },
   { id: 'swap', label: 'Float swap' },
@@ -34,6 +37,107 @@ function chainOf(v: string): Chain | null {
 function chainName(v: string): string {
   const c = chainOf(v);
   return c ? CHAIN_NAME[c] : v;
+}
+
+// ---------------------------------------------------------------- service keys
+
+/** The chain refuses a key that lasts longer than `sessions.max_secs` (30 days); stay a day under it. */
+const MAX_KEY_DAYS = 29;
+
+function ServiceKeys({ h }: { h: Harbor }) {
+  const act = useAction();
+  const revoke = useAction();
+  const [text, setText] = useState('');
+  const [ops, setOps] = useState(true);
+  const [payouts, setPayouts] = useState(false);
+  const [days, setDays] = useState(String(MAX_KEY_DAYS));
+  const key = parseKey(text);
+  const scope = (ops ? SCOPE_OPS : 0) | (payouts ? SCOPE_PAYOUTS : 0);
+  const problem = authorizeProblem(key, scope, Number(days), h.address, MAX_KEY_DAYS);
+  const sessions = (h.account.sessions ?? []).filter((s) => s.expires_at > h.nowSecs);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (problem || !key) return;
+    const expires = Math.floor(Date.now() / 1000) + Number(days) * 86_400;
+    void act.run(
+      { AuthorizeSessionKey: { key, scope, expires_at: expires } },
+      'Authorize a service key',
+      `${key.slice(0, 8)}… may sign for this account until ${day(expires)}: ${scopeLabels(scope).join(' and ').toLowerCase()}.`,
+    );
+  };
+  return (
+    <div className="grid-2">
+      <Card title="Authorize a service key">
+        <form className="form" onSubmit={submit}>
+          <p className="small text-2">
+            The service that runs your exchange (your bridge or backend) signs with a key of its own, so it never holds this account's key and never competes with what you sign here. It creates the
+            key; you paste its <strong>address</strong> below and approve in Keel Wallet. Never paste a secret here.
+          </p>
+          <Field label="The service's Keel address" hint={text !== '' && !key ? <span className="down">A Keel address is 64 hex characters.</span> : 'Ask whoever runs the service for it. It is public.'}>
+            <input className="input mono" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} autoComplete="off" aria-invalid={text !== '' && !key} />
+          </Field>
+          <fieldset className="form">
+            <legend className="small text-2">What it may do</legend>
+            <label className="small">
+              <input type="checkbox" checked={ops} onChange={(e) => setOps(e.target.checked)} /> <strong>Operations:</strong> {SCOPE_TEXT.find((s) => s.bit === SCOPE_OPS)!.detail}
+            </label>
+            <label className="small">
+              <input type="checkbox" checked={payouts} onChange={(e) => setPayouts(e.target.checked)} /> <strong>Payouts:</strong> {SCOPE_TEXT.find((s) => s.bit === SCOPE_PAYOUTS)!.detail}
+            </label>
+          </fieldset>
+          {payouts && <p className="small down">With payouts, whoever holds that key can send your users' funds out of your vault. Grant it only to a server you control.</p>}
+          <Field label="Valid for (days)" hint={`At most ${MAX_KEY_DAYS}. Authorize it again before it runs out; the service stops when it does.`}>
+            <input className="input" value={days} onChange={(e) => setDays(e.target.value.trim())} inputMode="numeric" />
+          </Field>
+          <p className="small text-2">It can never buy or change your plan, set your fees, unlock your KEEL or spend this account's own balance outside custody.</p>
+          <div className="row">
+            <Submit act={act} disabled={problem !== null}>
+              Authorize in wallet
+            </Submit>
+            {problem && text !== '' && <span className="small text-2">{problem}</span>}
+          </div>
+          <ActionResult act={act} />
+        </form>
+      </Card>
+      <Card title="Keys that can sign for this account" flush>
+        {sessions.length === 0 ? (
+          <p className="pad small text-2">None. Until you authorize one, only this account's own key signs.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>May do</th>
+                  <th>Until</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((s) => (
+                  <tr key={s.key}>
+                    <td>
+                      <Hex value={s.key} head={8} tail={6} />
+                    </td>
+                    <td>{scopeLabels(s.scope).join(', ') || `scope ${s.scope}`}</td>
+                    <td>{day(s.expires_at)}</td>
+                    <td className="num">
+                      <button type="button" className="btn small" disabled={revoke.busy} onClick={() => void revoke.run({ RevokeSessionKey: { key: s.key } }, 'Revoke a service key', `${s.key.slice(0, 8)}… stops signing for this account at once.`)}>
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="pad">
+          <ActionResult act={revoke} />
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------- retail fees
@@ -360,7 +464,7 @@ function Swap({ c }: { c: Custody }) {
   );
 }
 
-function CustodyTab({ h, tab }: { h: Harbor; tab: Exclude<Tab, 'fees'> }) {
+function CustodyTab({ h, tab }: { h: Harbor; tab: Exclude<Tab, 'fees' | 'keys'> }) {
   const custody = useCustody(h.address);
   if (tab === 'rotate') return <Rotate />;
   if (custody.isError) return <ErrorState error={custody.error} what="custody vaults" />;
@@ -389,7 +493,7 @@ export function BusinessPage() {
       {h.client.attester ? (
         <>
           <Tabs label="Business sections" tabs={TABS} value={tab} onChange={(t) => navigate(href(t === 'fees' ? '/business' : `/business/${t}`))} />
-          {tab === 'fees' ? <Fees h={h} /> : <CustodyTab h={h} tab={tab} />}
+          {tab === 'fees' ? <Fees h={h} /> : tab === 'keys' ? <ServiceKeys h={h} /> : <CustodyTab h={h} tab={tab} />}
         </>
       ) : (
         <Card>

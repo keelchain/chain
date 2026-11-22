@@ -1000,3 +1000,13 @@ time[title] {
     display: none;
   }
 }
+
+/* Padding for plain content inside a flush card. */
+.pad {
+  padding: 14px 16px;
+}
+fieldset.form {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}

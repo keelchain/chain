@@ -198,6 +198,22 @@ describe('usage and business', () => {
     expect(screen.getAllByText('From allowance').length).toBe(2);
   });
 
+  it('authorizes a service key from its address, with the scopes ticked', async () => {
+    const { signAction } = installWallet();
+    open('/testnet/business/keys', 'active');
+    const key = 'ab'.repeat(32);
+    fireEvent.change(await screen.findByLabelText(/The service's Keel address/), { target: { value: `0x${key.toUpperCase()}` } });
+    fireEvent.click(screen.getByLabelText(/Payouts:/));
+    expect(screen.getByText(/Grant it only to a server you control/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Authorize in wallet' }));
+    await waitFor(() => expect(signAction).toHaveBeenCalledTimes(1));
+    const req = (signAction.mock.calls[0] as unknown as [{ envelope: { action: { AuthorizeSessionKey: { key: string; scope: number; expires_at: number } } } }])[0];
+    const a = req.envelope.action.AuthorizeSessionKey;
+    expect([a.key, a.scope]).toEqual([key, 12]);
+    expect(a.expires_at - Math.floor(Date.now() / 1000)).toBeGreaterThan(28 * 86_400);
+    expect(screen.getByText(/None. Until you authorize one/)).toBeTruthy();
+  });
+
   it('prefills the retail fees and moves the vault tools under Business', async () => {
     installWallet();
     open('/testnet/business', 'active');
