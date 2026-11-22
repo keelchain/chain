@@ -153,6 +153,11 @@ fn custody_vault_lifecycle() {
             ..
         }
     )));
+    // The event identifies the deposit by itself: no receipt lookup needed.
+    assert!(r[0].events.iter().any(|e| matches!(
+        e,
+        Event::CustodyDepositCredited { tx_hash, index: 0, .. } if *tx_hash == "01".repeat(32)
+    )));
     assert_eq!(custody::balance(&c.state, alice.addr(), &usds()), 5_000_000);
     // One USDT: the Tron USDT stays in the client's vault as backing and
     // alice holds the unified USDT, as she would in the network vault.

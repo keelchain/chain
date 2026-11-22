@@ -570,6 +570,7 @@ fn observe_deposit(
             asset: o.asset.clone(),
             amount: o.amount,
             tx_hash: tokens::hex(&o.tx_hash),
+            index: o.index,
         });
         return Ok(events);
     }
@@ -578,6 +579,8 @@ fn observe_deposit(
         owner,
         asset: o.asset.clone(),
         amount: o.amount,
+        tx_hash: tokens::hex(&o.tx_hash),
+        index: o.index,
     });
     if owner == custodian {
         settle_expenses(state, custodian, &o.asset)?;

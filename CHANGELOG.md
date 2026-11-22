@@ -5,6 +5,12 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **custody deposit events identify the deposit** (2026-11-22).
+  `CustodyDepositCredited` carries `tx_hash` and `index`, and
+  `CustodyDepositHeld` gains `index`: the external transaction and the
+  output or log index in it. A client no longer needs the action's
+  receipt, which the node keeps only for recent blocks, to know which
+  deposit an event is.
 - Chain: **the end of a payout names its account** (2026-11-22).
   `OutboundConfirmed` and `OutboundFailed` carry `owner` and `custodian`
   (null for the network vault). Until now they held only the outbound

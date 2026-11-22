@@ -421,6 +421,10 @@ pub enum Event {
         owner: Address,
         asset: Asset,
         amount: Amount,
+        /// The external transaction and the output or log index in it:
+        /// together with the asset's chain, what identifies the deposit.
+        tx_hash: String,
+        index: u32,
     },
     /// A deposit to `owner` in `custodian`'s vault was credited on hold:
     /// counted in the vault's reserve, not spendable until released.
@@ -429,8 +433,10 @@ pub enum Event {
         owner: Address,
         asset: Asset,
         amount: Amount,
-        /// The external transaction, as in `DepositObserved`.
+        /// The external transaction, as in `DepositObserved`, and the
+        /// output or log index in it.
         tx_hash: String,
+        index: u32,
     },
     /// The custodian released a held deposit of `owner` to `to`.
     CustodyHoldReleased {
