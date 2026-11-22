@@ -115,9 +115,14 @@ export class RpcClient {
   client(address: string) { return this.req("GET", `/v1/clients/${address}`); }
   /** A client's custody vaults, reserves versus liabilities, and its two floats per asset. */
   custody(custodian: string) { return this.req("GET", `/v1/custody/${custodian}`); }
-  /** Ask for a deposit address in `custodian`'s vault on `chain` (`RequestCustodyAddress`); resolves to the tx id. */
-  requestCustodyAddress(key: Keypair, chain: Chain, custodian: string, chainId = 1): Promise<string> {
-    return this.send(key, { RequestCustodyAddress: { chain, custodian } }, chainId);
+  /**
+   * Ask for a deposit address in `custodian`'s vault on `chain`
+   * (`RequestCustodyAddress`); resolves to the tx id. With `owner`, the
+   * custodian (or its `client_ops` session key) asks for an account it
+   * attested, so that account needs no key of its own.
+   */
+  requestCustodyAddress(key: Keypair, chain: Chain, custodian: string, chainId = 1, owner: string | null = null): Promise<string> {
+    return this.send(key, { RequestCustodyAddress: { chain, custodian, owner } }, chainId);
   }
   /** Withdraw a custody balance to an external address, paid from the custodian's vault (`WithdrawCustody`). */
   withdrawCustody(key: Keypair, withdraw: Withdraw, chainId = 1): Promise<string> {

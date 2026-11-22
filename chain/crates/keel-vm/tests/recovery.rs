@@ -217,6 +217,7 @@ fn custodian_asks_for_its_users_index() {
     let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
         chain: ExtChain::Solana,
         custodian: v.addr(),
+        owner: None,
     })]);
     ok(&r[0]);
     let ask = |custodian: Option<Address>, owner: Option<Address>| {

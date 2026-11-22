@@ -144,8 +144,23 @@ pub fn apply(
 ) -> Result<Vec<Event>, VmError> {
     match action {
         Action::RegisterCustodyVault(r) => register(state, ctx, signer, r),
-        Action::RequestCustodyAddress { chain, custodian } => {
-            let mut events = request_address(state, signer, *chain, *custodian)?;
+        Action::RequestCustodyAddress {
+            chain,
+            custodian,
+            owner,
+        } => {
+            // The custodian may ask for one of its accounts; nobody else
+            // asks for an account that is not their own.
+            let account = match owner {
+                Some(o) if *o != signer => {
+                    if signer != *custodian {
+                        return Err(VmError::Unauthorized);
+                    }
+                    *o
+                }
+                _ => signer,
+            };
+            let mut events = request_address(state, account, *chain, *custodian)?;
             events.extend(clients::charge_usage_to(
                 state, *custodian, "address", tx_id,
             )?);

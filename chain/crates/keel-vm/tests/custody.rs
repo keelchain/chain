@@ -97,18 +97,22 @@ fn custody_vault_lifecycle() {
         alice.act(Action::RequestCustodyAddress {
             chain: ExtChain::Tron,
             custodian: client,
+            owner: None,
         }),
         bob.act(Action::RequestCustodyAddress {
             chain: ExtChain::Tron,
             custodian: client,
+            owner: None,
         }),
         v.act(Action::RequestCustodyAddress {
             chain: ExtChain::Tron,
             custodian: client,
+            owner: None,
         }),
         alice.act(Action::RequestCustodyAddress {
             chain: ExtChain::Tron,
             custodian: client,
+            owner: None,
         }),
     ]);
     ok(&r[0]);
@@ -363,6 +367,7 @@ fn custody_accounts_belong_to_one_client() {
     let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
         chain: ExtChain::Tron,
         custodian: v.addr(),
+        owner: None,
     })]);
     ok(&r[0]);
     // Re-attested by bob later, alice still cannot open custody with him:
@@ -376,6 +381,7 @@ fn custody_accounts_belong_to_one_client() {
     let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
         chain: ExtChain::Tron,
         custodian: bob.addr(),
+        owner: None,
     })]);
     assert!(matches!(err(&r[0]), VmError::Invalid(_)));
     // Deposits into the two vaults never mix.
@@ -461,6 +467,7 @@ fn swap_between_custody_and_the_market() {
     let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
         chain: ExtChain::Bitcoin,
         custodian: client,
+        owner: None,
     })]);
     ok(&r[0]);
     // Alice holds 1 BTC in the client's vault; the client holds its genesis
@@ -671,6 +678,7 @@ fn a_custody_balance_moves_between_accounts_of_the_same_client() {
     let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
         chain: ExtChain::Tron,
         custodian: v.addr(),
+        owner: None,
     })]);
     ok(&r[0]);
     fund_custody(&mut c.state, v.addr(), alice.addr(), &usdt(), 10_000_000);
@@ -943,10 +951,12 @@ fn usdt_on_any_network_is_one_custody_balance() {
         alice.act(Action::RequestCustodyAddress {
             chain: ExtChain::Bsc,
             custodian: client,
+            owner: None,
         }),
         bob.act(Action::RequestCustodyAddress {
             chain: ExtChain::Ethereum,
             custodian: client,
+            owner: None,
         }),
     ]);
     ok(&r[0]);
@@ -1089,5 +1099,89 @@ fn usdt_on_any_network_is_one_custody_balance() {
             "{a}"
         );
     }
+    assert!(c.state.ledger.audit().mismatches.is_empty());
+}
+
+/// A custodial client needs no key of its users: it attests an account,
+/// asks for its deposit address and moves its balance itself. And the
+/// service that does this day to day signs with a session key of its own,
+/// so it never shares a nonce with the operator key.
+#[test]
+fn a_client_runs_its_users_accounts_with_a_session_key_and_no_user_keys() {
+    let (state, mut alice, _bob, mut v) = setup(0);
+    let mut c = Chain::new(state);
+    let client = v.addr();
+    // An account nobody holds a key for: an identifier the client derived.
+    let customer = Address::tagged(77);
+    let mut bridge = Actor::new(90);
+    let now = T0 + c.height + 1;
+    let (r, _) = c.block(&[
+        v.act(Action::RegisterCustodyVault(registration(1))),
+        v.act(Action::AuthorizeSessionKey {
+            key: bridge.addr(),
+            scope: keel_actions::session_scope::CLIENT_OPS,
+            expires_at: now + 3_600,
+        }),
+    ]);
+    ok(&r[0]);
+    ok(&r[1]);
+    let operator_nonce = c.state.account_ref(&client).unwrap().nonce;
+
+    // The bridge onboards the customer: attestation and deposit address.
+    let (r, _) = c.block(&[
+        bridge.act(Action::Attest {
+            subject: customer,
+            tier: 1,
+            expires_at: T0 + 1_000_000,
+        }),
+        bridge.act(Action::RequestCustodyAddress {
+            chain: ExtChain::Tron,
+            custodian: client,
+            owner: Some(customer),
+        }),
+    ]);
+    ok(&r[0]);
+    ok(&r[1]);
+    assert!(r[1].events.contains(&Event::CustodyAddressAssigned {
+        custodian: client,
+        owner: customer,
+        chain: "TRON".into(),
+        index: 1,
+    }));
+    // A deposit is credited to the customer, and the bridge moves it.
+    fund_custody(&mut c.state, client, customer, &usdt(), 5_000_000);
+    let (r, _) = c.block(&[bridge.act(transfer_custody(
+        client,
+        usdt(),
+        2_000_000,
+        Some(customer),
+        "trade:9:escrow",
+    ))]);
+    ok(&r[0]);
+    assert_eq!(custody::balance(&c.state, customer, &usdt()), 3_000_000);
+    assert_eq!(custody::balance(&c.state, client, &usdt()), 2_000_000);
+    // None of it used the operator's nonce: Harbor and the CLI sign with
+    // the operator key in the meantime without colliding.
+    assert_eq!(c.state.account_ref(&client).unwrap().nonce, operator_nonce);
+
+    // The scope stops at operations: the session key cannot buy a plan,
+    // pay out, or change fees.
+    let (r, _) = c.block(&[
+        bridge.act(Action::BuyPlan { tier: 1 }),
+        bridge.act(Action::WithdrawCustody(Withdraw {
+            asset: usdt(),
+            to: "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE".into(),
+            amount: 1,
+        })),
+    ]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
+    assert!(matches!(err(&r[1]), VmError::Unauthorized));
+    // Nobody but the custodian asks for someone else's address.
+    let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
+        chain: ExtChain::Tron,
+        custodian: client,
+        owner: Some(customer),
+    })]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
     assert!(c.state.ledger.audit().mismatches.is_empty());
 }

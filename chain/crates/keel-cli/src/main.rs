@@ -126,6 +126,10 @@ enum ActionCmd {
     /// Client-owned custody vaults (docs/models.md, Model A).
     #[command(subcommand)]
     Custody(CustodyCmd),
+    /// Session keys: a second key that signs a limited set of actions for
+    /// this account, with a nonce of its own.
+    #[command(subcommand)]
+    Session(SessionCmd),
     HouseQuote {
         pair: String,
         #[arg(long)]
@@ -169,6 +173,24 @@ enum ActionCmd {
     Raw {
         json: String,
     },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum SessionCmd {
+    /// Let `key` sign for this account within `--scope`: `markets`,
+    /// `p2p`, `client-ops` (a client's service: attestations, custody
+    /// addresses, transfers and swaps), or a sum of their bits.
+    Authorize {
+        key: String,
+        #[arg(long)]
+        scope: String,
+        /// Seconds from now until the key stops working (the chain caps
+        /// it at `sessions.max_secs`, 30 days by default).
+        #[arg(long, default_value_t = 29 * 86_400)]
+        expires_in_secs: u64,
+    },
+    /// Stop `key` from signing for this account.
+    Revoke { key: String },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -296,8 +318,15 @@ enum CustodyCmd {
         #[arg(long)]
         signer_url: String,
     },
-    /// Ask for a deposit address inside a client's vault.
-    Address { chain: String, custodian: String },
+    /// Ask for a deposit address inside a client's vault: the signer's
+    /// own, or with `--owner` (signed by the custodian) one of the
+    /// accounts it attested.
+    Address {
+        chain: String,
+        custodian: String,
+        #[arg(long)]
+        owner: Option<String>,
+    },
     /// Withdraw a custody balance through the custodian's vault.
     Withdraw {
         asset: String,
@@ -573,13 +602,38 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
             ),
             signer_url,
         }),
-        ActionCmd::Custody(CustodyCmd::Address { chain, custodian }) => {
-            Action::RequestCustodyAddress {
-                chain: keel_actions::Chain::parse(&chain)
-                    .ok_or_else(|| anyhow!("chain must be BTC, ETH or TRON"))?,
-                custodian: parse_addr(&custodian)?,
-            }
-        }
+        ActionCmd::Session(SessionCmd::Authorize {
+            key,
+            scope,
+            expires_in_secs,
+        }) => Action::AuthorizeSessionKey {
+            key: parse_addr(&key)?,
+            scope: match scope.to_ascii_lowercase().as_str() {
+                "markets" => keel_actions::session_scope::MARKETS,
+                "p2p" => keel_actions::session_scope::P2P_MANAGE,
+                "client-ops" => keel_actions::session_scope::CLIENT_OPS,
+                n => n
+                    .parse()
+                    .map_err(|_| anyhow!("--scope is markets, p2p, client-ops or a number"))?,
+            },
+            expires_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs()
+                + expires_in_secs,
+        },
+        ActionCmd::Session(SessionCmd::Revoke { key }) => Action::RevokeSessionKey {
+            key: parse_addr(&key)?,
+        },
+        ActionCmd::Custody(CustodyCmd::Address {
+            chain,
+            custodian,
+            owner,
+        }) => Action::RequestCustodyAddress {
+            chain: keel_actions::Chain::parse(&chain)
+                .ok_or_else(|| anyhow!("chain must be BTC, ETH, TRON, BSC or SOL"))?,
+            custodian: parse_addr(&custodian)?,
+            owner: owner.as_deref().map(parse_addr).transpose()?,
+        },
         ActionCmd::Custody(CustodyCmd::Withdraw { asset, to, amount }) => {
             Action::WithdrawCustody(Withdraw {
                 asset: Asset::new(asset),

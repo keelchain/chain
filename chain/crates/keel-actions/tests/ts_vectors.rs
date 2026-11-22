@@ -276,6 +276,7 @@ fn vectors() -> Vec<(&'static str, Action)> {
             Action::RequestCustodyAddress {
                 chain: Chain::Tron,
                 custodian: Keypair::from_seed(9).address(),
+                owner: Some(Address::tagged(4)),
             },
         ),
         (

@@ -183,6 +183,12 @@ pub enum Action {
     RequestCustodyAddress {
         chain: Chain,
         custodian: Address,
+        /// The account the address is for, when the custodian asks on
+        /// behalf of one it attested; `None` means the signer's own. With
+        /// this, `Attest` and `on_behalf_of` transfers, a custodial client
+        /// needs no key of its users at all.
+        #[serde(default)]
+        owner: Option<Address>,
     },
     /// Observer attests a deposit that landed on a custody vault address.
     ObserveCustodyDeposit {
@@ -287,13 +293,20 @@ pub struct LightningDepositObservation {
 
 /// Session scope bits. Anything not listed can never be signed by a
 /// session key: transfers, withdrawals, escrow release/cancel/start,
-/// budget locks, staking, governance, attestations, session management.
+/// budget locks, staking, governance, session management.
 pub mod session_scope {
     /// PlaceOrder, CancelOrder, HouseQuote.
     pub const MARKETS: u32 = 1;
     /// CreateOffer, UpdateOffer, PauseOffer, CloseOffer, MarkPaid.
     pub const P2P_MANAGE: u32 = 2;
-    pub const ALL: u32 = MARKETS | P2P_MANAGE;
+    /// A client's day-to-day operations, for the service that runs them:
+    /// Attest, RequestCustodyAddress, TransferCustody, SwapCustody. The key
+    /// has its own nonce, so the service never competes with the operator
+    /// key used in Harbor or the CLI. Unlike the two scopes above this one
+    /// moves balances, inside the client's own custody; a wallet never
+    /// grants it to a site.
+    pub const CLIENT_OPS: u32 = 4;
+    pub const ALL: u32 = MARKETS | P2P_MANAGE | CLIENT_OPS;
 }
 
 impl Action {
@@ -309,6 +322,10 @@ impl Action {
             | Action::PauseOffer { .. }
             | Action::CloseOffer { .. }
             | Action::MarkPaid { .. } => Some(session_scope::P2P_MANAGE),
+            Action::Attest { .. }
+            | Action::RequestCustodyAddress { .. }
+            | Action::TransferCustody(_)
+            | Action::SwapCustody(_) => Some(session_scope::CLIENT_OPS),
             _ => None,
         }
     }

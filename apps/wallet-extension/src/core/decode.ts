@@ -349,7 +349,10 @@ export function decodeAction(action: unknown): DecodedAction {
         { name: 'Allowed to', field: { k: 'text', value: scopes.length ? scopeWords(scopes) : `nothing (scope ${bits})` } },
         { name: 'Scope bits', field: { k: 'number', value: String(bits) } },
         { name: 'Expires', field: { k: 'timestamp', value: exp, formatted: formatDate(exp) } },
-        { name: 'Can move funds', field: { k: 'badge', value: 'Never', tone: 'good' } },
+        // Scope 4 is a client's operations key: it moves balances inside that client's custody.
+        (bits & 4) !== 0
+          ? { name: 'Can move funds', field: { k: 'badge', value: 'Yes, inside your custody', tone: 'warn' } }
+          : { name: 'Can move funds', field: { k: 'badge', value: 'Never', tone: 'good' } },
       ]);
     }
     case 'RevokeSessionKey':

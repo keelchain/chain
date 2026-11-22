@@ -395,6 +395,85 @@ pub async fn account_txs(
 }
 
 #[derive(Deserialize)]
+pub struct EventsQuery {
+    limit: Option<i64>,
+    cursor: Option<String>,
+    /// Only events that name this address (a client sees every event of
+    /// its accounts that names it: custody, billing, attestations).
+    address: Option<String>,
+    /// Only events of this type, e.g. `CustodyTransferred`.
+    r#type: Option<String>,
+    /// Start at this height when there is no cursor.
+    from_height: Option<i64>,
+}
+
+/// The event log, oldest first, for a service that mirrors balances or
+/// bills from it: read a page, keep `next_cursor`, ask again. It carries
+/// the events of actions and the end-of-block events (plan renewals,
+/// collected usage, matured unlocks), which no transaction lists.
+/// `next_cursor` is always returned, so a reader at the tip polls with it
+/// and gets the events that arrived since.
+pub async fn events(State(app): State<App>, Query(q): Query<EventsQuery>) -> ApiResult {
+    let address = q
+        .address
+        .as_deref()
+        .map(|a| parse_hex64(a, "address"))
+        .transpose()?;
+    let p = Paging {
+        limit: q.limit,
+        cursor: q.cursor.clone(),
+    };
+    let limit = p.limit();
+    // After the cursor; with none, from `from_height`. A block's own
+    // events are stored under tx_index -1 but happen after its
+    // transactions, so they are ordered (and the cursor counts them) last.
+    let (h, t, e) = match p.cursor(3)? {
+        Some(c) => (
+            c.0.first().copied().unwrap_or(0),
+            c.0.get(1).copied().unwrap_or(-1),
+            c.0.get(2).copied().unwrap_or(-1),
+        ),
+        None => (q.from_height.unwrap_or(0).max(0), -1, -1),
+    };
+    let rows: Vec<Value> = sqlx::query(
+        "SELECT to_jsonb(x) AS j FROM (
+           SELECT height, tx_index, event_index, tx_id, timestamp, type, data,
+                  CASE WHEN tx_index < 0 THEN 2147483647 ELSE tx_index END AS seq
+           FROM events
+           WHERE (height, CASE WHEN tx_index < 0 THEN 2147483647 ELSE tx_index END, event_index) > ($1, $2, $3)
+             AND ($4::text IS NULL OR addresses @> ARRAY[$4::text])
+             AND ($5::text IS NULL OR type = $5)
+           ORDER BY height, seq, event_index LIMIT $6) x",
+    )
+    .bind(h)
+    .bind(t as i32)
+    .bind(e as i32)
+    .bind(&address)
+    .bind(&q.r#type)
+    .bind(limit)
+    .fetch_all(&app.db.pool)
+    .await?
+    .iter()
+    .map(jrow)
+    .collect();
+    let next = rows
+        .last()
+        .map(|r| {
+            Cursor(vec![
+                jcol(r, "height"),
+                jcol(r, "seq"),
+                jcol(r, "event_index"),
+            ])
+        })
+        .unwrap_or(Cursor(vec![h, t, e]))
+        .encode();
+    let more = rows.len() as i64 == limit;
+    Ok(Json(
+        json!({ "events": rows, "next_cursor": next, "more": more }),
+    ))
+}
+
+#[derive(Deserialize)]
 pub struct TransferQuery {
     limit: Option<i64>,
     cursor: Option<String>,

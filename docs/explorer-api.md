@@ -30,6 +30,7 @@ responses carry `next_cursor` when more exist. Every list is newest first.
 | GET | `/v1/stats` | `{height, block_time_ms_avg, tps_1h, actions_24h, accounts, validators, tvl_usd, assets:[{asset, supply, holders}], fees_24h:[{asset, amount}]}` |
 | GET | `/v1/blocks?limit=&cursor=` | `{blocks:[Block], next_cursor}` |
 | GET | `/v1/blocks/{height}` | `Block & {receipts:[Tx], events:[Event]}` |
+| GET | `/v1/events?address=&type=&from_height=&limit=&cursor=` | `{events:[{height, tx_index, event_index, tx_id, timestamp, type, data}], next_cursor, more}`: the event log **oldest first**, for mirroring. `address` keeps the events that name it, `type` one event type. A block's own events (`tx_index` -1, `tx_id` null: plan renewals, collected usage, matured unlocks) follow that block's transactions. `next_cursor` is always present: at the tip, poll with it |
 | GET | `/v1/txs?limit=&cursor=&signer=&module=&ok=` | `{txs:[Tx], next_cursor}` |
 | GET | `/v1/txs/{tx_id}` | `Tx & {action (decoded JSON), block: Block}` |
 | GET | `/v1/accounts/{addr}` | `{address, nonce, tier, budget, balances:[{asset, account_type, balance, decimals}], first_seen_height, tx_count, deposit_addresses:[{chain, index, address}], validator?:{...}, offers_count, trades_count}` |

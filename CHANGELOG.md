@@ -5,6 +5,18 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain and API: **a key for the client's service, keyless user
+  accounts, and an event log** (2026-11-22).
+  - Session scope `client_ops` (bit 4): a key the operator authorizes for
+    `Attest`, `RequestCustodyAddress`, `TransferCustody` and
+    `SwapCustody`. It has its own nonce, so a service that signs with it
+    never collides with the operator key used in Harbor or the CLI.
+    `keel send session authorize|revoke`.
+  - `RequestCustodyAddress` takes `owner`: the custodian asks for the
+    address of an account it attested. With `on_behalf_of` this means a
+    custodial user's account needs no key, and a client no key seed.
+  - Indexer `GET /v1/events`: the event log oldest first, filtered by
+    address or type, including end-of-block events.
 - Chain: **custody transfers can debit several accounts** (2026-11-21).
   A `TransferCustody` leg takes an optional `from`; legs paid from
   different accounts are one atomic posting, signed by their custodian,

@@ -124,7 +124,8 @@ export type Action =
   | { AnnounceLightningSweep: { tx_hash: Bytes; amount: Amount } }
   | { SetClientFee: { p2p_bps: number; taker_bps: number; withdraw_bps: number } }
   | { RegisterCustodyVault: CustodyVaultRegistration }
-  | { RequestCustodyAddress: { chain: Chain; custodian: Address } }
+  /** `owner`: the account the address is for, when the custodian asks for one it attested. */
+  | { RequestCustodyAddress: { chain: Chain; custodian: Address; owner?: Address | null } }
   | { ObserveCustodyDeposit: { custodian: Address; observation: DepositObservation } }
   | { WithdrawCustody: Withdraw }
   | { SwapCustody: CustodySwap }
@@ -223,7 +224,12 @@ export interface CustodyVaultRegistration {
 }
 
 /** Session scope bits (`keel_actions::session_scope`). */
-export const SESSION_SCOPE = { MARKETS: 1, P2P_MANAGE: 2 } as const;
+/**
+ * `CLIENT_OPS` is for a client's own service (attestations, custody
+ * addresses, custody transfers and swaps): it moves balances inside the
+ * client's custody, so it is granted by the operator, never to a site.
+ */
+export const SESSION_SCOPE = { MARKETS: 1, P2P_MANAGE: 2, CLIENT_OPS: 4 } as const;
 
 const ACTION_VARIANTS = [
   "Transfer", "PlaceOrder", "CancelOrder", "HouseQuote", "BuyBudget", "CreateOffer", "UpdateOffer", "PauseOffer",
@@ -398,7 +404,7 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
     case "SetClientFee": w.u32(b.p2p_bps); w.u32(b.taker_bps); w.u32(b.withdraw_bps); break;
     case "RegisterCustodyVault":
       unitEnum(w, CHAINS, b.chain); w.u64(b.epoch); w.vecU8(toBytes(b.public_key)); w.option(b.chain_code, (h) => hash(w, h)); w.string(b.signer_url); break;
-    case "RequestCustodyAddress": unitEnum(w, CHAINS, b.chain); address(w, b.custodian); break;
+    case "RequestCustodyAddress": unitEnum(w, CHAINS, b.chain); address(w, b.custodian); w.option(b.owner, (a) => address(w, a)); break;
     case "ObserveCustodyDeposit": {
       address(w, b.custodian); const o = b.observation as DepositObservation;
       unitEnum(w, CHAINS, o.chain); w.string(o.asset); hash(w, o.tx_hash); w.u32(o.index); w.u64(o.deposit_index);

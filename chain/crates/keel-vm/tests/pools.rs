@@ -125,6 +125,7 @@ fn rotation_opens_a_fresh_generation_and_the_old_one_drains() {
     let (r, _) = c.block(&[alice.act(Action::RequestCustodyAddress {
         chain: ExtChain::Tron,
         custodian: client,
+        owner: None,
     })]);
     ok(&r[0]);
     fund_custody(&mut c.state, client, alice.addr(), &usdt(), 5_000_000);

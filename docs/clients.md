@@ -359,6 +359,19 @@ escrow) with the client's ledger, and every outbound of the day with the
 indexer's `/v1/vaults/outbounds`. The explorer shows the same numbers to the
 client's users.
 
+## The event log
+
+`GET /api/v1/events?address=<your operator address>&cursor=` on the
+indexer is every event that names your account, oldest first: custody
+credits, transfers and swaps of your users, payouts, plan periods, usage
+charged and owed. It includes the events a block emits by itself (a plan
+renewal, usage collected at an epoch boundary), which no transaction
+lists. Read a page, apply it, keep `next_cursor`, ask again; at the tip
+the same cursor returns what has arrived since, so a balance mirror is a
+loop over this one route. `type=` narrows it to one event type and
+`from_height=` starts later than genesis. Use the streams below when you
+need to react within a block, and this to be sure you missed nothing.
+
 ## Streams
 
 Subscribe rather than poll for anything time-sensitive: `account:<addr>`
@@ -373,8 +386,32 @@ replays from the last height. Details in the `ws` reference.
 <div class="tab" data-mode="custodial">
 
 Sign server-side with `@keelchain/sdk` (`Keypair`, `RpcClient.send`), keys
-in your KMS: the custodial accounts' keys for their actions (`on_behalf_of`
-for a swap), your operator key for roles, attestations and the plan.
+in your KMS. Two keys, with two jobs:
+
+- **Your operator key** for what a person decides: roles, fees, the plan,
+  the lock, payouts from your own balance. It is the key you connect to
+  Harbor and use in the CLI.
+- **A session key for your service**, authorized once by the operator key
+  (`AuthorizeSessionKey`, scope `client_ops`, bit 4; `keel send session
+  authorize <key> --scope client-ops`). It signs the day-to-day work for
+  your account: `Attest`, `RequestCustodyAddress`, `TransferCustody` and
+  `SwapCustody`. It has **its own nonce**, so an action signed in Harbor
+  or the CLI can never take a nonce your service already signed for, and
+  it cannot buy a plan, change fees or pay out. It expires
+  (`sessions.max_secs`, 30 days at most); renew it before then, or revoke
+  it with `RevokeSessionKey` if the service is compromised.
+
+**Your users need no keys.** An account on Keel is an address, and for a
+custodial user nobody has to hold a key for it: you attest the address,
+ask for its deposit address yourself (`RequestCustodyAddress` with
+`owner`), and move its balance yourself (`on_behalf_of`). Derive the
+address from your own customer id however you like, deterministically,
+and there is no seed to back up and nothing to lose: the mapping can be
+recomputed, and the chain lists every account in your custody
+(`GET /v1/custody/{addr}/{chain}/addresses`). A user who should sign for
+themselves keeps a real key in Keel Wallet instead. To pay a user out,
+transfer the amount to your own account and withdraw it from there.
+
 Withdrawals from your vault are signed by your own signer under the same
 policy every Keel signer runs: the transaction must pay open outbounds of a
 finalized batch, and nothing else.

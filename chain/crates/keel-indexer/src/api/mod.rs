@@ -39,6 +39,7 @@ pub fn router(state: App) -> Router {
         .route("/v1/stats", get(chain::stats))
         .route("/v1/blocks", get(chain::blocks))
         .route("/v1/blocks/{height}", get(chain::block))
+        .route("/v1/events", get(chain::events))
         .route("/v1/txs", get(chain::txs))
         .route("/v1/txs/{tx_id}", get(chain::tx))
         .route("/v1/accounts/{addr}", get(chain::account))
