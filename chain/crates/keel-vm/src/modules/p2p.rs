@@ -38,6 +38,10 @@ pub struct Offer {
     pub closed: bool,
     /// KEEL locked in the owner's `offer_deposit` account for this offer.
     pub deposit: Amount,
+    /// The client the offer is listed under: the owner itself when it is
+    /// a client, otherwise the client that vouched for the owner when the
+    /// offer was created. Set by the chain, never by the owner.
+    pub client: Option<Address>,
 }
 
 #[derive(
@@ -209,6 +213,7 @@ fn create_offer(
             ],
         )?;
     }
+    let client = super::clients::listing_client_of(state, &signer, ctx.timestamp / 1000);
     state.p2p.next_offer_id += 1;
     state.p2p.offers.insert(
         id,
@@ -220,12 +225,14 @@ fn create_offer(
             paused: false,
             closed: false,
             deposit,
+            client,
         },
     );
     state.p2p.open_offers.entry(signer).or_default().insert(id);
     Ok(vec![Event::OfferCreated {
         offer_id: id,
         owner: signer,
+        client,
     }])
 }
 

@@ -290,6 +290,40 @@ signer, and the swap onto the chain's book and back (`wallet.md` §5c).
 </div>
 </div>
 
+## Your public profile
+
+Set the name your exchange is listed under with `SetClientProfile { name,
+website, logo }` (Harbor, Business, Public profile). It is what people see
+in the explorer's Exchanges directory and what an API consumer reads from
+`GET /api/v1/clients`.
+
+- **The name is yours alone.** The chain refuses a name another client
+  holds, in any spelling: `Acme Exchange`, `acme-exchange` and
+  `ACME.EXCHANGE` are one name. 3 to 32 letters, digits, single spaces,
+  dots and hyphens. Changing your name frees the old one.
+- **The website is proved, not claimed.** Give the host name only
+  (`acme.example`), then serve a text file containing your client address
+  at `https://acme.example/.well-known/keel.txt`, over HTTPS and without a
+  redirect. The read API fetches it every ten minutes and reports
+  `website_verified`; until then the directory shows the website as not
+  verified, and the logo is not loaded.
+- **The logo** is an `https://` link to a square image, optional.
+
+Every offer your users post is listed under you. The chain writes your
+address into the offer (`client`) when it is created: the owner's own
+address when the owner is a client, otherwise the client whose unexpired
+attestation the owner holds. The owner does not choose it and cannot
+change it, so nobody outside your users can post under your name. Anyone
+can then ask for your offers alone:
+
+```
+GET /api/v1/offers?client=<your client address>&status=active
+```
+
+An offer keeps the client it was created under. Offers that live only in
+your own database are not on the chain and are not listed; to be found on
+Keel, an offer has to be posted with `CreateOffer`.
+
 ## Naming your dispute team
 
 Disputes on your users' trades are ruled by whoever the offer names. Bond

@@ -178,7 +178,8 @@ pub(crate) fn event_addresses(e: &Event) -> Vec<Address> {
         | Event::UsageOwed { client, .. }
         | Event::UsageCovered { client, .. }
         | Event::ClientPlanStarted { client, .. }
-        | Event::ClientPlanRenewalSet { client, .. } => vec![*client],
+        | Event::ClientPlanRenewalSet { client, .. }
+        | Event::ClientProfileSet { client, .. } => vec![*client],
         Event::TradeArbitratorBound { arbitrator, .. } => vec![*arbitrator],
         Event::ArbitratorBanned { member } => vec![*member],
         Event::PoolRotationScheduled { custodian, .. }

@@ -50,7 +50,7 @@ use crate::{
     state::State,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use keel_actions::ClientFee;
+use keel_actions::{ClientFee, ClientProfile};
 use keel_ledger::{Record, TxType};
 use keel_types::{mul_div_floor, Address, Amount, Asset, ORCAS_PER_KEEL};
 use serde::{Deserialize, Serialize};
@@ -215,6 +215,10 @@ pub struct ClientsState {
     /// Client -> its plan period (kept after it ends, until the next one
     /// replaces it).
     pub plans: BTreeMap<Address, Plan>,
+    /// Client -> its public profile.
+    pub profiles: BTreeMap<Address, ClientProfile>,
+    /// Folded profile name -> the client that holds it.
+    pub names: BTreeMap<String, Address>,
 }
 
 pub const PARAM_KEYS: &[&str] = &[
@@ -640,6 +644,146 @@ pub fn apply_set_fee(
         taker_bps: fee.taker_bps,
         withdraw_bps: fee.withdraw_bps,
     }])
+}
+
+pub const PROFILE_NAME_MIN: usize = 3;
+pub const PROFILE_NAME_MAX: usize = 32;
+pub const PROFILE_WEBSITE_MAX: usize = 100;
+pub const PROFILE_LOGO_MAX: usize = 200;
+
+/// The form a name is compared in: lower case, without spaces, dots or
+/// hyphens, so `Acme Exchange`, `acme-exchange` and `ACME.EXCHANGE` are one
+/// name.
+pub fn fold_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+fn check_name(name: &str) -> Result<(), VmError> {
+    let ok_len = (PROFILE_NAME_MIN..=PROFILE_NAME_MAX).contains(&name.len());
+    let ok_chars = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '.' | '-'));
+    let ok_edges = name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_ascii_alphanumeric());
+    if !ok_len || !ok_chars || !ok_edges || name.contains("  ") {
+        return Err(VmError::Invalid(format!(
+            "name: {PROFILE_NAME_MIN} to {PROFILE_NAME_MAX} letters, digits, single spaces, dots or hyphens, starting and ending with a letter or digit"
+        )));
+    }
+    if fold_name(name).len() < PROFILE_NAME_MIN {
+        return Err(VmError::Invalid("name is too short".into()));
+    }
+    Ok(())
+}
+
+/// A bare host name: lower-case labels of letters, digits and hyphens, at
+/// least two of them, the last one not numeric (so not an IP address). No
+/// scheme, port or path.
+fn check_website(host: &str) -> Result<(), VmError> {
+    let bad = || {
+        VmError::Invalid(
+            "website: a host name such as exchange.example, without https:// or a path".into(),
+        )
+    };
+    if host.is_empty() {
+        return Ok(());
+    }
+    if host.len() > PROFILE_WEBSITE_MAX {
+        return Err(bad());
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    let label_ok = |l: &&str| {
+        !l.is_empty()
+            && l.len() <= 63
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+            && l.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    };
+    let tld_ok = labels
+        .last()
+        .is_some_and(|l| l.chars().any(|c| c.is_ascii_lowercase()));
+    if labels.len() < 2 || !labels.iter().all(label_ok) || !tld_ok {
+        return Err(bad());
+    }
+    Ok(())
+}
+
+fn check_logo(logo: &str) -> Result<(), VmError> {
+    if logo.is_empty() {
+        return Ok(());
+    }
+    let ok = logo.len() <= PROFILE_LOGO_MAX
+        && logo.starts_with("https://")
+        && logo.len() > "https://".len()
+        && logo.chars().all(|c| c.is_ascii_graphic())
+        && !logo.contains(['"', '\'', '<', '>', '\\']);
+    if ok {
+        Ok(())
+    } else {
+        Err(VmError::Invalid(format!(
+            "logo: an https:// link of at most {PROFILE_LOGO_MAX} characters"
+        )))
+    }
+}
+
+/// `SetClientProfile`: an attester's public profile. The name is taken by
+/// the first client that sets it and freed when that client changes to
+/// another.
+pub fn apply_set_profile(
+    state: &mut State,
+    signer: Address,
+    profile: &ClientProfile,
+) -> Result<Vec<Event>, VmError> {
+    if !state.attest.attesters.contains(&signer) {
+        return Err(VmError::Unauthorized);
+    }
+    check_name(&profile.name)?;
+    check_website(&profile.website)?;
+    check_logo(&profile.logo)?;
+    let folded = fold_name(&profile.name);
+    if state
+        .clients
+        .names
+        .get(&folded)
+        .is_some_and(|holder| *holder != signer)
+    {
+        return Err(VmError::Invalid(format!(
+            "the name {} is taken by another client",
+            profile.name
+        )));
+    }
+    if let Some(old) = state.clients.profiles.get(&signer) {
+        let old = fold_name(&old.name);
+        state.clients.names.remove(&old);
+    }
+    state.clients.names.insert(folded, signer);
+    state.clients.profiles.insert(signer, profile.clone());
+    Ok(vec![Event::ClientProfileSet {
+        client: signer,
+        name: profile.name.clone(),
+        website: profile.website.clone(),
+        logo: profile.logo.clone(),
+    }])
+}
+
+/// The client an offer by `owner` is listed under: `owner` itself when it
+/// is a client, otherwise its attester while the attestation is unexpired.
+pub fn listing_client_of(state: &State, owner: &Address, now_secs: u64) -> Option<Address> {
+    if state.attest.attesters.contains(owner) {
+        return Some(*owner);
+    }
+    billing_client_of(state, owner, now_secs)
+        .filter(|client| state.attest.attesters.contains(client))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

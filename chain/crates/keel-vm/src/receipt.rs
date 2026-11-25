@@ -129,6 +129,8 @@ pub enum Event {
     OfferCreated {
         offer_id: u64,
         owner: Address,
+        /// The client the offer is listed under, if any.
+        client: Option<Address>,
     },
     OfferUpdated {
         offer_id: u64,
@@ -619,6 +621,13 @@ pub enum Event {
     ClientPlanRenewalSet {
         client: Address,
         tier: u8,
+    },
+    /// A client set its public profile.
+    ClientProfileSet {
+        client: Address,
+        name: String,
+        website: String,
+        logo: String,
     },
     // ---- recovery
     RecoveryRequested {

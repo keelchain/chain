@@ -163,6 +163,20 @@ enum ActionCmd {
     SetPlanRenewal {
         tier: u8,
     },
+    /// A client's public profile: the name it is listed under, which no
+    /// other client may hold, its website and a logo. The website shows as
+    /// verified once `https://<website>/.well-known/keel.txt` contains the
+    /// client's address.
+    ClientProfile {
+        #[arg(long)]
+        name: String,
+        /// Host name only, such as exchange.example.
+        #[arg(long, default_value = "")]
+        website: String,
+        /// An https:// link to an image.
+        #[arg(long, default_value = "")]
+        logo: String,
+    },
     /// Lightning pool operations for an observer key (2026-09-10).
     #[command(subcommand)]
     Lightning(LightningCmd),
@@ -837,6 +851,15 @@ fn build_action(cmd: ActionCmd) -> anyhow::Result<Action> {
         ActionCmd::UnlockBudget { amount } => Action::UnlockBudget { amount },
         ActionCmd::BuyPlan { tier } => Action::BuyPlan { tier },
         ActionCmd::SetPlanRenewal { tier } => Action::SetPlanRenewal { tier },
+        ActionCmd::ClientProfile {
+            name,
+            website,
+            logo,
+        } => Action::SetClientProfile(keel_actions::ClientProfile {
+            name,
+            website,
+            logo,
+        }),
         ActionCmd::Liquidity(LiquidityCmd::Deposit { asset, amount }) => Action::DepositLiquidity {
             asset: Asset::new(asset),
             amount,

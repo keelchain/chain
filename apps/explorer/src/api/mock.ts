@@ -11,6 +11,7 @@
  * output of `keel_actions::Action` / `keel_vm::Event`.
  */
 import {
+  type ClientListing,
   ApiError,
   type Account,
   type Asset,
@@ -283,6 +284,13 @@ export interface MockOptions {
   live?: boolean;
 }
 
+/** Two named exchanges and one client that has not set a profile. */
+const MOCK_CLIENTS: ClientListing[] = [
+  { address: 'c1'.repeat(32), profile: { name: 'Harborlight', website: 'harborlight.example', logo: '' }, attested_accounts: 1284, open_offers: 0, plan_active: true, website_verified: true },
+  { address: 'c2'.repeat(32), profile: { name: 'Northwind P2P', website: 'northwind.example', logo: '' }, attested_accounts: 311, open_offers: 0, plan_active: true, website_verified: false },
+  { address: 'c3'.repeat(32), profile: null, attested_accounts: 12, open_offers: 0, plan_active: false, website_verified: null },
+];
+
 export class MockExplorerApi implements ExplorerApi {
   readonly baseUrl: string;
   readonly networkId: string;
@@ -440,6 +448,7 @@ export class MockExplorerApi implements ExplorerApi {
       const offer: Offer = {
         id,
         owner,
+        client: rng.pick([MOCK_CLIENTS[0]!.address, MOCK_CLIENTS[0]!.address, MOCK_CLIENTS[1]!.address, null]),
         side: rng.chance(0.5) ? 'buy' : 'sell',
         asset,
         fiat_currency: rng.pick(FIATS),
@@ -1529,10 +1538,16 @@ export class MockExplorerApi implements ExplorerApi {
     return this.delay(() => this.ordersList.find((o) => o.id === id) ?? this.notFound('order'));
   }
 
+  clients(): Promise<ClientListing[]> {
+    return this.delay(() =>
+      MOCK_CLIENTS.map((c) => ({ ...c, open_offers: this.offersList.filter((o) => o.client === c.address && o.status !== 'closed').length })),
+    );
+  }
+
   offers(q: OffersQuery = {}): Promise<OffersPage> {
     return this.delay(() => {
       const offers = this.offersList
-        .filter((o) => (q.asset ? o.asset === q.asset : true) && (q.side ? o.side === q.side : true) && (q.status ? o.status === q.status : true))
+        .filter((o) => (q.client ? o.client === q.client : true) && (q.asset ? o.asset === q.asset : true) && (q.side ? o.side === q.side : true) && (q.status ? o.status === q.status : true))
         .sort((a, b) => b.created_height - a.created_height);
       return { offers, next_cursor: null };
     });

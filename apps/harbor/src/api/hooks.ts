@@ -57,6 +57,12 @@ export function useCustody(addr: string | undefined) {
   });
 }
 
+/** The public directory of clients, with whether each website is proved. */
+export function useClients() {
+  const { api, network } = useNetwork();
+  return useQuery({ queryKey: [network.id, 'clients'], queryFn: () => api.clients(), refetchInterval: 15_000 });
+}
+
 export function useUnlockDelay() {
   const { api, network } = useNetwork();
   return useQuery({

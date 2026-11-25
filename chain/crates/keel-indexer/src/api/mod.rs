@@ -2,6 +2,7 @@
 //! a few live proxies to the node (balances, order book, vault state).
 
 mod chain;
+mod clients;
 mod faucet;
 mod markets;
 mod network;
@@ -29,6 +30,8 @@ pub struct AppState {
     pub ws_tx: broadcast::Sender<String>,
     /// Serializes faucet claims (one nonce stream for the faucet key).
     pub faucet_lock: tokio::sync::Mutex<()>,
+    /// Whether each client's website is proved (`GET /v1/clients`).
+    pub website_checks: clients::WebsiteChecks,
 }
 
 pub type App = Arc<AppState>;
@@ -60,6 +63,7 @@ pub fn router(state: App) -> Router {
         .route("/v1/markets/{pair}/fills", get(markets::fills))
         .route("/v1/markets/{pair}/candles", get(markets::candles))
         .route("/v1/orders/{id}", get(markets::order))
+        .route("/v1/clients", get(clients::clients))
         .route("/v1/offers", get(p2p::offers))
         .route("/v1/offers/{id}", get(p2p::offer))
         .route("/v1/trades/{id}", get(p2p::trade))

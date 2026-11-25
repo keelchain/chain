@@ -354,6 +354,7 @@ fn apply_one(
         Action::SetClientFee(fee) => clients::apply_set_fee(state, ctx.height, signer, fee),
         Action::BuyPlan { tier } => clients::apply_buy_plan(state, ctx, signer, &tx_id, *tier),
         Action::SetPlanRenewal { tier } => clients::apply_set_renewal(state, signer, *tier),
+        Action::SetClientProfile(profile) => clients::apply_set_profile(state, signer, profile),
         Action::RegisterCustodyVault(_)
         | Action::RequestCustodyAddress { .. }
         | Action::ObserveCustodyDeposit { .. }

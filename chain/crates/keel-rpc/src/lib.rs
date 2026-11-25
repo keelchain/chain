@@ -214,6 +214,7 @@ pub fn router(node: Node) -> Router {
         .route("/v1/blocks/{height}/actions", get(block_actions))
         .route("/v1/blocks/{height}/receipts", get(block_receipts))
         .route("/v1/ready/{chain}", get(ready))
+        .route("/v1/clients", get(clients))
         .route("/v1/clients/{addr}", get(client))
         .route("/v1/custody", get(custody_list))
         .route("/v1/custody/{addr}", get(custody_client))
@@ -638,14 +639,25 @@ struct OfferQuery {
     asset: Option<String>,
     side: Option<String>,
     fiat: Option<String>,
+    /// Address of the client the offers are listed under.
+    client: Option<String>,
 }
 
 async fn offers(AxumState(node): AxumState<Node>, Query(q): Query<OfferQuery>) -> Json<Value> {
     let state = node.state();
     let s = state.lock().expect("state lock");
     let p2p = to_json(&s.p2p);
+    let client = q
+        .client
+        .as_deref()
+        .map(|c| c.trim_start_matches("0x").to_ascii_lowercase());
     let list: Vec<Value> = collection(&p2p, "offers")
         .into_iter()
+        .filter(|o| {
+            client
+                .as_deref()
+                .is_none_or(|c| field_str(o, "client") == Some(c))
+        })
         .filter(|o| {
             let spec = o.get("spec").cloned().unwrap_or(Value::Null);
             let closed = o.get("closed").and_then(Value::as_bool).unwrap_or(false);
@@ -1481,6 +1493,45 @@ struct BlocksQuery {
 }
 
 /// Newest-first block list from durable history.
+/// Every client (attester), named ones first: its profile, how many
+/// accounts it vouches for and how many open offers are listed under it.
+async fn clients(AxumState(node): AxumState<Node>) -> Json<Value> {
+    let state = node.state();
+    let s = state.lock().expect("state lock");
+    let c = &s.clients;
+    let now = s.timestamp / 1000;
+    let mut list: Vec<(bool, String, Value)> = s
+        .attest
+        .attesters
+        .iter()
+        .map(|address| {
+            let profile = c.profiles.get(address);
+            let open_offers = s
+                .p2p
+                .offers
+                .values()
+                .filter(|o| !o.closed && o.client.as_ref() == Some(address))
+                .count();
+            let row = json!({
+                "address": address.to_hex(),
+                "profile": profile.map(to_json),
+                "attested_accounts": c.attested_by.values().filter(|a| *a == address).count(),
+                "open_offers": open_offers,
+                "plan_active": keel_vm::modules::clients::active_plan(&s, address, now).is_some(),
+                "fee": c.fees.get(address).map(to_json),
+            });
+            let name = profile.map(|p| p.name.to_ascii_lowercase());
+            (
+                name.is_none(),
+                name.unwrap_or_else(|| address.to_hex()),
+                row,
+            )
+        })
+        .collect();
+    list.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    Json(json!({ "clients": list.into_iter().map(|(_, _, row)| row).collect::<Vec<_>>() }))
+}
+
 /// A client (attester): its retail schedule, what it earned and paid, and
 /// how many accounts it vouches for.
 async fn client(
@@ -1508,6 +1559,7 @@ async fn client(
     Ok(Json(json!({
         "address": address.to_hex(),
         "attester": s.attest.attesters.contains(&address),
+        "profile": c.profiles.get(&address).map(to_json),
         "fee": c.fees.get(&address).map(to_json),
         "caps": {
             "p2p_bps": c.params.fee_cap_p2p_bps,

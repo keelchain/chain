@@ -39,6 +39,7 @@ export const useFills = (pair: string, q: { limit?: number; cursor?: string } = 
 export const useCandles = (pair: string, interval: CandleInterval) => useApiQuery(['candles', pair, interval], (a) => a.candles(pair, interval), { refetchInterval: 15_000 });
 export const useOrder = (id: number) => useApiQuery(['order', id], (a) => a.order(id));
 export const useOffers = (q: OffersQuery = {}) => useApiQuery(['offers', q], (a) => a.offers(q));
+export const useClients = () => useApiQuery(['clients'], (a) => a.clients(), { staleTime: 30_000 });
 export const useOffer = (id: number) => useApiQuery(['offer', id], (a) => a.offer(id));
 export const useTrade = (id: number) => useApiQuery(['trade', id], (a) => a.trade(id));
 export const useValidators = () => useApiQuery(['validators'], (a) => a.validators());

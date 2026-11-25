@@ -10,7 +10,7 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-const OFFER_COLS: &str = "id, owner, side, asset, fiat_currency, payment_method, margin_bps, fixed_price::text AS fixed_price, min_amount::text AS min_amount, max_amount::text AS max_amount, payment_window_secs, country, min_tier, \
+const OFFER_COLS: &str = "id, owner, client, side, asset, fiat_currency, payment_method, margin_bps, fixed_price::text AS fixed_price, min_amount::text AS min_amount, max_amount::text AS max_amount, payment_window_secs, country, min_tier, \
     CASE WHEN status = 'open' THEN 'active' ELSE status END AS status, created_height, updated_height, tx_id";
 const TRADE_COLS: &str = "id, offer_id, buyer, seller, asset, amount::text AS amount, fee::text AS fee, fiat_amount::text AS fiat_amount, fiat_currency, status, started_height, started_at, deadline, paid_at, closed_height, updated_height, tx_id, NULLIF(dispute, '{}'::jsonb) AS dispute, history";
 
@@ -20,6 +20,8 @@ pub struct OfferQuery {
     side: Option<String>,
     status: Option<String>,
     owner: Option<String>,
+    /// Address of the client the offers are listed under.
+    client: Option<String>,
     // Not `#[serde(flatten)] Paging`: flattened numbers do not deserialize
     // from a query string.
     limit: Option<i64>,
@@ -53,9 +55,13 @@ pub async fn offers(State(app): State<App>, Query(q): Query<OfferQuery>) -> ApiR
         .owner
         .as_deref()
         .map(|o| o.trim_start_matches("0x").to_ascii_lowercase());
+    let client = q
+        .client
+        .as_deref()
+        .map(|c| c.trim_start_matches("0x").to_ascii_lowercase());
     let rows: Vec<Value> = sqlx::query(&format!(
         "SELECT to_jsonb(x) AS j FROM (SELECT {OFFER_COLS} FROM offers WHERE id < $1
-           AND ($2::text IS NULL OR asset = $2) AND ($3::text IS NULL OR side = $3) AND ($4::text IS NULL OR status = $4) AND ($5::text IS NULL OR owner = $5)
+           AND ($2::text IS NULL OR asset = $2) AND ($3::text IS NULL OR side = $3) AND ($4::text IS NULL OR status = $4) AND ($5::text IS NULL OR owner = $5) AND ($7::text IS NULL OR client = $7)
          ORDER BY id DESC LIMIT $6) x"
     ))
     .bind(before)
@@ -64,6 +70,7 @@ pub async fn offers(State(app): State<App>, Query(q): Query<OfferQuery>) -> ApiR
     .bind(&status)
     .bind(&owner)
     .bind(limit + 1)
+    .bind(&client)
     .fetch_all(&app.db.pool)
     .await?
     .iter()

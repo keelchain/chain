@@ -20,7 +20,7 @@ action's JSON they are 32-element byte arrays (serde form).
 | GET | `/v1/markets/{pair}` | summary: cfg, house quote, `last_price`, `reference_price` (time-weighted over `twap_window_secs`, what settlement reads; null when the window is 0), best bid/ask, volumes |
 | GET | `/v1/markets/{pair}/book?depth=20` | `{bids:[{price,size,orders}], asks:[…], house, height}` |
 | GET | `/v1/orders/{id}` | OrderRecord |
-| GET | `/v1/offers?asset=&side=&fiat=` | `{offers:[Offer]}` (open offers only, each with `arbitrators[]`) |
+| GET | `/v1/offers?asset=&side=&fiat=&client=` | `{offers:[Offer]}` (open offers only, each with `arbitrators[]` and `client`: the address of the exchange it is listed under, set by the chain when the offer is created, or null; `client=` keeps one exchange's offers) |
 | GET | `/v1/offers/{id}` | Offer, plus `arbitrators[]`: the bonded arbitrators the owner named (`SetOfferArbitrators`; empty = the elected set rules) |
 | GET | `/v1/trades/{id}` | Trade (+ `dispute` when one exists), `arbitrator` (bound to rule it, or null) and `arbitrator_candidates[]` (copied from the offer at start) |
 | GET | `/v1/vaults/{chain}` | `{chain, vault, state}` (vault registrations for the chain; whole vaults sub-state) |
@@ -30,7 +30,8 @@ action's JSON they are 32-element byte arrays (serde form).
 | GET | `/v1/gov/proposals/{id}` | Proposal |
 | GET | `/v1/staking/validators` | `{consensus:[hex keys], staked:[{consensus_key,power}], staking}` |
 | GET | `/v1/receipts/{tx_id}` | `{index, tx_id, signer, ok, error{code,message}?, events[]}` (404 until applied) |
-| GET | `/v1/clients/{addr}` → `{address, attester, fee, caps, earned, usage_paid, usage_owed, attested_accounts, protocol_fee_waived, usage_prices{address_usd_micro, outbound_usd_micro, swap_usd_micro, fill_usd_micro, release_usd_micro, ruling_usd_micro}, billing_asset, locked_keel, tier, plan{tier, started_at, ends_at, active, suspended, fee_usd_micro, allowance_usd_micro, allowance_left_usd_micro, lock_keel, renew_tier, user_actions_per_day, user_actions_used_today}, user_actions_per_user_per_day, plan_period_secs, tiers[{tier, lock_keel, fee_usd_micro, allowance_usd_micro, user_actions_per_day}]}` | a client's retail schedule, its plan and tier, the usage prices and what it earned, paid and owes |
+| GET | `/v1/clients` → `{clients:[{address, profile{name, website, logo}?, attested_accounts, open_offers, plan_active, fee}]}` | every client (exchange), named ones first |
+| GET | `/v1/clients/{addr}` → `{address, attester, profile{name, website, logo}?, fee, caps, earned, usage_paid, usage_owed, attested_accounts, protocol_fee_waived, usage_prices{address_usd_micro, outbound_usd_micro, swap_usd_micro, fill_usd_micro, release_usd_micro, ruling_usd_micro}, billing_asset, locked_keel, tier, plan{tier, started_at, ends_at, active, suspended, fee_usd_micro, allowance_usd_micro, allowance_left_usd_micro, lock_keel, renew_tier, user_actions_per_day, user_actions_used_today}, user_actions_per_user_per_day, plan_period_secs, tiers[{tier, lock_keel, fee_usd_micro, allowance_usd_micro, user_actions_per_day}]}` | a client's retail schedule, its plan and tier, the usage prices and what it earned, paid and owes |
 | GET | `/v1/treasury` → `{height, balances:{treasury,validator_rewards,burn}, last_buyback, params, fee_split_bps}` | system balances per asset and the epoch buyback record |
 | GET | `/v1/recovery?status=&owner=` → `{height, params, recoveries:[{id, chain, evm_chain_id, token, to, owner, custodian, deposit_index, status, votes, tx_hash, external_tx, amount, created_height, closed_height}]}` | self-service recoveries of coins at a deposit address the chain cannot credit (`RequestRecovery`) |
 | GET | `/v1/recovery/{id}` | one recovery row |

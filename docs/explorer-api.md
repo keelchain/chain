@@ -44,7 +44,8 @@ responses carry `next_cursor` when more exist. Every list is newest first.
 | GET | `/v1/markets/{pair}/fills?limit=&cursor=` | `{fills:[{tx_id, height, timestamp, price, quantity, quote, taker, maker_order_id, fee}]}` |
 | GET | `/v1/markets/{pair}/candles?interval=1m|5m|1h|1d&from=&to=` | `[{t, o, h, l, c, v}]` |
 | GET | `/v1/orders/{id}` | order record + fills |
-| GET | `/v1/offers?asset=&side=&status=&owner=&limit=&cursor=` | `{offers:[Offer], next_cursor}` (public fields only; `status` is `active|paused|closed`) |
+| GET | `/v1/offers?client=&asset=&side=&status=&owner=&limit=&cursor=` | `{offers:[Offer], next_cursor}` (public fields only; `status` is `active|paused|closed`; `client` is the address of the exchange the offer is listed under, or null, and `client=` keeps one exchange's offers) |
+| GET | `/v1/clients` | `{clients:[{address, profile{name, website, logo}?, attested_accounts, open_offers, plan_active, fee, website_verified}]}`: every exchange, named ones first. `website_verified` is true when `https://<website>/.well-known/keel.txt` contains the exchange's address, false when it does not, null while the first check runs or with no website; this server reads the file every ten minutes |
 | GET | `/v1/offers/{id}` | Offer + trades |
 | GET | `/v1/trades/{id}` | Trade (status history, dispute if any) |
 | GET | `/v1/validators` | `[{address, consensus_key, self_bond, delegated, power, jailed, blocks_proposed_24h?, uptime?}]` |

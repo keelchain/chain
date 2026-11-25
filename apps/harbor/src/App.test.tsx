@@ -295,6 +295,26 @@ describe('usage and business', () => {
     expect(await screen.findByText(/There is no vault to rotate yet/)).toBeTruthy();
   });
 
+  it('publishes a public profile with the website as a host name, and shows how to prove it', async () => {
+    const { signAction } = installWallet();
+    open('/testnet/business/profile', 'active');
+    fireEvent.change(await screen.findByLabelText(/^Name/), { target: { value: 'Acme Exchange' } });
+    fireEvent.change(screen.getByLabelText(/^Website/), { target: { value: 'https://Acme.example/' } });
+    expect(screen.getByText(/Save a website first/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Publish profile' }));
+    await waitFor(() => expect(signAction).toHaveBeenCalledTimes(1));
+    const req = (signAction.mock.calls[0] as unknown as [{ envelope: { action: unknown } }])[0];
+    expect(req.envelope.action).toEqual({ SetClientProfile: { name: 'Acme Exchange', website: 'acme.example', logo: '' } });
+  });
+
+  it('refuses a name the chain would refuse before the wallet opens', async () => {
+    installWallet();
+    open('/testnet/business/profile', 'active');
+    fireEvent.change(await screen.findByLabelText(/^Name/), { target: { value: 'Acme-' } });
+    expect(screen.getByText('Start and end with a letter or a digit.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Publish profile' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('prefills the retail fees and moves the vault tools under Business', async () => {
     installWallet();
     open('/testnet/business', 'active');

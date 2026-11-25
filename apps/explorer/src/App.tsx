@@ -12,6 +12,7 @@ import { GovernancePage, ParamsPage, ProposalPage } from './pages/Governance';
 import { HomePage } from './pages/Home';
 import { MarketPage, MarketsPage, OrderPage } from './pages/Markets';
 import { NotFoundPage, SearchPage, UnknownNetworkPage } from './pages/Misc';
+import { ExchangesPage } from './pages/Exchanges';
 import { OfferPage, OffersPage, TradePage } from './pages/Offers';
 import { TxPage, TxsPage } from './pages/Txs';
 import { ValidatorsPage } from './pages/Validators';
@@ -56,6 +57,7 @@ function NetworkRoutes({ networks, apiFactory }: { networks: Network[]; apiFacto
           <Route path="markets" element={<MarketsPage />} />
           <Route path="markets/:pair" element={<MarketPage />} />
           <Route path="orders/:id" element={<OrderPage />} />
+          <Route path="exchanges" element={<ExchangesPage />} />
           <Route path="offers" element={<OffersPage />} />
           <Route path="offers/:id" element={<OfferPage />} />
           <Route path="trades/:id" element={<TradePage />} />

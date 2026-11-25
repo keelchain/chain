@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import type { Block, Fill, Offer, Trade, Transfer, Tx } from '../api/types';
+import type { Block, ClientListing, Fill, Offer, Trade, Transfer, Tx } from '../api/types';
 import { actionLabel, MODULE_LABELS } from '../lib/decode';
 import { formatBps, formatDuration, formatInt, splitPair } from '../lib/format';
 import { useHref } from '../network/NetworkContext';
@@ -195,7 +195,7 @@ export function FillsTable({ fills, pair }: { fills: Fill[]; pair: string }) {
   );
 }
 
-export function OffersTable({ offers, hideOwner = false }: { offers: Offer[]; hideOwner?: boolean }) {
+export function OffersTable({ offers, hideOwner = false, clients }: { offers: Offer[]; hideOwner?: boolean; clients?: ClientListing[] }) {
   const href = useHref();
   if (!offers.length) return <Empty>No offers.</Empty>;
   return (
@@ -212,6 +212,7 @@ export function OffersTable({ offers, hideOwner = false }: { offers: Offer[]; hi
             <th className="num">Limits</th>
             <th>Window</th>
             {!hideOwner && <th>Owner</th>}
+            {clients && <th>Exchange</th>}
             <th>Status</th>
           </tr>
         </thead>
@@ -242,6 +243,11 @@ export function OffersTable({ offers, hideOwner = false }: { offers: Offer[]; hi
                   <AddressLink address={o.owner} copy={false} />
                 </td>
               )}
+              {clients && (
+                <td>
+                  <ExchangeName address={o.client ?? null} clients={clients} />
+                </td>
+              )}
               <td>
                 <StatusBadge status={o.status} />
               </td>
@@ -250,6 +256,24 @@ export function OffersTable({ offers, hideOwner = false }: { offers: Offer[]; hi
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** The exchange an offer is listed under: its name linking to its offers, or its address while it has no name. */
+export function ExchangeName({ address, clients }: { address: string | null; clients: ClientListing[] }) {
+  const href = useHref();
+  if (!address) return <span className="muted">—</span>;
+  const c = clients.find((x) => x.address === address);
+  if (!c?.profile) return <AddressLink address={address} copy={false} />;
+  return (
+    <span className="exchange-name">
+      <Link to={href(`/offers?client=${address}`)}>{c.profile.name}</Link>
+      {c.website_verified === true && (
+        <span className="verified" title={`${c.profile.website} is proved to belong to this exchange`} aria-label="Verified website">
+          ✓
+        </span>
+      )}
+    </span>
   );
 }
 

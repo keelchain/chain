@@ -101,6 +101,13 @@ a hundred actions a day and comes back three days after unlocking.
    period starts in that block. It renews by itself every 30 days at the
    tier you chose; change the tier or stop renewal on the same page.
 
+   Then **publish your profile** (Harbor, Business, Public profile): the
+   name your exchange is listed under, your website and a logo. The name
+   is unique on the chain, the website shows as verified once you serve
+   your address at `/.well-known/keel.txt` on it, and every offer your
+   users post carries your name, so anyone can filter the offers on Keel
+   to yours (`clients.md`, "Your public profile").
+
 <div class="tabs" data-group="client">
 <div class="tab" data-mode="custodial">
 
@@ -201,7 +208,7 @@ Nothing a client does day to day needs the command line. In Harbor:
 | Funds | lock and unlock KEEL, buy KEEL, where to send USDT |
 | Usage | prices, allowance, what you paid |
 | Users | look a user up, attest or renew, issue a deposit address in your vault, move a balance inside custody, pay out (with your own fee), release a held deposit |
-| Business | retail fees; service keys for your backend; vaults: register, rotate, retire, deposit screening; float swap |
+| Business | retail fees; your public profile (name, website, logo); service keys for your backend; vaults: register, rotate, retire, deposit screening; float swap |
 
 Each is one action approved in Keel Wallet. The CLI and the SDK send the
 same actions, for automation (`install.md`).

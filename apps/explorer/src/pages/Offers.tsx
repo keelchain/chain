@@ -1,7 +1,7 @@
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useAssets, useOffer, useOffers, useTrade } from '../api/hooks';
+import { useAssets, useClients, useOffer, useOffers, useTrade } from '../api/hooks';
 import type { Trade } from '../api/types';
-import { OffersTable, TradesTable } from '../components/tables';
+import { ExchangeName, OffersTable, TradesTable } from '../components/tables';
 import { AddressLink, Amount, AssetLink, Badge, BlockLink, Card, ErrorState, Hex, KV, Loading, StatusBadge, TimeAgo, TxLink } from '../components/ui';
 import { formatBps, formatDuration, formatExact } from '../lib/format';
 import { useHref } from '../network/NetworkContext';
@@ -11,8 +11,12 @@ export function OffersPage() {
   const asset = sp.get('asset') ?? '';
   const side = sp.get('side') ?? '';
   const status = sp.get('status') ?? '';
+  const client = sp.get('client') ?? '';
   const assets = useAssets();
-  const q = useOffers({ asset: asset || undefined, side: (side || undefined) as 'buy' | 'sell' | undefined, status: status || undefined });
+  const clients = useClients();
+  // Exchanges that can be picked: the named ones, and the one in the URL even if it has no name.
+  const exchanges = (clients.data ?? []).filter((c) => c.profile || c.address === client);
+  const q = useOffers({ client: client || undefined, asset: asset || undefined, side: (side || undefined) as 'buy' | 'sell' | undefined, status: status || undefined });
   const set = (k: string, v: string) => {
     const next = new URLSearchParams(sp);
     if (v) next.set(k, v);
@@ -26,6 +30,14 @@ export function OffersPage() {
         <span className="sub">Public offer terms live on chain; payment instructions and chat stay end-to-end encrypted off chain</span>
       </div>
       <div className="filters">
+        <select className="select" aria-label="Exchange" value={client} onChange={(e) => set('client', e.target.value)}>
+          <option value="">All exchanges</option>
+          {exchanges.map((c) => (
+            <option key={c.address} value={c.address}>
+              {c.profile?.name ?? `${c.address.slice(0, 8)}…`}
+            </option>
+          ))}
+        </select>
         <select className="select" aria-label="Asset" value={asset} onChange={(e) => set('asset', e.target.value)}>
           <option value="">All assets</option>
           {(assets.data ?? []).map((a) => (
@@ -46,7 +58,7 @@ export function OffersPage() {
           <option value="closed">Closed</option>
         </select>
       </div>
-      <Card flush>{q.isLoading ? <Loading rows={8} /> : q.isError ? <div className="card-body"><ErrorState error={q.error} what="offers" /></div> : <OffersTable offers={q.data?.offers ?? []} />}</Card>
+      <Card flush>{q.isLoading ? <Loading rows={8} /> : q.isError ? <div className="card-body"><ErrorState error={q.error} what="offers" /></div> : <OffersTable offers={q.data?.offers ?? []} clients={clients.data ?? []} />}</Card>
     </div>
   );
 }
@@ -54,6 +66,7 @@ export function OffersPage() {
 export function OfferPage() {
   const { id = '' } = useParams();
   const q = useOffer(Number(id));
+  const clients = useClients();
   if (q.isLoading) return <Loading rows={8} />;
   if (q.isError || !q.data) return <ErrorState error={q.error} what="offer" />;
   const o = q.data;
@@ -70,6 +83,16 @@ export function OfferPage() {
         <KV
           rows={[
             ['Owner', <AddressLink address={o.owner} full />],
+            [
+              'Exchange',
+              o.client ? (
+                <span>
+                  <ExchangeName address={o.client} clients={clients.data ?? []} /> <span className="muted">set by the chain from the account that vouched for the owner</span>
+                </span>
+              ) : (
+                <span className="text-2">None: the owner is not a user of a registered exchange.</span>
+              ),
+            ],
             ['Side', <Badge tone={o.side === 'sell' ? 'bad' : 'good'}>{o.side === 'sell' ? 'Selling' : 'Buying'} {o.asset}</Badge>],
             ['Fiat currency', o.fiat_currency],
             ['Payment method', o.payment_method],

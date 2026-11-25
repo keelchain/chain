@@ -12,6 +12,7 @@ const NAV: { to: string; label: string }[] = [
   { to: '/assets', label: 'Assets' },
   { to: '/markets', label: 'Markets' },
   { to: '/offers', label: 'Offers' },
+  { to: '/exchanges', label: 'Exchanges' },
   { to: '/validators', label: 'Validators' },
   { to: '/vaults', label: 'Vaults' },
   { to: '/governance', label: 'Governance' },

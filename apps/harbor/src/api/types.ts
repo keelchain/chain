@@ -56,9 +56,29 @@ export interface UsagePrices {
 }
 
 /** `GET /v1/clients/{addr}` on the node RPC. Answered for any address. */
+/** How a client presents itself; `website` is a host name, `logo` an https link, either may be empty. */
+export interface ClientProfile {
+  name: string;
+  website: string;
+  logo: string;
+}
+
+/** A row of `GET /v1/clients` on the indexer: every client, named ones first. */
+export interface ClientListing {
+  address: string;
+  profile: ClientProfile | null;
+  attested_accounts: number;
+  open_offers: number;
+  plan_active: boolean;
+  /** Whether the website serves this client's address; null while unchecked or with no website. */
+  website_verified: boolean | null;
+}
+
 export interface ClientRecord {
   address: string;
   attester: boolean;
+  /** Absent on a node older than profiles. */
+  profile?: ClientProfile | null;
   fee: RetailFee | null;
   caps: RetailFee;
   earned: AssetAmount[];
@@ -175,6 +195,8 @@ export interface HarborApi {
   /** The resting orders of `pair`, best first. */
   book(pair: string): Promise<Book>;
   client(addr: string): Promise<ClientRecord>;
+  /** The public directory of clients. */
+  clients(): Promise<ClientListing[]>;
   account(addr: string): Promise<AccountRecord>;
   custody(addr: string): Promise<Custody>;
   /** `budget.unlock_delay_secs`, or null when the node does not report it. */

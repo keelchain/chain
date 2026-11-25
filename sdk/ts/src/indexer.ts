@@ -46,7 +46,9 @@ export class IndexerClient {
   fills(pair: string, q: { limit?: number; cursor?: string } = {}) { return this.get(`/v1/markets/${pair}/fills`, q); }
   candles(pair: string, q: { interval?: "1m" | "5m" | "1h" | "1d"; from?: number; to?: number } = {}) { return this.get(`/v1/markets/${pair}/candles`, q); }
   order(id: number | bigint) { return this.get(`/v1/orders/${id}`); }
-  offers(q: { asset?: string; side?: string; status?: string; owner?: string; limit?: number; cursor?: string } = {}) { return this.get("/v1/offers", q); }
+  offers(q: { asset?: string; side?: string; status?: string; owner?: string; client?: string; limit?: number; cursor?: string } = {}) { return this.get("/v1/offers", q); }
+  /** Every client (exchange) with its profile and `website_verified`. */
+  clients() { return this.get("/v1/clients"); }
   offer(id: number | bigint) { return this.get(`/v1/offers/${id}`); }
   trade(id: number | bigint) { return this.get(`/v1/trades/${id}`); }
   validators() { return this.get("/v1/validators"); }

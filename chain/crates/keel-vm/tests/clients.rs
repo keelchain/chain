@@ -911,3 +911,151 @@ fn usage_prices_are_paid_by_the_client_in_the_stable_asset() {
     .is_empty());
     assert!(state.ledger.audit().mismatches.is_empty());
 }
+
+fn profile(name: &str, website: &str, logo: &str) -> Action {
+    Action::SetClientProfile(keel_actions::ClientProfile {
+        name: name.into(),
+        website: website.into(),
+        logo: logo.into(),
+    })
+}
+
+#[test]
+fn a_client_profile_has_a_name_no_other_client_can_take() {
+    let (state, _alice, mut bob, mut v) = setup(0);
+    let mut c = Chain::new(state);
+    let mut carol = client(&mut c, &mut bob, 1_000 * KEEL, 0);
+
+    // Only a client has a profile.
+    let (r, _) = c.block(&[bob.act(profile("Bob Exchange", "", ""))]);
+    assert!(matches!(err(&r[0]), VmError::Unauthorized));
+
+    let (r, _) = c.block(&[v.act(profile(
+        "Acme Exchange",
+        "acme.example",
+        "https://acme.example/logo.png",
+    ))]);
+    ok(&r[0]);
+    assert!(r[0].events.contains(&Event::ClientProfileSet {
+        client: v.addr(),
+        name: "Acme Exchange".into(),
+        website: "acme.example".into(),
+        logo: "https://acme.example/logo.png".into(),
+    }));
+
+    // The same name in another spelling is the same name.
+    for taken in [
+        "Acme Exchange",
+        "acme-exchange",
+        "ACME.EXCHANGE",
+        "AcmeExchange",
+    ] {
+        let (r, _) = c.block(&[carol.act(profile(taken, "", ""))]);
+        assert!(
+            matches!(err(&r[0]), VmError::Invalid(m) if m.contains("taken")),
+            "{taken}"
+        );
+    }
+    // Its holder may respell it, and changing name frees the old one.
+    let (r, _) = c.block(&[v.act(profile("ACME exchange", "", ""))]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[v.act(profile("Acme Markets", "", ""))]);
+    ok(&r[0]);
+    let (r, _) = c.block(&[carol.act(profile("Acme Exchange", "", ""))]);
+    ok(&r[0]);
+    assert_eq!(c.state.clients.names.len(), 2);
+    assert_eq!(c.state.clients.profiles[&v.addr()].name, "Acme Markets");
+    assert_eq!(
+        c.state.clients.names.get("acmeexchange"),
+        Some(&carol.addr())
+    );
+}
+
+#[test]
+fn a_client_profile_is_checked_field_by_field() {
+    let (state, _alice, _bob, mut v) = setup(0);
+    let mut c = Chain::new(state);
+    let long = "a".repeat(33);
+    let bad = [
+        ("ab", "", ""),
+        (long.as_str(), "", ""),
+        (" Acme", "", ""),
+        ("Acme-", "", ""),
+        ("Acme  Exchange", "", ""),
+        ("Acme <b>", "", ""),
+        ("A.-.", "", ""),
+        ("Acme", "https://acme.example", ""),
+        ("Acme", "acme.example/path", ""),
+        ("Acme", "acme.example:8443", ""),
+        ("Acme", "ACME.example", ""),
+        ("Acme", "localhost", ""),
+        ("Acme", "10.0.0.1", ""),
+        ("Acme", "-acme.example", ""),
+        ("Acme", "", "http://acme.example/logo.png"),
+        ("Acme", "", "https://"),
+        ("Acme", "", "https://acme.example/a\"onerror=x"),
+        ("Acme", "", "https://acme.example/a b.png"),
+    ];
+    for (name, website, logo) in bad {
+        let (r, _) = c.block(&[v.act(profile(name, website, logo))]);
+        assert!(
+            matches!(err(&r[0]), VmError::Invalid(_)),
+            "{name:?} {website:?} {logo:?}"
+        );
+    }
+    assert!(c.state.clients.profiles.is_empty());
+    let (r, _) = c.block(&[v.act(profile("Acme 2.0", "trade.acme-x.example", ""))]);
+    ok(&r[0]);
+}
+
+#[test]
+fn an_offer_is_listed_under_the_client_of_its_owner() {
+    use keel_actions::OfferSpec;
+    let (state, mut alice, mut bob, mut v) = setup(0);
+    let mut c = Chain::new(state);
+    let spec = || {
+        Action::CreateOffer(OfferSpec {
+            side: Side::Sell,
+            asset: keel(),
+            fiat_currency: "EUR".into(),
+            payment_method: "SEPA".into(),
+            margin_bps: 100,
+            fixed_price: None,
+            min_amount: KEEL,
+            max_amount: 100 * KEEL,
+            payment_window_secs: 1_800,
+            country: None,
+            min_tier: 0,
+            terms: String::new(),
+            instructions_hash: [7u8; 32],
+        })
+    };
+    // Nobody vouches for bob: his offer is under no client.
+    let (r, _) = c.block(&[bob.act(spec())]);
+    ok(&r[0]);
+    assert_eq!(c.state.p2p.offers[&0].client, None);
+
+    // alice is vouched for by v: her offer is under v, and the event says so.
+    attest(&mut c, &mut v, &alice, T0 + 1_000);
+    let (r, _) = c.block(&[alice.act(spec())]);
+    ok(&r[0]);
+    assert_eq!(c.state.p2p.offers[&1].client, Some(v.addr()));
+    assert!(r[0].events.contains(&Event::OfferCreated {
+        offer_id: 1,
+        owner: alice.addr(),
+        client: Some(v.addr()),
+    }));
+
+    // A client's own offer is under itself.
+    let (r, _) = c.block(&[v.act(spec())]);
+    ok(&r[0]);
+    assert_eq!(c.state.p2p.offers[&2].client, Some(v.addr()));
+
+    // Once the attestation has expired, new offers are under no client;
+    // the earlier one keeps the client it was created under.
+    c.advance_to(2_000);
+    let (r, _) = c.block(&[alice.act(spec())]);
+    ok(&r[0]);
+    assert_eq!(c.state.p2p.offers[&3].client, None);
+    assert_eq!(c.state.p2p.offers[&1].client, Some(v.addr()));
+}

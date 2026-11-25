@@ -495,6 +495,14 @@ fn vectors() -> Vec<(&'static str, Action)> {
                 memo: Some("trade:4821:escrow".into()),
             }),
         ),
+        (
+            "set_client_profile",
+            Action::SetClientProfile(keel_actions::ClientProfile {
+                name: "Acme Exchange".into(),
+                website: "acme.example".into(),
+                logo: "https://acme.example/logo.png".into(),
+            }),
+        ),
     ]
 }
 

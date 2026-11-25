@@ -4,6 +4,7 @@
  * with the indexer's `{error:{code,message}}` body when present.
  */
 import {
+  type ClientListing,
   ApiError,
   type Account,
   type Asset,
@@ -153,6 +154,9 @@ export class HttpExplorerApi implements ExplorerApi {
   }
   offers(q: OffersQuery = {}) {
     return this.get<OffersPage>(`/v1/offers${buildQuery(q)}`);
+  }
+  async clients() {
+    return (await this.get<{ clients: ClientListing[] }>('/v1/clients')).clients;
   }
   offer(id: number) {
     return this.get<OfferDetail>(`/v1/offers/${id}`);

@@ -71,3 +71,12 @@ describe('decodeEvent', () => {
     expect(JSON.stringify(e)).toContain('BTC-USDT');
   });
 });
+
+describe('client profile', () => {
+  it('decodes SetClientProfile with the name and only the fields that are set', () => {
+    const v = decodeAction({ SetClientProfile: { name: 'Acme Exchange', website: 'acme.example', logo: '' } });
+    expect(v.label).toBe('Set client profile');
+    expect(v.summary).toBe('Set the public profile to Acme Exchange');
+    expect(v.fields.map((f) => f.name)).toEqual(['Name', 'Website']);
+  });
+});

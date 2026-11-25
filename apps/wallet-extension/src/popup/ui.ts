@@ -8,10 +8,39 @@ export type { UiState };
 
 export async function call<T = unknown>(method: string, params: unknown = {}): Promise<T> {
   const msg: RuntimeUiMessage = { kind: 'keel:ui', method, params: toWire(params) };
-  const res = (await chrome.runtime.sendMessage(msg)) as { ok: true; result: unknown } | { ok: false; error: string } | undefined;
+  let res: { ok: true; result: unknown } | { ok: false; error: string } | undefined;
+  try {
+    res = (await chrome.runtime.sendMessage(msg)) as typeof res;
+  } catch (e) {
+    throw new Error(noBackgroundMessage(e));
+  }
   if (!res) throw new Error('The wallet background is not responding.');
   if (!res.ok) throw new Error(res.error);
   return fromWire(res.result) as T;
+}
+
+/**
+ * Why the popup cannot reach the wallet's background, in words. The usual
+ * cause is the package built for the other browser family: the Firefox
+ * build has no service worker, which a Chromium browser needs, and the
+ * Chromium build has no background script, which Firefox needs.
+ */
+export function noBackgroundMessage(e: unknown, isFirefox: boolean = typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent)): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  if (!/receiving end does not exist|could not establish connection/i.test(raw)) return raw;
+  let bg: { service_worker?: string; scripts?: string[] } = {};
+  try {
+    bg = (chrome.runtime.getManifest() as { background?: typeof bg }).background ?? {};
+  } catch {
+    // no manifest to read: fall through to the general advice
+  }
+  if (!isFirefox && !bg.service_worker) {
+    return 'This is the Firefox package, and this browser is not Firefox, so the wallet cannot start. Remove it, download the Chromium package (Chrome, Brave, Edge, Opera) from keelchain.com/wallet, and load that one.';
+  }
+  if (isFirefox && !bg.scripts) {
+    return 'This is the Chromium package, and this browser is Firefox, so the wallet cannot start. Remove it, download the Firefox package from keelchain.com/wallet, and load that one.';
+  }
+  return 'The wallet could not start in this browser. Reload the extension from the browser\'s extensions page; if that does not help, remove it and install the package for your browser from keelchain.com/wallet.';
 }
 
 export const getState = () => call<UiState>('getState');

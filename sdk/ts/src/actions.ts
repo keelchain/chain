@@ -162,7 +162,17 @@ export type Action =
   /** Rotate vaults on several chains to fresh keys in one action: all or none. */
   | { RotateCustodyVaults: CustodyRotation[] }
   /** Release a held deposit of `owner`: to the owner, or to another account in the custodian's custody. */
-  | { ReleaseCustodyHold: { owner: Address; asset: string; amount: Amount; to?: Address | null } };
+  | { ReleaseCustodyHold: { owner: Address; asset: string; amount: Amount; to?: Address | null } }
+  /** A client's public profile: a name no other client holds, its website (host name only) and a logo link. */
+  | { SetClientProfile: ClientProfile };
+
+export interface ClientProfile {
+  name: string;
+  /** Host name only, such as `exchange.example`; proved by serving the client's address at `/.well-known/keel.txt`. */
+  website: string;
+  /** An `https://` link to an image; empty for none. */
+  logo: string;
+}
 
 export interface RecoveryRequest {
   /** The address family (the chain whose deposit index the address is). */
@@ -254,6 +264,7 @@ const ACTION_VARIANTS = [
   "SwapCustody", "SetOfferArbitrators", "ChooseArbitrator", "RotateCustodyVault", "CancelCustodyRotation",
   "RetireCustodyGeneration", "DepositLiquidity", "WithdrawLiquidity", "RequestRecovery", "ObserveRecovery",
   "WithdrawStable", "BuyPlan", "SetPlanRenewal", "TransferCustody", "WithdrawCustodyStable", "WithdrawCustodyFor", "SetCustodyOptions", "ReleaseCustodyHold", "RegisterCustodyVaults", "RotateCustodyVaults",
+  "SetClientProfile",
 ] as const;
 const CHAINS = ["Bitcoin", "Ethereum", "Tron", "Bsc", "Solana"] as const;
 const ROLES = ["Validator", "Observer", "Arbitrator"] as const;
@@ -449,6 +460,7 @@ export function encodeAction(action: Action, w: Writer = new Writer()): Writer {
       address(w, b.owner); w.string(b.asset); w.option(b.via, (v) => w.string(v)); w.string(b.to); w.u128(b.amount);
       w.option(b.fee, (f) => { address(w, f.to); w.u128(f.amount); }); break;
     case "SetCustodyOptions": w.bool(b.hold_deposits); break;
+    case "SetClientProfile": w.string(b.name); w.string(b.website ?? ""); w.string(b.logo ?? ""); break;
     case "RotateCustodyVaults":
       w.vec(b as CustodyRotation[], (r) => {
       unitEnum(w, CHAINS, r.chain); w.vecU8(toBytes(r.public_key)); hash(w, r.chain_code); w.string(r.signer_url);

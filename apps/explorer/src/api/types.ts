@@ -233,6 +233,8 @@ export type OfferStatus = 'active' | 'paused' | 'closed' | string;
 export interface Offer {
   id: number;
   owner: Hex;
+  /** The client (exchange) the offer is listed under, set by the chain; null when the owner has none. */
+  client?: Hex | null;
   side: 'buy' | 'sell';
   asset: string;
   fiat_currency: string;
@@ -247,7 +249,27 @@ export interface Offer {
   created_height: number;
 }
 
+/** How a client presents itself; `website` is a host name, `logo` an https link, either may be empty. */
+export interface ClientProfile {
+  name: string;
+  website: string;
+  logo: string;
+}
+
+/** A row of `GET /v1/clients`: every client, named ones first. */
+export interface ClientListing {
+  address: Hex;
+  profile: ClientProfile | null;
+  attested_accounts: number;
+  open_offers: number;
+  plan_active: boolean;
+  /** Whether the website serves the client's address; null while unchecked or with no website. */
+  website_verified: boolean | null;
+}
+
 export interface OffersQuery {
+  /** Address of the client (exchange) the offers are listed under. */
+  client?: string;
   asset?: string;
   side?: 'buy' | 'sell';
   status?: string;
@@ -543,6 +565,7 @@ export interface ExplorerApi {
   candles(pair: string, interval: CandleInterval, from?: number, to?: number): Promise<Candle[]>;
   order(id: number): Promise<Order>;
   offers(q?: OffersQuery): Promise<OffersPage>;
+  clients(): Promise<ClientListing[]>;
   offer(id: number): Promise<OfferDetail>;
   trade(id: number): Promise<Trade>;
   validators(): Promise<Validator[]>;

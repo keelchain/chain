@@ -5,6 +5,21 @@ Dates are UTC.
 
 ## Unreleased
 
+- Chain: **exchanges have a public profile, and offers name their
+  exchange** (2026-11-25). `SetClientProfile { name, website, logo }`
+  gives a client the name it is listed under; the chain refuses a name
+  another client holds, in any spelling. An offer now carries `client`,
+  the exchange it is listed under, written by the chain when the offer is
+  created (the owner itself if it is a client, otherwise the client whose
+  unexpired attestation the owner holds), and `OfferCreated` reports it.
+  `GET /v1/offers?client=` filters by exchange on the node and the read
+  API, and `GET /v1/clients` lists every exchange; the read API adds
+  `website_verified`, true once `https://<website>/.well-known/keel.txt`
+  contains the exchange's address. Harbor has a Public profile tab under
+  Business, the explorer an Exchanges page and an exchange filter on
+  offers. Keel Wallet 1.7.1 signs the new action; update the extension
+  before using the Public profile tab. Snapshot schema 20: the testnet
+  restarts from genesis with this build.
 - Chain fix: **a session key is admitted on its principal's capacity**
   (2026-11-22). The mempool's admission check looked at the session
   key's own account for capacity, which has none, so on a network

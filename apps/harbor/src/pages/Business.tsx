@@ -7,21 +7,24 @@ import { Keypair } from '@keelchain/sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useCustody, useDecimals } from '../api/hooks';
+import { useClients, useCustody, useDecimals } from '../api/hooks';
 import type { Custody } from '../api/types';
 import { ActionResult, Field, Submit, useAction } from '../components/action';
 import { Amount, Badge, Card, ErrorState, Hex, KV, Loading, Notice, Tabs } from '../components/ui';
 import { toUnits } from '../lib/amounts';
 import { formatBps, formatInt } from '../lib/format';
+import { LOGO_MAX, NAME_MAX, hostOf, logoProblem, nameProblem, proofUrl, websiteProblem } from '../lib/profile';
 import { SCOPE_OPS, SCOPE_PAYOUTS, SCOPE_TEXT, authorizeProblem, hexOf, parseKey, requestFromQuery, scopeLabels } from '../lib/serviceKeys';
-import { useHref } from '../network/NetworkContext';
+import { useHref, useNetwork } from '../network/NetworkContext';
+import { explorerUrl } from '../network/networks';
 import { useWallet } from '../wallet/WalletContext';
 import { useHarbor, type Harbor } from './ClientGate';
 import { day } from './shared';
 
-type Tab = 'fees' | 'keys' | 'vaults' | 'rotate' | 'swap';
+type Tab = 'fees' | 'profile' | 'keys' | 'vaults' | 'rotate' | 'swap';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'fees', label: 'Retail fees' },
+  { id: 'profile', label: 'Public profile' },
   { id: 'keys', label: 'Service keys' },
   { id: 'vaults', label: 'Vaults' },
   { id: 'rotate', label: 'Rotate' },
@@ -343,6 +346,99 @@ function Fees({ h }: { h: Harbor }) {
         <Card title="Attested accounts">
           <div className="big-figure">{formatInt(c.attested_accounts)}</div>
           <p className="small text-2">Accounts whose attestation names you. They pay your retail fees, and while your plan runs their protocol fees are waived and their actions can come out of your daily pool.</p>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- public profile
+
+function Profile({ h }: { h: Harbor }) {
+  const act = useAction();
+  const { network } = useNetwork();
+  const listing = useClients().data?.find((c) => c.address === h.address);
+  const saved = h.client.profile ?? null;
+  const [name, setName] = useState(saved?.name ?? '');
+  const [site, setSite] = useState(saved?.website ?? '');
+  const [logo, setLogo] = useState(saved?.logo ?? '');
+  const [copied, setCopied] = useState(false);
+  const host = hostOf(site);
+  const problems = { name: nameProblem(name), website: websiteProblem(host), logo: logoProblem(logo.trim()) };
+  const valid = !problems.name && !problems.website && !problems.logo;
+  const changed = name !== (saved?.name ?? '') || host !== (saved?.website ?? '') || logo.trim() !== (saved?.logo ?? '');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!valid) return;
+    void act.run(
+      { SetClientProfile: { name, website: host, logo: logo.trim() } },
+      'Set your public profile',
+      `Lists this account as ${name}${host ? `, at ${host}` : ''}. Anyone can see it; you can change it at any time.`,
+    );
+  };
+  const copy = () => void navigator.clipboard?.writeText(h.address).then(() => setCopied(true));
+  const verified = saved?.website ? (listing?.website_verified ?? null) : null;
+  return (
+    <div className="grid-2">
+      <Card title="Public profile">
+        <form className="form" onSubmit={submit}>
+          <p className="small text-2">
+            The name your exchange is listed under on Keel. Every offer your users post carries it, so anyone browsing offers, in the explorer or through the API, can filter to yours. The chain
+            puts it there from the account that vouched for the user: nobody can post an offer under your name but your own users.
+          </p>
+          <Field label="Name" hint={name && problems.name ? <span className="down">{problems.name}</span> : 'No other client may hold the same name, in any spelling.'}>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} required aria-invalid={!!name && !!problems.name} placeholder="Acme Exchange" />
+          </Field>
+          <Field label="Website (optional)" hint={problems.website ? <span className="down">{problems.website}</span> : 'The host name only. It shows as verified once you prove it is yours.'}>
+            <input className="input" value={site} onChange={(e) => setSite(e.target.value)} inputMode="url" aria-invalid={!!problems.website} placeholder="acme.example" />
+          </Field>
+          <Field label="Logo (optional)" hint={problems.logo ? <span className="down">{problems.logo}</span> : 'An https:// link to a square image.'}>
+            <input className="input" value={logo} onChange={(e) => setLogo(e.target.value)} inputMode="url" maxLength={LOGO_MAX} aria-invalid={!!problems.logo} placeholder="https://acme.example/logo.png" />
+          </Field>
+          <div className="row">
+            <Submit act={act} disabled={!valid || !changed}>
+              {saved ? 'Save profile' : 'Publish profile'}
+            </Submit>
+            <span className="small text-2">{saved ? `Listed as ${saved.name}.` : 'Not listed under a name yet.'}</span>
+          </div>
+          <ActionResult act={act} />
+        </form>
+      </Card>
+      <div className="stack">
+        <Card title="Prove the website is yours">
+          {!saved?.website ? (
+            <p className="small text-2">Save a website first. Until it is proved, the directory shows it as unverified.</p>
+          ) : (
+            <div className="stack">
+              <div className="row">
+                <strong>{saved.website}</strong>
+                {verified === true ? <Badge tone="good">Verified</Badge> : verified === false ? <Badge tone="warn">Not verified</Badge> : <Badge>Checking</Badge>}
+              </div>
+              <ol className="prose small">
+                <li>
+                  Create a text file whose only content is this account's address:
+                  <div className="row">
+                    <Hex value={h.address} />
+                    <button type="button" className="btn" onClick={copy}>
+                      {copied ? 'Copied' : 'Copy address'}
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  Serve it at <code>{proofUrl(saved.website)}</code>, over HTTPS, without a redirect.
+                </li>
+                <li>Wait: the file is read again every ten minutes, and the badge above turns to Verified.</li>
+              </ol>
+              <p className="small text-2">Only someone who controls the website can put the file there, so a verified website cannot be claimed by another client. Remove the file and the badge goes.</p>
+            </div>
+          )}
+        </Card>
+        <Card title="Where it shows">
+          <p className="small text-2">
+            In the <a href={explorerUrl(network.id, '/exchanges')} target="_blank" rel="noreferrer noopener">exchanges directory</a> of the explorer, on each offer of your users, and in the API:{' '}
+            <code>GET /v1/clients</code> lists every exchange and <code>GET /v1/offers?client={h.address.slice(0, 8)}…</code> returns the offers under yours.
+          </p>
+          <KV rows={[['Offers listed under you now', formatInt(listing?.open_offers ?? 0)]]} />
         </Card>
       </div>
     </div>
@@ -871,7 +967,7 @@ function Swap({ c }: { c: Custody }) {
   );
 }
 
-function CustodyTab({ h, tab }: { h: Harbor; tab: Exclude<Tab, 'fees' | 'keys'> }) {
+function CustodyTab({ h, tab }: { h: Harbor; tab: Exclude<Tab, 'fees' | 'profile' | 'keys'> }) {
   const custody = useCustody(h.address);
   if (custody.isError) return <ErrorState error={custody.error} what="custody vaults" />;
   if (!custody.data) {
@@ -900,7 +996,7 @@ export function BusinessPage() {
       {h.client.attester ? (
         <>
           <Tabs label="Business sections" tabs={TABS} value={tab} onChange={(t) => navigate(href(t === 'fees' ? '/business' : `/business/${t}`))} />
-          {tab === 'fees' ? <Fees h={h} /> : tab === 'keys' ? <ServiceKeys h={h} /> : <CustodyTab h={h} tab={tab} />}
+          {tab === 'fees' ? <Fees h={h} /> : tab === 'profile' ? <Profile h={h} /> : tab === 'keys' ? <ServiceKeys h={h} /> : <CustodyTab h={h} tab={tab} />}
         </>
       ) : (
         <Card>

@@ -3,7 +3,7 @@
  * for history. Errors surface as `ApiError` with the server's
  * `{error:{code,message}}` body when present.
  */
-import { ApiError, type AccountRecord, type Book, type ClientRecord, type Custody, type HarborApi, type HistoryPage } from './types';
+import { ApiError, type AccountRecord, type Book, type ClientListing, type ClientRecord, type Custody, type HarborApi, type HistoryPage } from './types';
 
 export class HttpHarborApi implements HarborApi {
   readonly rpcUrl: string;
@@ -43,6 +43,10 @@ export class HttpHarborApi implements HarborApi {
 
   client(addr: string) {
     return this.get<ClientRecord>(`${this.rpcUrl}/v1/clients/${encodeURIComponent(addr)}`);
+  }
+  async clients() {
+    const r = await this.get<{ clients: ClientListing[] }>(`${this.indexerUrl}/v1/clients`);
+    return r.clients;
   }
   account(addr: string) {
     return this.get<AccountRecord>(`${this.rpcUrl}/v1/accounts/${encodeURIComponent(addr)}`);

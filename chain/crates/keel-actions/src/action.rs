@@ -312,6 +312,22 @@ pub enum Action {
     /// A client rotates its vaults on several chains to fresh keys in one
     /// action: what `RotateCustodyVault` does, for each entry, all or none.
     RotateCustodyVaults(Vec<CustodyRotation>),
+    /// A client sets the public profile it is listed under: a name no
+    /// other client holds, and optionally its website and a logo.
+    SetClientProfile(ClientProfile),
+}
+
+/// How a client presents itself. The name is unique among clients; the
+/// website is a bare host name (`exchange.example`), which the client
+/// proves by serving its address at `/.well-known/keel.txt` there.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct ClientProfile {
+    pub name: String,
+    #[serde(default)]
+    pub website: String,
+    /// An `https://` link to an image; empty for none.
+    #[serde(default)]
+    pub logo: String,
 }
 
 /// Retail fee schedule of a client, in basis points of the amount.
@@ -443,9 +459,10 @@ impl Action {
             | Action::ClaimRewards => "staking",
             Action::Propose(_) | Action::Vote { .. } | Action::ExecuteProposal { .. } => "gov",
             Action::Attest { .. } => "attest",
-            Action::SetClientFee(_) | Action::BuyPlan { .. } | Action::SetPlanRenewal { .. } => {
-                "clients"
-            }
+            Action::SetClientFee(_)
+            | Action::BuyPlan { .. }
+            | Action::SetPlanRenewal { .. }
+            | Action::SetClientProfile(_) => "clients",
             Action::RegisterCustodyVault(_)
             | Action::RequestCustodyAddress { .. }
             | Action::ObserveCustodyDeposit { .. }

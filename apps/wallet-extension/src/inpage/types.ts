@@ -84,6 +84,7 @@ export type Action =
   | { LockBudget: { amount: Amount } }
   | { BuyPlan: { tier: number } }
   | { SetPlanRenewal: { tier: number } }
+  | { SetClientProfile: { name: string; website: string; logo: string } }
   | { UnlockBudget: { amount: Amount } }
   | { AuthorizeSessionKey: { key: Address; scope: number; expires_at: number } }
   | { RevokeSessionKey: { key: Address } }

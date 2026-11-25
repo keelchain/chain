@@ -4,7 +4,7 @@
  * `?demo=none|active|suspended|owed|expired|visitor`); tests build records
  * with the helpers directly.
  */
-import type { Book, AccountRecord, ClientRecord, Custody, HarborApi, HistoryPage, Plan, Tier } from './types';
+import type { Book, AccountRecord, ClientListing, ClientRecord, Custody, HarborApi, HistoryPage, Plan, Tier } from './types';
 
 export const MOCK_NOW_SECS = 1_795_000_000;
 export const MOCK_ADDRESS = 'c1'.repeat(32);
@@ -184,6 +184,14 @@ export class MockHarborApi implements HarborApi {
   vaults: Custody['vaults'] = [];
   custody(addr: string): Promise<Custody> {
     return Promise.resolve({ custodian: addr, vaults: this.vaults, rotations: [], accounts: 0, floats: [] });
+  }
+  clients(): Promise<ClientListing[]> {
+    const c = this.data.client;
+    return Promise.resolve(
+      c.attester
+        ? [{ address: c.address, profile: c.profile ?? null, attested_accounts: c.attested_accounts, open_offers: 0, plan_active: !!c.plan?.active, website_verified: c.profile?.website ? false : null }]
+        : [],
+    );
   }
   assets(): Promise<{ asset: string; decimals: number }[]> {
     return Promise.resolve([

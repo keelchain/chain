@@ -87,6 +87,7 @@ export const ACTION_LABELS: Record<string, string> = {
   SetClientFee: 'Set client fees',
   BuyPlan: 'Buy client plan',
   SetPlanRenewal: 'Set plan renewal',
+  SetClientProfile: 'Set client profile',
   EpochBoundary: 'Epoch boundary',
 };
 
@@ -488,6 +489,12 @@ export function decodeAction(action: DecodedAction | undefined, kindHint?: strin
         { name: 'Tier', field: { k: 'number', value: num(p['tier']) } },
         { name: 'Paid in', field: { k: 'asset', value: 'USDT' } },
       ]);
+    case 'SetClientProfile': {
+      const fields: NamedField[] = [{ name: 'Name', field: { k: 'text', value: str(p['name']) } }];
+      if (str(p['website'])) fields.push({ name: 'Website', field: { k: 'text', value: str(p['website']) } });
+      if (str(p['logo'])) fields.push({ name: 'Logo', field: { k: 'text', value: str(p['logo']) } });
+      return view(`Set the public profile to ${str(p['name'])}`, fields);
+    }
     case 'SetPlanRenewal': {
       const tier = num(p['tier']);
       return view(tier === 0 ? 'Stop renewing the client plan' : `Renew the client plan at tier ${tier}`, [

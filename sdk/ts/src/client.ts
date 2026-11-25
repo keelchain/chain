@@ -83,7 +83,8 @@ export class RpcClient {
   market(pair: string) { return this.req("GET", `/v1/markets/${pair}`); }
   book(pair: string, depth = 20) { return this.req("GET", `/v1/markets/${pair}/book?depth=${depth}`); }
   order(id: number | bigint) { return this.req("GET", `/v1/orders/${id}`); }
-  offers(q: { asset?: string; side?: string; fiat?: string } = {}) {
+  /** Open offers; `client` keeps those listed under one client (exchange). */
+  offers(q: { asset?: string; side?: string; fiat?: string; client?: string } = {}) {
     const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined) as [string, string][]).toString();
     return this.req("GET", `/v1/offers${qs ? `?${qs}` : ""}`);
   }
@@ -113,6 +114,8 @@ export class RpcClient {
   }
   /** A client's record: attester, fees and caps, earned, usage paid, attested accounts. */
   client(address: string) { return this.req("GET", `/v1/clients/${address}`); }
+  /** Every client, named ones first: profile, attested accounts, open offers. */
+  clients() { return this.req("GET", "/v1/clients"); }
   /** A client's custody vaults, reserves versus liabilities, and its two floats per asset. */
   custody(custodian: string) { return this.req("GET", `/v1/custody/${custodian}`); }
   /**

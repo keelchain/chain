@@ -699,6 +699,7 @@ impl Db {
         let p = crate::materialize::OfferPatch {
             id: id as i64,
             owner: crate::types::field_addr(v, "owner"),
+            client: crate::types::field_addr(v, "client"),
             spec: Some(spec),
             status: Some(status.into()),
             created_height: Some(created),
@@ -1409,9 +1410,10 @@ async fn apply_offer(
 ) -> Result<()> {
     let spec = o.spec.clone().unwrap_or(Value::Null);
     sqlx::query(
-        "INSERT INTO offers (id, owner, side, asset, fiat_currency, payment_method, margin_bps, fixed_price, min_amount, max_amount, payment_window_secs, country, min_tier, status, created_height, updated_height, tx_id)
-         VALUES ($1, COALESCE($2, ''), $3, $4, $5, $6, $7, $8::text::numeric, $9::text::numeric, $10::text::numeric, $11, $12, $13, COALESCE($14, 'open'), COALESCE($15, $16), $16, $17)
+        "INSERT INTO offers (id, owner, side, asset, fiat_currency, payment_method, margin_bps, fixed_price, min_amount, max_amount, payment_window_secs, country, min_tier, status, created_height, updated_height, tx_id, client)
+         VALUES ($1, COALESCE($2, ''), $3, $4, $5, $6, $7, $8::text::numeric, $9::text::numeric, $10::text::numeric, $11, $12, $13, COALESCE($14, 'open'), COALESCE($15, $16), $16, $17, $18)
          ON CONFLICT (id) DO UPDATE SET owner = CASE WHEN EXCLUDED.owner <> '' THEN EXCLUDED.owner ELSE offers.owner END,
+           client = COALESCE(EXCLUDED.client, offers.client),
            side = COALESCE(EXCLUDED.side, offers.side), asset = COALESCE(EXCLUDED.asset, offers.asset), fiat_currency = COALESCE(EXCLUDED.fiat_currency, offers.fiat_currency),
            payment_method = COALESCE(EXCLUDED.payment_method, offers.payment_method), margin_bps = COALESCE(EXCLUDED.margin_bps, offers.margin_bps), fixed_price = COALESCE(EXCLUDED.fixed_price, offers.fixed_price),
            min_amount = COALESCE(EXCLUDED.min_amount, offers.min_amount), max_amount = COALESCE(EXCLUDED.max_amount, offers.max_amount),
@@ -1436,6 +1438,7 @@ async fn apply_offer(
     .bind(o.created_height)
     .bind(o.updated_height)
     .bind(&o.tx_id)
+    .bind(&o.client)
     .execute(&mut **tx)
     .await
     .context("offer patch")?;

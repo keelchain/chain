@@ -85,6 +85,7 @@ async fn main() -> Result<()> {
     indexer.init().await.context("indexer init")?;
     let app = Arc::new(AppState {
         faucet_lock: tokio::sync::Mutex::new(()),
+        website_checks: Default::default(),
         cfg: cfg.clone(),
         db,
         node,

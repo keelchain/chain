@@ -1399,6 +1399,23 @@
       "nonce": 54,
       "signature": "a2e62fa26a5a29ae178959c9f831d3f82b47e69b8ad3287f9ad3e4a2fd789db326a7cda14e45ec7c27a9b7b80d5939452c82fd65a762b29e9489e8ca42875a00",
       "tx_id": "bd4f46389f85f0932b86f224202b76b9be4d15f56fe7baba61c76a13609d1822"
+    },
+    {
+      "action_borsh": "430d00000041636d652045786368616e67650c00000061636d652e6578616d706c651d00000068747470733a2f2f61636d652e6578616d706c652f6c6f676f2e706e67",
+      "action_json": {
+        "SetClientProfile": {
+          "logo": "https://acme.example/logo.png",
+          "name": "Acme Exchange",
+          "website": "acme.example"
+        }
+      },
+      "chain_id": 1,
+      "digest": "b78dc3c25c66057147dc18e6c87927e9280d60f6183e897d1b1274c42932b8f4",
+      "envelope_borsh": "bd669ca59c2d785574d43604534134f8c7ca614a9173a2cd19c18ed56c6dff98370000000000000001000000430d00000041636d652045786368616e67650c00000061636d652e6578616d706c651d00000068747470733a2f2f61636d652e6578616d706c652f6c6f676f2e706e67",
+      "name": "set_client_profile",
+      "nonce": 55,
+      "signature": "966b4edf508c10f960dc0f1d0131f15a03f3142325d2da7daa53fc39e8b6fa8892cb1dcd3d12bbe37eda6c2c71d6bc238f5565376af3402a4426918647bc4f0c",
+      "tx_id": "9400dd3ab7d779a285066ce12bca5f4a620be3ba630a5fc52be646a4fed8f242"
     }
   ]
 }

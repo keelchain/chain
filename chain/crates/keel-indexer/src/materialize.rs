@@ -282,6 +282,7 @@ pub struct OrderPatch {
 pub struct OfferPatch {
     pub id: i64,
     pub owner: Option<String>,
+    pub client: Option<String>,
     pub spec: Option<Value>,
     pub status: Option<String>,
     pub created_height: Option<i64>,
@@ -487,7 +488,7 @@ pub fn module_of_kind(kind: &str) -> &'static str {
         | "Withdraw"
         | "RegisterVault" => "vaults",
         "MintStable" | "BurnStable" => "stable",
-        "SetClientFee" | "BuyPlan" | "SetPlanRenewal" => "clients",
+        "SetClientFee" | "BuyPlan" | "SetPlanRenewal" | "SetClientProfile" => "clients",
         "TransferCustody"
         | "WithdrawCustodyStable"
         | "WithdrawCustodyFor"
@@ -1061,6 +1062,7 @@ fn apply_event(
             m.patches.push(Patch::Offer(OfferPatch {
                 id: id as i64,
                 owner: Some(owner),
+                client: field_addr(&f, "client"),
                 spec,
                 status: Some("open".into()),
                 created_height: Some(height),

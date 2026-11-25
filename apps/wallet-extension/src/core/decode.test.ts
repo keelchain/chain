@@ -132,3 +132,12 @@ describe('decodeAction', () => {
     expect(d.fields).toEqual([{ name: 'Foo', field: { k: 'text', value: '1' } }, { name: 'Bar', field: { k: 'bool', value: true } }]);
   });
 });
+
+describe('client profile', () => {
+  it('decodes SetClientProfile with the name and only the fields that are set', () => {
+    const v = decodeAction({ SetClientProfile: { name: 'Acme Exchange', website: 'acme.example', logo: '' } });
+    expect(v.label).toBe('Set client profile');
+    expect(v.summary).toBe('Set the public profile to Acme Exchange');
+    expect(v.fields.map((f) => f.name)).toEqual(['Name', 'Website']);
+  });
+});

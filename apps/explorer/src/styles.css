@@ -976,3 +976,30 @@ pre.json {
   align-items: center;
   margin-top: 6px;
 }
+
+/* An exchange's name with its mark and the tick of a proved website. */
+.exchange-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.exchange-name .verified {
+  color: var(--good);
+  font-weight: 700;
+}
+.exchange-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.exchange-mark.initial {
+  display: inline-grid;
+  place-items: center;
+  font-weight: 600;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
