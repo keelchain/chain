@@ -320,6 +320,9 @@ can then ask for your offers alone:
 GET /api/v1/offers?client=<your client address>&status=active
 ```
 
+The full list of what an offer, a trade and an account make public is in
+`public-data.md`.
+
 An offer keeps the client it was created under. Offers that live only in
 your own database are not on the chain and are not listed; to be found on
 Keel, an offer has to be posted with `CreateOffer`.

@@ -18,6 +18,7 @@ PAGES=(
   "install|docs/install.md|Install the command-line tools|Download keel, keel-node and the other programs for Linux, macOS and Windows, verify them, or build from source."
   "exchange|docs/exchange.md|Run an exchange on Keel: getting started|The steps from a wallet to a running client: Keel Harbor, registration, the lock, the plan, fees, users, integration, and what it costs."
   "models|docs/models.md|Two ways to run an exchange on Keel|Custodial clients with their own wallets, P2P clients on Keel Wallet, and a person with a wallet and no client: where funds sit, who signs, what it costs."
+  "public-data|docs/public-data.md|What is posted on Keel|Every piece of data each path puts on the public chain, field by field: custodial exchange, non-custodial exchange, a person with a wallet, and what is never posted."
   "clients|docs/clients.md|Building a client|The integration contract: accounts and roles, the per-network switch and readiness, idempotency and reconciliation, streams, signing, pricing."
   "api|docs/explorer-api.md|Read API|The indexer's read API: blocks, accounts, markets, offers, trades, vaults, governance, search and the WebSocket feed."
   "rpc|chain/crates/keel-rpc/API.md|Node RPC|The node's HTTP API: status, accounts, submitting signed actions, receipts, order book, vaults, governance, readiness, state sync."

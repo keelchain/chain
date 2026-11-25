@@ -6,6 +6,9 @@ testnet's. The longer pages behind each step are `models.md` (who holds
 the funds), `clients.md` (the integration contract and the pricing) and
 `tokenomics.md` (why it is priced this way).
 
+Keel is a public chain. `public-data.md` lists, for your path, every
+piece of data that ends up readable by anyone, and what never does.
+
 Everything a client manages lives in one place: **Keel Harbor**,
 [harbor.keelchain.com](https://harbor.keelchain.com/). Harbor has no sign-up and no server. You
 connect a wallet, it reads your account from the chain, and every change

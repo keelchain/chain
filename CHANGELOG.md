@@ -5,6 +5,11 @@ Dates are UTC.
 
 ## Unreleased
 
+- Docs: **what is posted on Keel** (2026-11-25). A new page,
+  `public-data.md`, lists field by field what each path makes public on
+  the chain (a custodial exchange, a non-custodial exchange, a person
+  with a wallet), what an exchange posts about itself, and what is never
+  posted.
 - Chain: **exchanges have a public profile, and offers name their
   exchange** (2026-11-25). `SetClientProfile { name, website, logo }`
   gives a client the name it is listed under; the chain refuses a name
