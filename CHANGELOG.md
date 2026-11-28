@@ -5,6 +5,17 @@ Dates are UTC.
 
 ## Unreleased
 
+- Docs: **supported networks** (2026-11-27). A new page, `networks.md`,
+  describes Bitcoin, Ethereum, BNB Smart Chain, Tron and Solana as the
+  chain holds them: external network per Keel network, address format and
+  derivation, light client or attestation, depth, assets and decimals,
+  token contracts, test coins, and what is the same everywhere. Its
+  boxes read the testnet node and read API when opened (per-network
+  switch, vault, fee rate, reserves against liabilities, the USDT basket,
+  Lightning pools), and the governance numbers in its text are refreshed
+  from `/v1/params`. The Lightning page is folded into it; the operator
+  steps moved to the observer README. The node RPC page now names the
+  public base URL instead of the local default.
 - Docs: **what is posted on Keel** (2026-11-25). A new page,
   `public-data.md`, lists field by field what each path makes public on
   the chain (a custodial exchange, a non-custodial exchange, a person

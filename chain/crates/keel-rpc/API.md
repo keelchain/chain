@@ -1,6 +1,8 @@
 # Keel node HTTP/WS API (v1)
 
-Base: `http://127.0.0.1:<rpc-port>` (devnet: 5000+i). JSON everywhere.
+Base: `https://testnet.keelchain.com/rpc` on the public testnet (`GET
+/rpc/v1/status`); a node you run answers on `http://127.0.0.1:<rpc-port>`
+(`--rpc-port`, the p2p port + 2000; devnet 5000+i). JSON everywhere.
 Amounts are integers in smallest units (for KEEL: orcas, 1,000,000 to the
 KEEL) and may exceed 2^53: parse as
 bigint. Addresses are 64-hex ed25519 public keys in paths; inside a signed

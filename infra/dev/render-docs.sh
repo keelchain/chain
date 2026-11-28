@@ -24,6 +24,7 @@ PAGES=(
   "rpc|chain/crates/keel-rpc/API.md|Node RPC|The node's HTTP API: status, accounts, submitting signed actions, receipts, order book, vaults, governance, readiness, state sync."
   "ws|chain/crates/keel-rpc/API-WS.md|WebSocket subscriptions|Filtered, sequenced subscriptions on the node and the indexer: accounts, pairs, deposits, order books, gaps and replay."
   "deposits|docs/deposits.md|Deposits and withdrawals|Funding an account with Bitcoin or Tron on the testnet, confirmation depths, and withdrawing."
+  "networks|docs/networks.md|Supported networks|Bitcoin, Ethereum, BNB Smart Chain, Tron and Solana: what each vault is, its addresses, depth, assets and quirks, with the live state of every network read from the chain."
   "wallet|docs/wallet.md|Keel Wallet|The wallet's provider API, key model and what a client site needs to connect."
   "connect-keel-wallet|docs/connect-keel-wallet.md|Connect Keel Wallet|Adding a Connect button to a site or app: the provider, login challenges, signing, session keys, mobile."
   "explorer-api|docs/explorer-api.md|Explorer API|Alias of the read API page."
@@ -31,7 +32,6 @@ PAGES=(
   "governance|docs/governance.md|What governance can change|Every parameter a vote or the parameter admin can move, with defaults and bounds; the fee switch and the activation floor; what is fixed by the protocol."
   "tokenomics|docs/tokenomics.md|Tokenomics|KEEL supply, allocation and the fee model."
   "testnet|docs/testnet.md|The public testnet|What runs where, how to fund an account and how clients are onboarded."
-  "lightning|docs/lightning.md|Lightning|Bitcoin Lightning deposits and payouts through observer pools."
   "whitepaper|docs/whitepaper.md|Whitepaper|Why a chain, and why this shape."
 )
 

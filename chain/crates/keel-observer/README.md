@@ -268,3 +268,48 @@ mocked nodes (idempotency, depth), batch signing with the dev signer
 (signatures verified under the derived keys), the leader rotation, the
 receipts fallback, config parsing, state persistence, and the submitter's
 nonce handling. No test touches a network.
+
+## Lightning
+
+An observer may run an LND node for the chain and lend it BTC from the
+vault; the model and the governance parameters are in `docs/networks.md`
+("Bitcoin → Lightning") and `docs/how-it-works.md` §9.5, the rules in
+`keel-vm/src/modules/lightning.rs`. The operator side:
+
+1. Run `lnd` (0.19.x) with a funded wallet and channels to well-connected
+   peers, and keep `admin.macaroon` readable by the observer.
+2. Add to the observer TOML:
+
+   ```toml
+   [lightning]
+   rest_url = "https://127.0.0.1:8080"
+   macaroon_path = "/path/to/admin.macaroon"   # or macaroon_hex
+   tls_cert_path = "/path/to/tls.cert"         # or tls_insecure = true on regtest
+   api_listen = "127.0.0.1:7201"               # invoice API for the client's site
+   invoice_expiry_secs = 3600
+   poll_secs = 2
+   ```
+
+   On start the observer registers its node id on chain once
+   (`RegisterLightningNode`), then loops: settled invoices whose
+   description binds an owner → `ObserveLightningDeposit`; payouts assigned
+   to it → pays and reports `ObserveLightningPayout`. `GET /v1/lightning/info`
+   on the invoice API answers node id, observer address, channel balance
+   and invoice expiry; `POST /v1/lightning/invoice` issues an invoice for an
+   owner. On mainnet that API must be reachable by the client's site over
+   TLS with an allow-list; it is plain HTTP on localhost today.
+3. Fund the pool from the vault with the observer key:
+   `keel send --secret <observer secret> lightning fund <sats> <node on-chain address>`.
+   The vault pays a normal batched outbound to the node's wallet; when the
+   observer sees that deposit it credits the pool (`LightningPoolFunded`).
+   Funding above `lightning_pool_cap_sats` is refused.
+4. Sweep excess back: `keel send … lightning sweep <tx_hash> <sats>`
+   **before** broadcasting the on-chain transaction to the vault's index-0
+   address; an unannounced deposit there is refused.
+
+`infra/dev/lightning-e2e.sh` stands up two regtest LND nodes with a
+channel, registers observer 0, funds its pool, deposits by invoice and
+withdraws to an external invoice. Payout assignment is by free pool
+balance only, with no channel-liquidity awareness: an observer that cannot
+route reports failure and the chain refunds; one that goes quiet is
+refunded at `lightning_payout_timeout_blocks`.

@@ -13,7 +13,9 @@ and withdrawn as USDT on the network you choose ("Withdrawing" below).
 
 On the public testnet the external chains are **Bitcoin signet**, **Tron
 Nile**, the **BNB Smart Chain testnet** and **Solana devnet**. Mainnet coins
-sent to a testnet address are lost.
+sent to a testnet address are lost. What each network is on Keel, its
+addresses, depth, assets and quirks, and whether it is ready right now:
+`networks.md`.
 
 BNB Smart Chain and Ethereum share one address: the chain derives both from
 the same key path, so the `0x…` string you get for BSC is the one you would
